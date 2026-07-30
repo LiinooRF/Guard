@@ -7,7 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { MailService } from './mail.service';
-import { authRedisProvider } from './redis.provider';
+import { AUTH_REDIS, authRedisProvider } from './redis.provider';
 
 @Module({
   imports: [
@@ -33,6 +33,6 @@ import { authRedisProvider } from './redis.provider';
       useClass: AuthGuard,
     },
   ],
-  exports: [AuthService, MailService],
+  exports: [AuthService, MailService, AUTH_REDIS],
 })
 export class AuthModule {}

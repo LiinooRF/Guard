@@ -1,0 +1,177 @@
+name: voxia
+
+x-security: &security
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
+services:
+  postgres:
+    <<: *security
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER es obligatorio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB es obligatorio}
+      DATABASE_APP_USER: ${DATABASE_APP_USER:?DATABASE_APP_USER es obligatorio}
+      DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD:?DATABASE_APP_PASSWORD es obligatorio}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 768m
+
+  redis:
+    <<: *security
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio}
+    mem_limit: 384m
+
+  api:
+    <<: *security
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      DATABASE_URL: postgresql://${DATABASE_APP_USER}:${DATABASE_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_MIGRATION_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET es obligatorio}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      MAIL_DRIVER: smtp
+      MAIL_FROM: ${MAIL_FROM:?MAIL_FROM es obligatorio}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST es obligatorio}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER es obligatorio}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD es obligatorio}
+      SMTP_SECURE: "true"
+      WEB_PUBLIC_URL: https://${APP_DOMAIN}
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: /app/storage
+      SCAN_SYNC_QUEUE_NAME: ${SCAN_SYNC_QUEUE_NAME:-scan-sync}
+      SCAN_SYNC_LAG_ALERT_SECONDS: ${SCAN_SYNC_LAG_ALERT_SECONDS:-300}
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        node node_modules/typeorm/cli.js migration:run
+        -d apps/api/dist/database/data-source.js &&
+        exec node apps/api/dist/main.js
+    volumes:
+      - evidence_data:/app/storage
+    networks: [internal]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=voxia_internal
+      - traefik.http.routers.api.rule=Host(`${APP_DOMAIN}`) && PathPrefix(`/api`)
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.routers.api.tls.certresolver=letsencrypt
+      - traefik.http.services.api.loadbalancer.server.port=3001
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 512m
+
+  web:
+    <<: *security
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: /api
+      API_INTERNAL_URL: http://api:3001/api
+      WEB_PUBLIC_URL: https://${APP_DOMAIN}
+    networks: [internal]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=voxia_internal
+      - traefik.http.routers.web.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.web.entrypoints=websecure
+      - traefik.http.routers.web.tls.certresolver=letsencrypt
+      - traefik.http.services.web.loadbalancer.server.port=3000
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 384m
+
+  traefik:
+    <<: *security
+    image: traefik:v3.5
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.ping.address=:8082
+      - --ping=true
+      - --ping.entrypoint=ping
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?ACME_EMAIL es obligatorio}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_data:/letsencrypt
+    networks: [edge, internal]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  evidence_data:
+  letsencrypt_data:

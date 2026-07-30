@@ -110,6 +110,40 @@ jobs:
           docker compose config --quiet
           echo "docker-compose.yml es valido"
 
+      - name: Validar el compose de produccion
+        env:
+          POSTGRES_USER: voxia
+          POSTGRES_PASSWORD: validation-only
+          POSTGRES_DB: voxia
+          DATABASE_APP_USER: voxia_app
+          DATABASE_APP_PASSWORD: validation-app-only
+          REDIS_PASSWORD: validation-redis-only
+          JWT_SECRET: validation-secret-with-more-than-48-characters
+          MAIL_FROM: VoxIA <no-reply@example.test>
+          SMTP_HOST: smtp.example.test
+          SMTP_USER: validation
+          SMTP_PASSWORD: validation-only
+          APP_DOMAIN: control.example.test
+          ACME_EMAIL: operations@example.test
+        run: docker compose -f docker-compose.production.yml config --quiet
+
+  secrets:
+    name: historial sin secretos
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Escanear el historial completo
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo"
+          ghcr.io/gitleaks/gitleaks:v8.30.1
+          git /repo --redact --no-banner
+
   images:
     name: imagen ${{ matrix.service }}
     runs-on: ubuntu-latest

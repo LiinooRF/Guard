@@ -18,6 +18,7 @@ import { IS_PUBLIC } from './decorators/public.decorator';
 import { AUTH_REDIS } from './redis.provider';
 import { REQUIRED_PERMISSIONS } from './decorators/permissions.decorator';
 import { REQUIRES_TENANT } from './decorators/tenant-scope.decorator';
+import { requestLogContext } from '../observability/request-context';
 
 export interface AuthenticatedUser {
   sub: string;
@@ -112,6 +113,7 @@ export class AuthGuard implements CanActivate {
     }
 
     request.user = payload;
+    requestLogContext.setTenant(payload.tenant_id);
     return true;
   }
 

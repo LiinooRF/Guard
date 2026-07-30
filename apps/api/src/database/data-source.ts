@@ -11,7 +11,9 @@ import {
   UserEntity,
 } from './entities';
 
-const databaseUrl = process.env.DATABASE_URL;
+// El proceso de migración usa una credencial administrativa separada. La API
+// siempre conserva DATABASE_URL con el rol restringido por RLS.
+const databaseUrl = process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL;
 
 if (!databaseUrl) {
   throw new Error('DATABASE_URL es obligatoria para conectar a PostgreSQL');
