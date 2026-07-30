@@ -5,6 +5,7 @@ export interface AuthIdentityRow {
   password_hash: string;
   tenant_id: string | null;
   tenant_name: string | null;
+  tenant_status: 'active' | 'suspended' | null;
   role_key: Role;
   is_platform_role: boolean;
 }

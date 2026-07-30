@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -53,11 +54,21 @@ export class AuthService {
     }
     await this.redis.del(rateLimitKey);
 
-    const selected = this.selectMembership(rows, input.tenantId);
+    const activeRows = rows.filter(
+      (row) => row.is_platform_role || row.tenant_status === 'active',
+    );
+    if (activeRows.length === 0) {
+      throw new ForbiddenException({
+        code: 'TENANT_SUSPENDED',
+        message: 'Tu organización está suspendida. Contacta al administrador de la plataforma.',
+      });
+    }
+
+    const selected = this.selectMembership(activeRows, input.tenantId);
     if (!selected) {
       return {
         requiresTenantSelection: true,
-        tenants: rows
+        tenants: activeRows
           .filter(
             (row): row is AuthIdentityRow & { tenant_id: string; tenant_name: string } =>
               !row.is_platform_role && Boolean(row.tenant_id && row.tenant_name),

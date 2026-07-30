@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState, useTransition } from 'react';
+import { FormEvent, useDeferredValue, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 export interface PlatformTenant {
@@ -10,8 +10,13 @@ export interface PlatformTenant {
   displayName: string;
   status: 'active' | 'suspended';
   planKey: string;
+  planName: string;
+  userLimit: number;
+  siteLimit: number;
   siteCount: number;
   userCount: number;
+  monthlyPatrolCount: number;
+  lastPatrolAt: string | null;
 }
 
 export interface TenantUser {
@@ -45,6 +50,39 @@ export function PlatformManagement({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [planFilter, setPlanFilter] = useState('all');
+  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase('es'));
+  const visibleTenants = useMemo(
+    () =>
+      tenants.filter((tenant) => {
+        const matchesQuery =
+          !deferredQuery ||
+          tenant.displayName.toLocaleLowerCase('es').includes(deferredQuery) ||
+          tenant.legalName.toLocaleLowerCase('es').includes(deferredQuery) ||
+          tenant.slug.toLocaleLowerCase('es').includes(deferredQuery);
+        return (
+          matchesQuery &&
+          (statusFilter === 'all' || tenant.status === statusFilter) &&
+          (planFilter === 'all' || tenant.planKey === planFilter)
+        );
+      }),
+    [deferredQuery, planFilter, statusFilter, tenants],
+  );
+  const totals = useMemo(
+    () =>
+      tenants.reduce(
+        (result, tenant) => ({
+          active: result.active + Number(tenant.status === 'active'),
+          users: result.users + tenant.userCount,
+          sites: result.sites + tenant.siteCount,
+          patrols: result.patrols + tenant.monthlyPatrolCount,
+        }),
+        { active: 0, users: 0, sites: 0, patrols: 0 },
+      ),
+    [tenants],
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -79,8 +117,14 @@ export function PlatformManagement({
   }
 
   return (
-    <div className="management-grid">
-      <section className="management-card">
+    <>
+      <section className="stat-grid" id="resumen">
+        <PlatformMetric label="Tenants activos" value={totals.active} detail={`${tenants.length - totals.active} suspendidos`} />
+        <PlatformMetric label="Usuarios" value={totals.users} detail={`${totals.sites} recintos`} />
+        <PlatformMetric label="Rondas del mes" value={totals.patrols} detail="Toda la plataforma" />
+      </section>
+      <div className="management-grid">
+      <section className="management-card" id="alta">
         <div className="card-heading">
           <div><span className="eyebrow">Onboarding</span><h2>Nueva empresa</h2></div>
         </div>
@@ -99,29 +143,63 @@ export function PlatformManagement({
         {message && <p className="management-message" role="status">{message}</p>}
       </section>
 
-      <section className="management-card" id="operacion">
+      <section className="management-card" id="empresas">
         <div className="card-heading">
           <div><span className="eyebrow">Plataforma</span><h2>Empresas</h2></div>
-          <span className="status-pill">{tenants.length}</span>
+          <span className="status-pill">{visibleTenants.length} de {tenants.length}</span>
+        </div>
+        <div className="tenant-filters">
+          <label>
+            <span>Buscar</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, razón social o slug" />
+          </label>
+          <label>
+            <span>Estado</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">Todos</option><option value="active">Activos</option><option value="suspended">Suspendidos</option>
+            </select>
+          </label>
+          <label>
+            <span>Plan</span>
+            <select value={planFilter} onChange={(event) => setPlanFilter(event.target.value)}>
+              <option value="all">Todos</option><option value="base">Base</option><option value="pro">Pro</option>
+            </select>
+          </label>
         </div>
         <div className="management-list">
-          {tenants.map((tenant) => (
+          {visibleTenants.map((tenant) => {
+            const nearUserLimit = tenant.userCount / tenant.userLimit >= 0.8;
+            const nearSiteLimit = tenant.siteCount / tenant.siteLimit >= 0.8;
+            return (
             <article className="management-row" key={tenant.id}>
               <div>
                 <strong>{tenant.displayName}</strong>
-                <small>{tenant.slug} · Plan {tenant.planKey}</small>
-                <small>{tenant.userCount} usuarios · {tenant.siteCount} recintos</small>
+                <small>{tenant.slug} · Plan {tenant.planName}</small>
+                <small>{tenant.userCount}/{tenant.userLimit} usuarios · {tenant.siteCount}/{tenant.siteLimit} recintos · {tenant.monthlyPatrolCount} rondas este mes</small>
+                <small>Última actividad: {formatActivity(tenant.lastPatrolAt)}</small>
+                {(nearUserLimit || nearSiteLimit) ? <span className="limit-warning">Cerca del límite del plan</span> : null}
               </div>
               <span className={`state-chip ${tenant.status}`}>{tenant.status === 'active' ? 'Activa' : 'Suspendida'}</span>
               <button className="secondary-button" onClick={() => toggle(tenant)} disabled={pending}>
                 {tenant.status === 'active' ? 'Suspender' : 'Reactivar'}
               </button>
             </article>
-          ))}
+          )})}
+          {!visibleTenants.length ? <div className="dashboard-empty"><strong>Sin resultados</strong><span>Ajusta la búsqueda o los filtros.</span></div> : null}
         </div>
       </section>
-    </div>
+      </div>
+    </>
   );
+}
+
+function PlatformMetric({ label, value, detail }: { label: string; value: number; detail: string }) {
+  return <article className="stat-card"><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+}
+
+function formatActivity(value: string | null) {
+  if (!value) return 'Sin rondas registradas';
+  return new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium' }).format(new Date(value));
 }
 
 export function AdminManagement({
@@ -223,7 +301,7 @@ export function AdminManagement({
           </form>
         </section>
       </div>
-      <section className="management-card management-wide" id="operacion">
+      <section className="management-card management-wide" id="usuarios">
         <div className="card-heading"><div><span className="eyebrow">Accesos</span><h2>Usuarios del tenant</h2></div><span className="status-pill">{users.length}</span></div>
         <div className="management-list">
           {users.map((user) => (
@@ -245,7 +323,7 @@ export function AdminManagement({
           ))}
         </div>
       </section>
-      <section className="management-card management-wide">
+      <section className="management-card management-wide" id="recintos">
         <div className="card-heading"><div><span className="eyebrow">Infraestructura</span><h2>Recintos</h2></div><span className="status-pill">{sites.length}</span></div>
         <div className="management-list">
           {sites.map((site) => (

@@ -110,6 +110,43 @@ describeAuth('AuthService (integración)', () => {
     expect(await redis.get(`auth:refresh:${rotatedHash}`)).toBeTruthy();
   });
 
+  it('explica el bloqueo sólo después de validar una credencial de tenant suspendido', async () => {
+    await admin.query(
+      `UPDATE tenants SET status = 'suspended'
+       WHERE id = 'b0000000-0000-4000-8000-000000000001'`,
+    );
+
+    try {
+      await expect(
+        auth.login({
+          identity: 'guardia@demo-pacifico.test',
+          password: 'DemoGuardia2026!',
+        }),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'TENANT_SUSPENDED',
+          message: expect.stringContaining('organización está suspendida'),
+        },
+        status: 403,
+      });
+
+      await expect(
+        auth.login({
+          identity: 'guardia@demo-pacifico.test',
+          password: 'PasswordIncorrecta!',
+        }),
+      ).rejects.toMatchObject({
+        response: { message: 'Credenciales inválidas' },
+        status: 401,
+      });
+    } finally {
+      await admin.query(
+        `UPDATE tenants SET status = 'active'
+         WHERE id = 'b0000000-0000-4000-8000-000000000001'`,
+      );
+    }
+  });
+
   it('obliga a seleccionar tenant cuando la identidad tiene más de uno', async () => {
     await admin.query(
       `INSERT INTO memberships (tenant_id, user_id, role_key)

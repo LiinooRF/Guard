@@ -98,7 +98,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
         <Metric label="Guardias con rondas" value={overview?.metrics.guards ?? 0} detail="Datos actuales" />
       </section>
 
-      <section className="activity-card" id="operacion">
+      <section className="activity-card" id="rondas">
         <div className="card-heading">
           <div><span className="eyebrow">Operación real</span><h2>Rondas visibles</h2></div>
           <span className="status-pill">{overview?.patrols.length ?? 0} registradas</span>

@@ -16,8 +16,13 @@ interface TenantRow {
   display_name: string;
   status: 'active' | 'suspended';
   plan_key: string;
+  plan_name: string;
+  user_limit: number;
+  site_limit: number;
   site_count: number;
   user_count: number;
+  monthly_patrol_count: number;
+  last_patrol_at: Date | null;
   created_at: Date;
 }
 
@@ -36,8 +41,13 @@ export class PlatformService {
       displayName: tenant.display_name,
       status: tenant.status,
       planKey: tenant.plan_key,
+      planName: tenant.plan_name,
+      userLimit: tenant.user_limit,
+      siteLimit: tenant.site_limit,
       siteCount: tenant.site_count,
       userCount: tenant.user_count,
+      monthlyPatrolCount: tenant.monthly_patrol_count,
+      lastPatrolAt: tenant.last_patrol_at,
       createdAt: tenant.created_at,
     }));
   }

@@ -12,6 +12,7 @@ export function LoginScreen() {
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'error' | 'offline'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
   const [tenantId, setTenantId] = useState('');
   const [tenantChoices, setTenantChoices] = useState<
     Array<{ tenantId: string; tenantName: string; role: Role }>
@@ -29,6 +30,7 @@ export function LoginScreen() {
     }
 
     setStatus('loading');
+    setErrorMessage('');
 
     try {
       const response = await fetch(
@@ -48,6 +50,8 @@ export function LoginScreen() {
         requiresTenantSelection?: boolean;
         tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
         user?: { role: Role };
+        code?: string;
+        message?: string | string[];
       };
 
       if (result.requiresTenantSelection && result.tenants) {
@@ -56,6 +60,11 @@ export function LoginScreen() {
         return;
       }
       if (!response.ok || !result.user) {
+        setErrorMessage(
+          result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
+            ? result.message
+            : 'No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.',
+        );
         setStatus('error');
         return;
       }
@@ -102,6 +111,7 @@ export function LoginScreen() {
                 onChange={(event) => {
                   setIdentity(event.target.value);
                   setStatus('idle');
+                  setErrorMessage('');
                 }}
                 placeholder="tu.usuario"
                 required
@@ -117,6 +127,7 @@ export function LoginScreen() {
                   onChange={(event) => {
                     setPassword(event.target.value);
                     setStatus('idle');
+                    setErrorMessage('');
                   }}
                   placeholder="••••••••"
                   required
@@ -152,7 +163,7 @@ export function LoginScreen() {
             ) : null}
             {status === 'error' ? (
               <p className="form-message error" role="alert">
-                No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.
+                {errorMessage || 'Completa todos los campos para continuar.'}
               </p>
             ) : null}
             {status === 'offline' ? (
