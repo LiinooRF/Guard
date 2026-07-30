@@ -1,33 +1,70 @@
 import 'dotenv/config';
 
+import type { Role } from '@voxia/shared';
 import { argon2id, hash } from 'argon2';
 import { Client } from 'pg';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = process.env.DATABASE_ADMIN_URL;
 
 if (!databaseUrl) {
-  throw new Error('DATABASE_URL es obligatoria para ejecutar el seed');
+  throw new Error('DATABASE_ADMIN_URL es obligatoria para ejecutar el seed');
 }
 
 interface DemoTenant {
   tenantId: string;
   slug: string;
   displayName: string;
-  userId: string;
-  email: string;
+  users: DemoUser[];
   siteId: string;
   checkpointIds: [string, string];
   routeId: string;
   patrolId: string;
 }
 
+interface DemoUser {
+  id: string;
+  email: string;
+  givenName: string;
+  familyName: string;
+  role: Exclude<Role, 'SUPERADMIN'>;
+}
+
+const ANDINA_GUARD_ID = 'a0000000-0000-4000-8000-000000000002';
+const DEMO_SUPERADMIN = {
+  id: 'c0000000-0000-4000-8000-000000000001',
+  email: 'superadmin@demo-platform.test',
+  givenName: 'Superadmin',
+  familyName: 'Demo',
+} as const;
+
 const DEMO_TENANTS: DemoTenant[] = [
   {
     tenantId: 'a0000000-0000-4000-8000-000000000001',
     slug: 'demo-andina',
     displayName: 'Seguridad Andina',
-    userId: 'a0000000-0000-4000-8000-000000000002',
-    email: 'guardia@demo-andina.test',
+    users: [
+      {
+        id: ANDINA_GUARD_ID,
+        email: 'guardia@demo-andina.test',
+        givenName: 'Guardia',
+        familyName: 'Demo',
+        role: 'GUARDIA',
+      },
+      {
+        id: 'a0000000-0000-4000-8000-000000000008',
+        email: 'supervisor@demo-andina.test',
+        givenName: 'Supervisor',
+        familyName: 'Demo',
+        role: 'SUPERVISOR',
+      },
+      {
+        id: 'a0000000-0000-4000-8000-000000000009',
+        email: 'admin@demo-andina.test',
+        givenName: 'Admin',
+        familyName: 'Demo',
+        role: 'ADMIN',
+      },
+    ],
     siteId: 'a0000000-0000-4000-8000-000000000003',
     checkpointIds: [
       'a0000000-0000-4000-8000-000000000004',
@@ -40,8 +77,15 @@ const DEMO_TENANTS: DemoTenant[] = [
     tenantId: 'b0000000-0000-4000-8000-000000000001',
     slug: 'demo-pacifico',
     displayName: 'Control Pacífico',
-    userId: 'b0000000-0000-4000-8000-000000000002',
-    email: 'guardia@demo-pacifico.test',
+    users: [
+      {
+        id: 'b0000000-0000-4000-8000-000000000002',
+        email: 'guardia@demo-pacifico.test',
+        givenName: 'Guardia',
+        familyName: 'Demo',
+        role: 'GUARDIA',
+      },
+    ],
     siteId: 'b0000000-0000-4000-8000-000000000003',
     checkpointIds: [
       'b0000000-0000-4000-8000-000000000004',
@@ -60,6 +104,9 @@ async function seedTenant(
   await client.query('BEGIN');
 
   try {
+    const guard = demo.users.find((user) => user.role === 'GUARDIA');
+    if (!guard) throw new Error(`El tenant demo ${demo.slug} requiere un guardia`);
+
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [demo.tenantId]);
     await client.query(
       `INSERT INTO tenants (id, slug, legal_name, display_name)
@@ -68,32 +115,44 @@ async function seedTenant(
        SET display_name = EXCLUDED.display_name, updated_at = now()`,
       [demo.tenantId, demo.slug, demo.displayName],
     );
-    const existingMembership = await client.query(
-      `SELECT 1 FROM memberships WHERE tenant_id = $1 AND user_id = $2`,
-      [demo.tenantId, demo.userId],
-    );
-    if (existingMembership.rowCount === 0) {
+    for (const user of demo.users) {
       await client.query(
         `INSERT INTO users (id, email, password_hash, given_name, family_name)
-         VALUES ($1, $2, $3, 'Guardia', 'Demo')`,
-        [demo.userId, demo.email, passwordHash],
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO NOTHING`,
+        [user.id, user.email, passwordHash, user.givenName, user.familyName],
+      );
+      await client.query(
+        `INSERT INTO memberships (tenant_id, user_id, role_key)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [demo.tenantId, user.id, user.role],
+      );
+      await client.query(
+        `UPDATE users SET
+           email = $2,
+           password_hash = $3,
+           given_name = $4,
+           family_name = $5,
+           is_active = true,
+           updated_at = now()
+         WHERE id = $1`,
+        [user.id, user.email, passwordHash, user.givenName, user.familyName],
       );
     }
-    await client.query(
-      `INSERT INTO memberships (tenant_id, user_id, role_key)
-       VALUES ($1, $2, 'GUARDIA') ON CONFLICT DO NOTHING`,
-      [demo.tenantId, demo.userId],
-    );
-    await client.query(
-      `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`,
-      [passwordHash, demo.userId],
-    );
     await client.query(
       `INSERT INTO sites (id, tenant_id, branch_name, name, address, latitude, longitude)
        VALUES ($1, $2, 'Casa matriz', 'Recinto demostración', 'Dirección ficticia 100', -33.45, -70.66)
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
       [demo.siteId, demo.tenantId],
     );
+    const supervisor = demo.users.find((user) => user.role === 'SUPERVISOR');
+    if (supervisor) {
+      await client.query(
+        `INSERT INTO supervisor_sites (tenant_id, supervisor_id, site_id)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [demo.tenantId, supervisor.id, demo.siteId],
+      );
+    }
     await client.query(
       `INSERT INTO checkpoints
         (id, tenant_id, site_id, name, suggested_order, kind, requires_photo, instructions)
@@ -132,15 +191,52 @@ async function seedTenant(
        ON CONFLICT (id) DO UPDATE SET
          scheduled_start_at = EXCLUDED.scheduled_start_at,
          scheduled_end_at = EXCLUDED.scheduled_end_at,
-         expected_checkpoint_ids = EXCLUDED.expected_checkpoint_ids`,
+         expected_checkpoint_ids = EXCLUDED.expected_checkpoint_ids,
+         status = 'pendiente',
+         started_at = NULL,
+         closed_at = NULL,
+         compliance_pct = NULL`,
       [
         demo.patrolId,
         demo.tenantId,
         demo.siteId,
         demo.routeId,
-        demo.userId,
+        guard.id,
         JSON.stringify(demo.checkpointIds),
       ],
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
+async function seedSuperadmin(client: Client, passwordHash: string): Promise<void> {
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO users (id, email, password_hash, given_name, family_name)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (id) DO UPDATE SET
+         email = EXCLUDED.email,
+         password_hash = EXCLUDED.password_hash,
+         given_name = EXCLUDED.given_name,
+         family_name = EXCLUDED.family_name,
+         is_active = true,
+         updated_at = now()`,
+      [
+        DEMO_SUPERADMIN.id,
+        DEMO_SUPERADMIN.email,
+        passwordHash,
+        DEMO_SUPERADMIN.givenName,
+        DEMO_SUPERADMIN.familyName,
+      ],
+    );
+    await client.query(
+      `INSERT INTO platform_memberships (user_id, role_key)
+       VALUES ($1, 'SUPERADMIN') ON CONFLICT DO NOTHING`,
+      [DEMO_SUPERADMIN.id],
     );
     await client.query('COMMIT');
   } catch (error) {
@@ -171,7 +267,11 @@ async function main(): Promise<void> {
     for (const demo of DEMO_TENANTS) {
       await seedTenant(client, demo, passwordHash);
     }
-    console.log(`Seed listo: ${DEMO_TENANTS.length} tenants demo aislados`);
+    await seedSuperadmin(client, passwordHash);
+    const tenantUserCount = DEMO_TENANTS.reduce((total, tenant) => total + tenant.users.length, 0);
+    console.log(
+      `Seed listo: ${DEMO_TENANTS.length} tenants y ${tenantUserCount + 1} usuarios demo`,
+    );
   } finally {
     await client.end();
   }

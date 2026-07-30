@@ -9,9 +9,13 @@ en la interfaz.
 | Empresa | Identidad | Contraseña |
 |---|---|---|
 | Seguridad Andina | `guardia@demo-andina.test` | valor local de `DEMO_PASSWORD` |
+| Seguridad Andina | `supervisor@demo-andina.test` | valor local de `DEMO_PASSWORD` |
+| Seguridad Andina | `admin@demo-andina.test` | valor local de `DEMO_PASSWORD` |
 | Control Pacífico | `guardia@demo-pacifico.test` | valor local de `DEMO_PASSWORD` |
+| Plataforma | `superadmin@demo-platform.test` | valor local de `DEMO_PASSWORD` |
 
-El seed requiere `DEMO_PASSWORD` (mínimo 12 caracteres) y falla si
+El seed requiere `DEMO_PASSWORD` (mínimo 12 caracteres) y la conexión administrativa
+local `DATABASE_ADMIN_URL`. La API nunca utiliza esa conexión. El comando falla si
 `NODE_ENV=production`.
 
 ```bash

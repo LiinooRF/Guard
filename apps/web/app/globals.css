@@ -146,6 +146,8 @@ a { color: inherit; text-decoration: none; }
 .connection-status.compact { margin: 0; }.connection-status span:first-child { color: var(--success); }.connection-status i { display: inline-block; width: .45rem; height: .45rem; margin-right: .25rem; border-radius: 50%; background: currentColor; }
 .empty-assignment { text-align: center; }.empty-icon { display: grid; width: 3.5rem; height: 3.5rem; margin: 0 auto 1rem; place-items: center; border-radius: 50%; color: var(--success); background: #eaf9f2; font-size: 1.4rem; font-weight: 850; }
 .empty-assignment h2 { margin: 0; font-size: 1.5rem; }.empty-assignment p { color: var(--muted); }
+.dashboard-empty { display: grid; gap: .35rem; margin-top: 1rem; border: 1px dashed #d9deea; border-radius: .8rem; padding: 1.25rem; text-align: center; }
+.dashboard-empty strong { font-size: .85rem; }.dashboard-empty span { color: var(--muted); font-size: .72rem; line-height: 1.5; }
 
 @media (min-width: 901px) {
   .login-shell { grid-template-columns: minmax(23rem, 46%) 1fr; }

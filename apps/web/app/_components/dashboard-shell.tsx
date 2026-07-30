@@ -31,8 +31,8 @@ export function DashboardShell({
           </nav>
         )}
         <div className="sidebar-footer">
-          <span className="avatar">MC</span>
-          <span><strong>Matías Castro</strong><small>{role}</small></span>
+          <span className="avatar">{role.slice(0, 2)}</span>
+          <span><strong>Sesión activa</strong><small>{role}</small></span>
         </div>
       </aside>
       <section className="dashboard-content">

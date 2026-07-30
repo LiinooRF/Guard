@@ -8,7 +8,10 @@ const DEMO_TENANT_IDS = [
 ];
 const DEMO_USER_IDS = [
   'a0000000-0000-4000-8000-000000000002',
+  'a0000000-0000-4000-8000-000000000008',
+  'a0000000-0000-4000-8000-000000000009',
   'b0000000-0000-4000-8000-000000000002',
+  'c0000000-0000-4000-8000-000000000001',
 ];
 
 async function main(): Promise<void> {
@@ -38,6 +41,9 @@ async function main(): Promise<void> {
       DEMO_TENANT_IDS,
     ]);
     await client.query(`DELETE FROM routes WHERE tenant_id = ANY($1::uuid[])`, [
+      DEMO_TENANT_IDS,
+    ]);
+    await client.query(`DELETE FROM supervisor_sites WHERE tenant_id = ANY($1::uuid[])`, [
       DEMO_TENANT_IDS,
     ]);
     await client.query(`DELETE FROM sites WHERE tenant_id = ANY($1::uuid[])`, [

@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { validateEnv } from './config/env';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { GuardModule } from './guard/guard.module';
 import { HealthController } from './health/health.controller';
 import { RulesController } from './rules/rules.controller';
@@ -17,6 +18,7 @@ import { RulesController } from './rules/rules.controller';
       validate: validateEnv,
     }),
     DatabaseModule,
+    DashboardModule,
     AuthModule,
     GuardModule,
   ],

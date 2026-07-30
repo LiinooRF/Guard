@@ -7,45 +7,35 @@ import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 const ROLE_CONTENT = {
   guardia: {
     role: 'GUARDIA',
-    title: 'Buenas noches, Matías',
-    subtitle: 'Tu turno está activo en Planta Lo Boza.',
-    stats: [
-      ['Turno', '22:00 — 06:00', 'En curso'],
-      ['Ronda actual', '2 de 6 puntos', '33% completada'],
-      ['Sincronización', 'Todo al día', 'Último envío hace 1 min'],
-    ],
   },
   supervisor: {
     role: 'SUPERVISOR',
-    title: 'Operación de esta noche',
-    subtitle: 'Visibilidad en tiempo real de tus recintos asignados.',
-    stats: [
-      ['Rondas activas', '8', '6 sin novedades'],
-      ['Cumplimiento', '92%', '+4% esta semana'],
-      ['Alertas abiertas', '2', 'Requieren revisión'],
-    ],
   },
   admin: {
     role: 'ADMIN',
-    title: 'Resumen de Seguridad Andina',
-    subtitle: 'Indicadores consolidados de todos tus recintos.',
-    stats: [
-      ['Recintos', '12', 'Todos operativos'],
-      ['Cumplimiento mensual', '94,8%', '+2,1% vs. junio'],
-      ['Guardias activos', '46', '11 en turno ahora'],
-    ],
   },
   superadmin: {
     role: 'SUPERADMIN',
-    title: 'Estado de la plataforma',
-    subtitle: 'Empresas, operación y capacidad global.',
-    stats: [
-      ['Empresas activas', '24', '+3 este mes'],
-      ['Rondas hoy', '1.284', '99,7% procesadas'],
-      ['Salud del sistema', 'Operativa', 'Sin incidentes'],
-    ],
   },
 } as const;
+
+interface TenantOverview {
+  scope: 'tenant' | 'assigned_sites';
+  metrics: {
+    sites: number;
+    guards: number;
+    pendingPatrols: number;
+    activePatrols: number;
+    completedPatrols: number;
+  };
+  patrols: Array<{
+    id: string;
+    siteName: string;
+    routeName: string;
+    status: string;
+    scheduledStartAt: string;
+  }>;
+}
 
 export default async function RoleDashboard({ params }: { params: Promise<{ role: string }> }) {
   const { role } = await params;
@@ -65,59 +55,91 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
     );
   }
 
+  if (role === 'superadmin') {
+    return (
+      <DashboardShell
+        role={content.role}
+        title="Administración de la plataforma"
+        subtitle="Sesión de plataforma verificada."
+      >
+        <section className="empty-assignment">
+          <span className="empty-icon">✓</span>
+          <h2>Acceso SUPERADMIN activo</h2>
+          <p>
+            La gestión global de empresas y licencias se habilitará al completar su módulo.
+            No mostramos métricas ficticias mientras ese contrato no exista.
+          </p>
+        </section>
+      </DashboardShell>
+    );
+  }
+
+  const overview = await loadTenantOverview();
+  const isSupervisor = role === 'supervisor';
+
   return (
-    <DashboardShell role={content.role} title={content.title} subtitle={content.subtitle}>
+    <DashboardShell
+      role={content.role}
+      title={isSupervisor ? 'Mis recintos' : 'Resumen de la empresa'}
+      subtitle={
+        isSupervisor
+          ? 'Operación limitada a los recintos que tienes asignados.'
+          : 'Datos actuales de la empresa autenticada.'
+      }
+    >
       <section className="stat-grid" id="resumen">
-        {content.stats.map(([label, value, detail]) => (
-          <article className="stat-card" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-            <small>{detail}</small>
-          </article>
-        ))}
+        <Metric label="Recintos visibles" value={overview?.metrics.sites ?? 0} detail={isSupervisor ? 'Solo asignados' : 'Tenant completo'} />
+        <Metric label="Rondas en curso" value={overview?.metrics.activePatrols ?? 0} detail={`${overview?.metrics.pendingPatrols ?? 0} pendientes`} />
+        <Metric label="Guardias con rondas" value={overview?.metrics.guards ?? 0} detail="Datos actuales" />
       </section>
 
-      <section className="dashboard-grid" id="operacion">
-        <article className="operation-card">
-          <div className="card-heading">
-            <div><span className="eyebrow">Ronda prioritaria</span><h2>Perímetro nocturno</h2></div>
-            <span className="status-pill">En curso</span>
+      <section className="activity-card" id="operacion">
+        <div className="card-heading">
+          <div><span className="eyebrow">Operación real</span><h2>Rondas visibles</h2></div>
+          <span className="status-pill">{overview?.patrols.length ?? 0} registradas</span>
+        </div>
+        {overview?.patrols.length ? (
+          overview.patrols.map((patrol) => (
+            <div className="activity-row" key={patrol.id}>
+              <time>{formatTime(patrol.scheduledStartAt)}</time>
+              <span className="event-icon neutral">→</span>
+              <span>
+                <strong>{patrol.routeName}</strong>
+                <small>{patrol.siteName}</small>
+              </span>
+              <b>{statusLabel(patrol.status)}</b>
+            </div>
+          ))
+        ) : (
+          <div className="dashboard-empty">
+            <strong>No hay rondas visibles</strong>
+            <span>
+              {isSupervisor
+                ? 'Solicita que un administrador te asigne un recinto.'
+                : 'Las rondas aparecerán cuando se programen para un guardia.'}
+            </span>
           </div>
-          <div className="route-progress">
-            <span className="checkpoint done">✓<small>Acceso</small></span>
-            <i />
-            <span className="checkpoint done">✓<small>Bodega</small></span>
-            <i />
-            <span className="checkpoint current">3<small>Patio norte</small></span>
-            <i />
-            <span className="checkpoint">4<small>Generador</small></span>
-            <i />
-            <span className="checkpoint">5<small>Portón</small></span>
-          </div>
-          <div className="operation-meta">
-            <span><small>Inicio</small><strong>23:06</strong></span>
-            <span><small>Guardia</small><strong>Matías Castro</strong></span>
-            <span><small>Tiempo estimado</small><strong>28 min</strong></span>
-          </div>
-        </article>
-
-        <article className="alerts-card" id="alertas">
-          <div className="card-heading"><div><span className="eyebrow">Atención</span><h2>Alertas recientes</h2></div><b>2</b></div>
-          <ul className="alert-list">
-            <li><span className="alert-dot critical" /><span><strong>Ronda con atraso</strong><small>Planta Quilicura · hace 8 min</small></span></li>
-            <li><span className="alert-dot warning" /><span><strong>GPS con baja precisión</strong><small>Estacionamiento -2 · hace 14 min</small></span></li>
-            <li><span className="alert-dot ok" /><span><strong>Ronda completada</strong><small>Centro logístico · 100%</small></span></li>
-          </ul>
-        </article>
-      </section>
-
-      <section className="activity-card" id="informes">
-        <div className="card-heading"><div><span className="eyebrow">Actividad</span><h2>Últimos eventos</h2></div><button className="text-button">Ver informe completo →</button></div>
-        <div className="activity-row"><time>23:24</time><span className="event-icon success">✓</span><span><strong>Punto “Bodega 2” validado</strong><small>NFC · GPS dentro del radio · evidencia recibida</small></span><b>Correcto</b></div>
-        <div className="activity-row"><time>23:17</time><span className="event-icon success">✓</span><span><strong>Punto “Acceso principal” validado</strong><small>NFC · fotografía obligatoria adjunta</small></span><b>Correcto</b></div>
-        <div className="activity-row"><time>23:06</time><span className="event-icon neutral">→</span><span><strong>Ronda iniciada</strong><small>Dispositivo Android autorizado</small></span><b>En curso</b></div>
+        )}
       </section>
     </DashboardShell>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <article className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
   );
 }
 
@@ -144,6 +166,46 @@ async function loadGuardHome(): Promise<GuardHomeData> {
       message: 'No pudimos consultar tu turno. Revisa la conexión e intenta nuevamente.',
     };
   }
+}
+
+async function loadTenantOverview(): Promise<TenantOverview | null> {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get('voxia_access');
+  if (!accessToken) return null;
+
+  try {
+    const response = await fetch(
+      `${process.env.API_INTERNAL_URL ?? publicApiUrl()}/dashboard/tenant`,
+      {
+        headers: { cookie: `voxia_access=${accessToken.value}` },
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as TenantOverview;
+  } catch {
+    return null;
+  }
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Santiago',
+  }).format(new Date(value));
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pendiente: 'Pendiente',
+    en_curso: 'En curso',
+    completada: 'Completada',
+    incompleta: 'Incompleta',
+    vencida: 'Vencida',
+  };
+  return labels[status] ?? 'Sin estado';
 }
 
 function noAssignment(): GuardHomeData {
