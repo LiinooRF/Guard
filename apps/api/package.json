@@ -12,7 +12,8 @@
     "test": "jest --passWithNoTests",
     "db:migrate": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
     "db:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
-    "seed": "ts-node src/database/seeds/development.ts"
+    "seed": "ts-node src/database/seeds/development.ts",
+    "seed:remove": "ts-node src/database/seeds/remove-development.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

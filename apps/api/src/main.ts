@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { csrfOriginProtection } from './security/csrf-origin.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -16,6 +17,7 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  app.use(csrfOriginProtection(process.env.WEB_PUBLIC_URL ?? 'http://localhost:3000'));
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );

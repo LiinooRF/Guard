@@ -57,6 +57,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
       const response = await fetch(`${apiUrl}/guard/patrols/${patrol.id}/start`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'X-Voxia-Request': 'web' },
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -83,6 +84,17 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
         <h2>{patrol.routeName}</h2>
         <p className="guard-site">{patrol.siteName}</p>
 
+        {pending ? (
+          <button className="guard-primary-action" type="button" onClick={startPatrol} disabled={starting}>
+            {starting ? 'Iniciando…' : 'Iniciar ronda'}
+          </button>
+        ) : (
+          <button className="guard-primary-action" type="button">
+            Escanear punto NFC
+          </button>
+        )}
+        {error ? <p className="guard-action-error" role="alert">{error}</p> : null}
+
         <div className="guard-shift-grid">
           <span><small>Turno</small><strong>{time.format(new Date(shift.scheduledStartAt))} — {time.format(new Date(shift.scheduledEndAt))}</strong></span>
           <span><small>Progreso</small><strong>{completed} de {total} puntos</strong></span>
@@ -98,16 +110,6 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           ))}
         </ol>
 
-        {pending ? (
-          <button className="guard-primary-action" type="button" onClick={startPatrol} disabled={starting}>
-            {starting ? 'Iniciando…' : 'Iniciar ronda'}
-          </button>
-        ) : (
-          <button className="guard-primary-action" type="button">
-            Escanear punto NFC
-          </button>
-        )}
-        {error ? <p className="guard-action-error" role="alert">{error}</p> : null}
       </section>
     </>
   );

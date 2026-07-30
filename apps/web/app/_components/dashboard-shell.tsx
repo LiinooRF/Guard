@@ -38,7 +38,7 @@ export function DashboardShell({
       <section className="dashboard-content">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{role}{streamlined ? ' · Operación' : ' · Vista demostrativa'}</span>
+            <span className="eyebrow">{role}{streamlined ? ' · Operación' : ' · Panel'}</span>
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>

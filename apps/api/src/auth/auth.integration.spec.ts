@@ -95,6 +95,21 @@ describeAuth('AuthService (integración)', () => {
     }
   });
 
+  it('rota el refresh token y vuelve inutilizable el anterior', async () => {
+    const login = await auth.login({
+      identity: 'guardia@demo-andina.test',
+      password: 'DemoGuardia2026!',
+    });
+    if ('requiresTenantSelection' in login) throw new Error('Login demo ambiguo');
+
+    const rotated = await auth.refresh(login.refreshToken);
+    expect(rotated.refreshToken).not.toBe(login.refreshToken);
+    await expect(auth.refresh(login.refreshToken)).rejects.toMatchObject({ status: 401 });
+
+    const rotatedHash = createHash('sha256').update(rotated.refreshToken).digest('hex');
+    expect(await redis.get(`auth:refresh:${rotatedHash}`)).toBeTruthy();
+  });
+
   it('obliga a seleccionar tenant cuando la identidad tiene más de uno', async () => {
     await admin.query(
       `INSERT INTO memberships (tenant_id, user_id, role_key)

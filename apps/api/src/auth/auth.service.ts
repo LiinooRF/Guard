@@ -1,4 +1,10 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ROLES, type Role } from '@voxia/shared';
 import { verify } from 'argon2';
@@ -21,6 +27,13 @@ const DUMMY_PASSWORD_HASH =
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+interface RefreshSession {
+  familyId: string;
+  userId: string;
+  tenantId: string | null;
+  role: Role;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -29,7 +42,8 @@ export class AuthService {
     @Inject(AUTH_REDIS) private readonly redis: Redis,
   ) {}
 
-  async login(input: LoginDto): Promise<LoginResult> {
+  async login(input: LoginDto, sourceIp = 'unknown'): Promise<LoginResult> {
+    const rateLimitKey = await this.checkLoginRateLimit(input.identity, sourceIp);
     const rows = await this.lookupIdentity(input.identity);
     const passwordHash = rows[0]?.password_hash ?? DUMMY_PASSWORD_HASH;
     const passwordIsValid = await verify(passwordHash, input.password).catch(() => false);
@@ -37,6 +51,7 @@ export class AuthService {
     if (!passwordIsValid || rows.length === 0) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
+    await this.redis.del(rateLimitKey);
 
     const selected = this.selectMembership(rows, input.tenantId);
     if (!selected) {
@@ -58,11 +73,62 @@ export class AuthService {
     return this.createSession(selected);
   }
 
+  private async checkLoginRateLimit(identity: string, sourceIp: string): Promise<string> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const identityHash = createHash('sha256').update(identity).digest('hex');
+    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
+    const identityKey = `auth:limit:identity:${identityHash}:${ipHash}`;
+    const ipKey = `auth:limit:ip:${ipHash}`;
+    const script = `
+      local identity_count = redis.call('INCR', KEYS[1])
+      local ip_count = redis.call('INCR', KEYS[2])
+      if identity_count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+      if ip_count == 1 then redis.call('EXPIRE', KEYS[2], ARGV[1]) end
+      return { identity_count, ip_count }
+    `;
+    const counts = (await this.redis.eval(
+      script,
+      2,
+      identityKey,
+      ipKey,
+      15 * 60,
+    )) as [number, number];
+
+    if (Number(counts[0]) > 5 || Number(counts[1]) > 100) {
+      throw new HttpException(
+        'Demasiados intentos. Espera unos minutos antes de reintentar.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return identityKey;
+  }
+
   async logout(refreshToken?: string): Promise<void> {
     if (!refreshToken) return;
     if (this.redis.status === 'wait') await this.redis.connect();
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
     await this.redis.del(`auth:refresh:${refreshHash}`);
+  }
+
+  async refresh(refreshToken?: string): Promise<AuthenticatedSession> {
+    if (!refreshToken) throw new UnauthorizedException('Sesión inválida o expirada');
+    if (this.redis.status === 'wait') await this.redis.connect();
+
+    const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
+    const serialized = await this.redis.getdel(`auth:refresh:${refreshHash}`);
+    if (!serialized) throw new UnauthorizedException('Sesión inválida o expirada');
+
+    let stored: RefreshSession;
+    try {
+      stored = JSON.parse(serialized) as RefreshSession;
+    } catch {
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
+    if (!ROLES.includes(stored.role)) {
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
+
+    return this.rotateSession(stored);
   }
 
   private async lookupIdentity(identity: string): Promise<AuthIdentityRow[]> {
@@ -88,23 +154,41 @@ export class AuthService {
     // impedir que Nest construya el módulo.
     if (this.redis.status === 'wait') await this.redis.connect();
     const familyId = randomUUID();
-    const refreshToken = randomBytes(48).toString('base64url');
-    const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
     const payload = {
       sub: identity.user_id,
       tenant_id: identity.tenant_id,
       role: identity.role_key satisfies Role,
       sid: familyId,
     };
+    return this.issueSession(payload);
+  }
+
+  private rotateSession(stored: RefreshSession): Promise<AuthenticatedSession> {
+    return this.issueSession({
+      sub: stored.userId,
+      tenant_id: stored.tenantId,
+      role: stored.role,
+      sid: stored.familyId,
+    });
+  }
+
+  private async issueSession(payload: {
+    sub: string;
+    tenant_id: string | null;
+    role: Role;
+    sid: string;
+  }): Promise<AuthenticatedSession> {
     const accessToken = await this.jwt.signAsync(payload, { expiresIn: ACCESS_TTL_SECONDS });
+    const refreshToken = randomBytes(48).toString('base64url');
+    const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
 
     await this.redis.set(
       `auth:refresh:${refreshHash}`,
       JSON.stringify({
-        familyId,
-        userId: identity.user_id,
-        tenantId: identity.tenant_id,
-        role: identity.role_key,
+        familyId: payload.sid,
+        userId: payload.sub,
+        tenantId: payload.tenant_id,
+        role: payload.role,
       }),
       'EX',
       REFRESH_TTL_SECONDS,
@@ -115,10 +199,10 @@ export class AuthService {
       refreshToken,
       expiresIn: ACCESS_TTL_SECONDS,
       user: {
-        id: identity.user_id,
-        tenantId: identity.tenant_id,
-        tenantName: identity.tenant_name,
-        role: identity.role_key,
+        id: payload.sub,
+        tenantId: payload.tenant_id,
+        tenantName: null,
+        role: payload.role,
       },
     };
   }

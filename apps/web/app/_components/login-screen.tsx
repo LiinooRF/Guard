@@ -1,38 +1,10 @@
 'use client';
 
 import type { Role } from '@voxia/shared';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
-
-const DEMO_ROLES: Array<{ role: Role; label: string; description: string; href: string }> = [
-  {
-    role: 'GUARDIA',
-    label: 'Guardia',
-    description: 'Turno, ronda activa y escaneo de puntos',
-    href: '/demo/guardia',
-  },
-  {
-    role: 'SUPERVISOR',
-    label: 'Supervisor',
-    description: 'Monitoreo operativo de recintos y alertas',
-    href: '/demo/supervisor',
-  },
-  {
-    role: 'ADMIN',
-    label: 'Administrador',
-    description: 'Personas, recintos, reglas e informes',
-    href: '/demo/admin',
-  },
-  {
-    role: 'SUPERADMIN',
-    label: 'Superadmin',
-    description: 'Empresas, planes y salud de la plataforma',
-    href: '/demo/superadmin',
-  },
-];
 
 export function LoginScreen() {
   const router = useRouter();
@@ -60,7 +32,7 @@ export function LoginScreen() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:13001/api'}/auth/login`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/auth/login`,
         {
           method: 'POST',
           credentials: 'include',
@@ -88,17 +60,11 @@ export function LoginScreen() {
         return;
       }
 
-      router.push(`/demo/${result.user.role.toLowerCase()}`);
+      router.push(`/app/${result.user.role.toLowerCase()}`);
       router.refresh();
     } catch {
       setStatus(navigator.onLine ? 'error' : 'offline');
     }
-  }
-
-  function useDemoAccount() {
-    setIdentity('guardia@demo-andina.test');
-    setPassword('DemoGuardia2026!');
-    setStatus('idle');
   }
 
   return (
@@ -167,12 +133,6 @@ export function LoginScreen() {
                 </button>
               </span>
             </label>
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" /> Mantener sesión
-              </label>
-              <button className="text-button" type="button">¿Olvidaste tu contraseña?</button>
-            </div>
             {tenantChoices.length > 1 ? (
               <label>
                 Empresa
@@ -204,34 +164,9 @@ export function LoginScreen() {
               {status === 'loading' ? 'Verificando…' : 'Ingresar'}
               <span aria-hidden="true">{status === 'loading' ? '···' : '→'}</span>
             </button>
-            <button className="demo-login-button" onClick={useDemoAccount} type="button">
-              Completar cuenta demo de Guardia
-            </button>
-            <p className="form-note">Cuenta local de prueba; no existe en producción.</p>
           </form>
-
-          <div className="demo-area">
-            <div className="demo-heading">
-              <span>Vista previa por rol</span>
-              <small>Datos demostrativos</small>
-            </div>
-            <div className="role-grid">
-              {DEMO_ROLES.map((item) => (
-                <Link className="role-link" href={item.href} key={item.role}>
-                  <span className={`role-icon role-${item.role.toLowerCase()}`}>
-                    {item.label.charAt(0)}
-                  </span>
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                  <b aria-hidden="true">›</b>
-                </Link>
-              ))}
-            </div>
-          </div>
         </div>
-        <footer>VoxIA Control · Entorno de desarrollo · v0.2</footer>
+        <footer>VoxIA Control · Acceso seguro</footer>
       </section>
     </main>
   );

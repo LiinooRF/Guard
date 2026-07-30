@@ -122,7 +122,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
 }
 
 function publicApiUrl() {
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:13001/api';
+  return process.env.NEXT_PUBLIC_API_URL ?? '/api';
 }
 
 async function loadGuardHome(): Promise<GuardHomeData> {

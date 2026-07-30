@@ -11,7 +11,7 @@ export function LogoutButton() {
     setLoading(true);
     try {
       await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:13001/api'}/auth/logout`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/auth/logout`,
         {
           method: 'POST',
           credentials: 'include',

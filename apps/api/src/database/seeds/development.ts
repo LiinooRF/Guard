@@ -154,7 +154,10 @@ async function main(): Promise<void> {
     throw new Error('El seed de desarrollo no puede ejecutarse en producción');
   }
 
-  const demoPassword = process.env.DEMO_PASSWORD ?? 'DemoGuardia2026!';
+  const demoPassword = process.env.DEMO_PASSWORD;
+  if (!demoPassword || demoPassword.length < 12) {
+    throw new Error('DEMO_PASSWORD es obligatoria y debe tener al menos 12 caracteres');
+  }
   const passwordHash = await hash(demoPassword, {
     type: argon2id,
     memoryCost: 65_536,

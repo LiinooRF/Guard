@@ -23,9 +23,10 @@ export class AuthController {
   @Public()
   async login(
     @Body() input: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.auth.login(input);
+    const result = await this.auth.login(input, request.ip);
     if ('requiresTenantSelection' in result) return result;
 
     this.setSessionCookies(response, result);
@@ -46,6 +47,22 @@ export class AuthController {
     await this.auth.logout(request.cookies?.voxia_refresh);
     response.clearCookie('voxia_access', { path: '/' });
     response.clearCookie('voxia_refresh', { path: '/' });
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  async refresh(
+    @Req() request: Request & { cookies?: Record<string, string> },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.refresh(request.cookies?.voxia_refresh);
+    this.setSessionCookies(response, result);
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
   }
 
   @Get('session')
