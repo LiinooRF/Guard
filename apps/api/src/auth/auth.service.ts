@@ -4,6 +4,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -37,6 +38,8 @@ interface RefreshSession {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly jwt: JwtService,
@@ -126,12 +129,38 @@ export class AuthService {
     if (this.redis.status === 'wait') await this.redis.connect();
 
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
-    const serialized = await this.redis.getdel(`auth:refresh:${refreshHash}`);
-    if (!serialized) throw new UnauthorizedException('Sesión inválida o expirada');
+    const consumeScript = `
+      local stored = redis.call('GET', KEYS[1])
+      if stored then
+        local session = cjson.decode(stored)
+        redis.call('DEL', KEYS[1])
+        redis.call('SET', KEYS[2], session.familyId, 'EX', ARGV[1])
+        return {'valid', stored}
+      end
+      local reused_family = redis.call('GET', KEYS[2])
+      if reused_family then return {'reused', reused_family} end
+      return {'missing', ''}
+    `;
+    const consumed = (await this.redis.eval(
+      consumeScript,
+      2,
+      `auth:refresh:${refreshHash}`,
+      `auth:used-refresh:${refreshHash}`,
+      REFRESH_TTL_SECONDS,
+    )) as ['valid' | 'reused' | 'missing', string];
+
+    if (consumed[0] === 'reused') {
+      await this.revokeFamily(consumed[1]);
+      this.logger.warn(JSON.stringify({ event: 'refresh_token_reuse', family_revoked: true }));
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
+    if (consumed[0] !== 'valid') {
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
 
     let stored: RefreshSession;
     try {
-      stored = JSON.parse(serialized) as RefreshSession;
+      stored = JSON.parse(consumed[1]) as RefreshSession;
     } catch {
       throw new UnauthorizedException('Sesión inválida o expirada');
     }
@@ -193,17 +222,33 @@ export class AuthService {
     const refreshToken = randomBytes(48).toString('base64url');
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
 
-    await this.redis.set(
-      `auth:refresh:${refreshHash}`,
-      JSON.stringify({
+    const serialized = JSON.stringify({
         familyId: payload.sid,
         userId: payload.sub,
         tenantId: payload.tenant_id,
         role: payload.role,
-      }),
-      'EX',
+      });
+    const familyKey = `auth:family:${payload.sid}`;
+    const issueScript = `
+      if redis.call('EXISTS', KEYS[3]) == 1 then return 0 end
+      redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+      redis.call('SADD', KEYS[2], ARGV[3])
+      redis.call('EXPIRE', KEYS[2], ARGV[2])
+      return 1
+    `;
+    const issued = await this.redis.eval(
+      issueScript,
+      3,
+      `auth:refresh:${refreshHash}`,
+      familyKey,
+      `auth:revoked-family:${payload.sid}`,
+      serialized,
       REFRESH_TTL_SECONDS,
+      refreshHash,
     );
+    if (Number(issued) !== 1) {
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
 
     return {
       accessToken,
@@ -216,5 +261,24 @@ export class AuthService {
         role: payload.role,
       },
     };
+  }
+
+  private async revokeFamily(familyId: string): Promise<void> {
+    const revokeScript = `
+      local hashes = redis.call('SMEMBERS', KEYS[1])
+      for _, hash in ipairs(hashes) do
+        redis.call('DEL', 'auth:refresh:' .. hash)
+      end
+      redis.call('DEL', KEYS[1])
+      redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+      return #hashes
+    `;
+    await this.redis.eval(
+      revokeScript,
+      2,
+      `auth:family:${familyId}`,
+      `auth:revoked-family:${familyId}`,
+      REFRESH_TTL_SECONDS,
+    );
   }
 }

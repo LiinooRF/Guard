@@ -105,9 +105,10 @@ describeAuth('AuthService (integración)', () => {
     const rotated = await auth.refresh(login.refreshToken);
     expect(rotated.refreshToken).not.toBe(login.refreshToken);
     await expect(auth.refresh(login.refreshToken)).rejects.toMatchObject({ status: 401 });
+    await expect(auth.refresh(rotated.refreshToken)).rejects.toMatchObject({ status: 401 });
 
     const rotatedHash = createHash('sha256').update(rotated.refreshToken).digest('hex');
-    expect(await redis.get(`auth:refresh:${rotatedHash}`)).toBeTruthy();
+    expect(await redis.get(`auth:refresh:${rotatedHash}`)).toBeNull();
   });
 
   it('explica el bloqueo sólo después de validar una credencial de tenant suspendido', async () => {
