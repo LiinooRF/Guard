@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest --passWithNoTests",
     "db:migrate": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
-    "db:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert"
+    "db:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
+    "seed": "ts-node src/database/seeds/development.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
