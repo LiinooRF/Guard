@@ -9,14 +9,14 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
-import { ROLES, type Role } from '@voxia/shared';
+import { hasPermission, ROLES, type Permission, type Role } from '@voxia/shared';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 
 import { IS_PUBLIC } from './decorators/public.decorator';
 import { AUTH_REDIS } from './redis.provider';
-import { REQUIRED_ROLES } from './decorators/roles.decorator';
+import { REQUIRED_PERMISSIONS } from './decorators/permissions.decorator';
 import { REQUIRES_TENANT } from './decorators/tenant-scope.decorator';
 
 export interface AuthenticatedUser {
@@ -46,8 +46,11 @@ export class AuthGuard implements CanActivate {
     const targets = [context.getHandler(), context.getClass()];
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets)) return true;
 
-    const requiredRoles = this.reflector.getAllAndOverride<Role[]>(REQUIRED_ROLES, targets);
-    if (!requiredRoles?.length) {
+    const requiredPermissions = this.reflector.getAllAndOverride<Permission[]>(
+      REQUIRED_PERMISSIONS,
+      targets,
+    );
+    if (!requiredPermissions?.length) {
       this.auditDenied(context, 'missing_authorization_metadata');
       throw new ForbiddenException('Endpoint cerrado por defecto');
     }
@@ -67,8 +70,11 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Sesión inválida o expirada');
     }
 
-    if (!ROLES.includes(payload.role) || !requiredRoles.includes(payload.role)) {
-      this.auditDenied(context, 'role_forbidden', payload);
+    if (
+      !ROLES.includes(payload.role) ||
+      !requiredPermissions.every((permission) => hasPermission(payload.role, permission))
+    ) {
+      this.auditDenied(context, 'permission_forbidden', payload);
       throw new ForbiddenException('No tienes permiso para esta operación');
     }
 

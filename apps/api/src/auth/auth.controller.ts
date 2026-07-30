@@ -11,7 +11,6 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { ROLES } from '@voxia/shared';
 import { IsUUID } from 'class-validator';
 import type { Request, Response } from 'express';
 
@@ -20,7 +19,7 @@ import type { AuthenticatedUser } from './auth.guard';
 import { AuthService } from './auth.service';
 import type { AuthenticatedSession } from './auth.types';
 import { Public } from './decorators/public.decorator';
-import { Roles } from './decorators/roles.decorator';
+import { Permissions } from './decorators/permissions.decorator';
 import { LoginDto } from './dto/login.dto';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -88,7 +87,7 @@ export class AuthController {
   }
 
   @Get('session')
-  @Roles(...ROLES)
+  @Permissions('account:sessions:manage')
   session(@Req() request: Request & { user?: AuthenticatedUser }) {
     return {
       user: request.user
@@ -102,14 +101,14 @@ export class AuthController {
   }
 
   @Get('sessions')
-  @Roles(...ROLES)
+  @Permissions('account:sessions:manage')
   sessions(@Req() request: Request & { user: AuthenticatedUser }) {
     return this.auth.listSessions(request.user.sub, request.user.sid);
   }
 
   @Delete('sessions/:sessionId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(...ROLES)
+  @Permissions('account:sessions:manage')
   async revokeSession(
     @Param() params: SessionParam,
     @Req() request: Request & { user: AuthenticatedUser },
@@ -122,7 +121,7 @@ export class AuthController {
 
   @Delete('sessions')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(...ROLES)
+  @Permissions('account:sessions:manage')
   async revokeAllSessions(
     @Req() request: Request & { user: AuthenticatedUser },
     @Res({ passthrough: true }) response: Response,

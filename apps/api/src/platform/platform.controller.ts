@@ -3,7 +3,7 @@ import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Permissions } from '../auth/decorators/permissions.decorator';
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
@@ -15,17 +15,18 @@ class TenantIdParam {
 }
 
 @Controller('platform/tenants')
-@Roles('SUPERADMIN')
 @SkipTenantContext()
 export class PlatformController {
   constructor(private readonly platform: PlatformService) {}
 
   @Get()
+  @Permissions('platform:tenants:manage')
   list(@Req() request: Request & { user: AuthenticatedUser }) {
     return this.platform.listTenants(request.user.sub);
   }
 
   @Post()
+  @Permissions('platform:tenants:manage')
   create(
     @Req() request: Request & { user: AuthenticatedUser },
     @Body() input: CreateTenantDto,
@@ -34,11 +35,13 @@ export class PlatformController {
   }
 
   @Get('billing/current')
+  @Permissions('platform:metrics:read')
   billing(@Req() request: Request & { user: AuthenticatedUser }) {
     return this.platform.currentBilling(request.user.sub);
   }
 
   @Patch(':tenantId/status')
+  @Permissions('platform:tenants:manage')
   updateStatus(
     @Req() request: Request & { user: AuthenticatedUser },
     @Param() params: TenantIdParam,
