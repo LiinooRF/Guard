@@ -96,6 +96,19 @@ export function LoginScreen() {
         return;
       }
 
+      if (
+        result.user.role === 'GUARDIA' &&
+        !navigator.userAgent.includes('VoxIAAndroid/')
+      ) {
+        await fetch(`${apiUrl}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        setErrorMessage('El acceso de guardia está disponible únicamente en la app Android.');
+        setStatus('error');
+        return;
+      }
+
       router.push(`/app/${result.user.role.toLowerCase()}`);
       router.refresh();
     } catch {

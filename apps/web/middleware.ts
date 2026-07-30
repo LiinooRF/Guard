@@ -20,6 +20,13 @@ export async function middleware(request: NextRequest) {
 
   const role = await resolveSession(request, accessToken);
   if (role) {
+    if (
+      role === 'GUARDIA' &&
+      !request.headers.get('user-agent')?.includes('VoxIAAndroid/')
+    ) {
+      return clearSessionAndRedirect(request);
+    }
+
     const expectedPath = ROLE_PATHS[role];
 
     const requestedRole = request.nextUrl.pathname.split('/')[2];

@@ -65,6 +65,7 @@ export default function App() {
       <WebView
         ref={webView}
         source={{ uri: portal.href }}
+        applicationNameForUserAgent="VoxIAAndroid/0.1"
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT}
         onMessage={() => undefined}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
