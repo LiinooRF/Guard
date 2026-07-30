@@ -1,6 +1,5 @@
 import 'dotenv/config';
 
-import type { Role } from '@voxia/shared';
 import { argon2id, hash } from 'argon2';
 import { Client } from 'pg';
 
@@ -26,7 +25,7 @@ interface DemoUser {
   email: string;
   givenName: string;
   familyName: string;
-  role: Exclude<Role, 'SUPERADMIN'>;
+  role: 'ADMIN' | 'SUPERVISOR' | 'GUARDIA';
 }
 
 const ANDINA_GUARD_ID = 'a0000000-0000-4000-8000-000000000002';
