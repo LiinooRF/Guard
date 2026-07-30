@@ -31,6 +31,9 @@ jobs:
       - name: Compilar @voxia/shared
         run: npm run build --workspace @voxia/shared
 
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck
         run: npm run typecheck
 
