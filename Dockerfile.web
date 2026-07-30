@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-alpine AS dependencies
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+
+FROM dependencies AS build
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/web apps/web
+RUN npm run build --workspace @voxia/shared \
+ && npm run build --workspace @voxia/web
+
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+WORKDIR /app
+
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /app/apps/web/.next/static apps/web/.next/static
+
+USER node
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]

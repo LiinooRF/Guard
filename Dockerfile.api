@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-alpine AS dependencies
+WORKDIR /app
+
+# Los manifests cambian mucho menos que el codigo: esta capa conserva npm ci
+# cuando solo cambia una fuente.
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
+
+FROM dependencies AS build
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+RUN npm run build --workspace @voxia/shared \
+ && npm run build --workspace @voxia/api
+
+FROM node:22-alpine AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev --ignore-scripts \
+ && npm cache clean --force
+
+COPY --from=build --chown=node:node /app/packages/shared/dist packages/shared/dist
+COPY --from=build --chown=node:node /app/apps/api/dist apps/api/dist
+
+USER node
+EXPOSE 3001
+CMD ["node", "apps/api/dist/main.js"]
