@@ -31,6 +31,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci --omit=dev --igno
 
 COPY --from=build --chown=node:node /app/packages/shared/dist packages/shared/dist
 COPY --from=build --chown=node:node /app/apps/api/dist apps/api/dist
+RUN mkdir -p /app/storage && chown node:node /app/storage
 
 USER node
 EXPOSE 3001
