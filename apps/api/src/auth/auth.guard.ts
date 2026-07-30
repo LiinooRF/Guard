@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { ROLES, type Role } from '@voxia/shared';
 import type { Request } from 'express';
+import { DataSource } from 'typeorm';
 
 import { IS_PUBLIC } from './decorators/public.decorator';
 import { REQUIRED_ROLES } from './decorators/roles.decorator';
@@ -34,6 +35,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
+    private readonly dataSource: DataSource,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -70,6 +72,17 @@ export class AuthGuard implements CanActivate {
     if (requiresTenant && !payload.tenant_id) {
       this.auditDenied(context, 'tenant_required', payload);
       throw new ForbiddenException('La operación requiere contexto de empresa');
+    }
+
+    if (payload.tenant_id) {
+      const rows = await this.dataSource.query<Array<{ active: boolean }>>(
+        `SELECT is_active_tenant_session($1, $2, $3) AS active`,
+        [payload.sub, payload.tenant_id, payload.role],
+      );
+      if (!rows[0]?.active) {
+        this.auditDenied(context, 'inactive_tenant_session', payload);
+        throw new UnauthorizedException('La sesión ya no está activa');
+      }
     }
 
     request.user = payload;

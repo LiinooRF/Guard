@@ -3,6 +3,13 @@ import { notFound } from 'next/navigation';
 
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
+import {
+  AdminManagement,
+  type PlatformTenant,
+  PlatformManagement,
+  type TenantSite,
+  type TenantUser,
+} from '../../_components/role-management';
 
 const ROLE_CONTENT = {
   guardia: {
@@ -56,25 +63,23 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
   }
 
   if (role === 'superadmin') {
+    const tenants = await loadPlatformTenants();
     return (
       <DashboardShell
         role={content.role}
         title="Administración de la plataforma"
-        subtitle="Sesión de plataforma verificada."
+        subtitle="Crea empresas, entrega su administración y controla el acceso a la plataforma."
       >
-        <section className="empty-assignment">
-          <span className="empty-icon">✓</span>
-          <h2>Acceso SUPERADMIN activo</h2>
-          <p>
-            La gestión global de empresas y licencias se habilitará al completar su módulo.
-            No mostramos métricas ficticias mientras ese contrato no exista.
-          </p>
-        </section>
+        <PlatformManagement tenants={tenants} apiUrl={publicApiUrl()} />
       </DashboardShell>
     );
   }
 
-  const overview = await loadTenantOverview();
+  const [overview, users, sites] = await Promise.all([
+    loadTenantOverview(),
+    role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
+    role === 'admin' ? loadAdminSites() : Promise.resolve([]),
+  ]);
   const isSupervisor = role === 'supervisor';
 
   return (
@@ -121,6 +126,9 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
           </div>
         )}
       </section>
+      {role === 'admin' && (
+        <AdminManagement users={users} sites={sites} apiUrl={publicApiUrl()} />
+      )}
     </DashboardShell>
   );
 }
@@ -186,6 +194,37 @@ async function loadTenantOverview(): Promise<TenantOverview | null> {
   } catch {
     return null;
   }
+}
+
+async function authenticatedGet<T>(path: string, fallback: T): Promise<T> {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get('voxia_access');
+  if (!accessToken) return fallback;
+  try {
+    const response = await fetch(
+      `${process.env.API_INTERNAL_URL ?? publicApiUrl()}${path}`,
+      {
+        headers: { cookie: `voxia_access=${accessToken.value}` },
+        cache: 'no-store',
+      },
+    );
+    if (!response.ok) return fallback;
+    return (await response.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadPlatformTenants() {
+  return authenticatedGet<PlatformTenant[]>('/platform/tenants', []);
+}
+
+function loadAdminUsers() {
+  return authenticatedGet<TenantUser[]>('/admin/users', []);
+}
+
+function loadAdminSites() {
+  return authenticatedGet<TenantSite[]>('/admin/sites', []);
 }
 
 function formatTime(value: string) {

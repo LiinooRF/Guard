@@ -1,6 +1,7 @@
 import { ForbiddenException, UnauthorizedException, type ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
+import type { DataSource } from 'typeorm';
 
 import { AuthGuard, type AuthenticatedUser } from './auth.guard';
 
@@ -31,7 +32,10 @@ function createGuard(metadata: Record<string, unknown>, payload = VALID_USER) {
   const reflector = {
     getAllAndOverride: jest.fn((key: string) => metadata[key]),
   } as unknown as Reflector;
-  return { guard: new AuthGuard(jwt, reflector), jwt };
+  const dataSource = {
+    query: jest.fn().mockResolvedValue([{ active: true }]),
+  } as unknown as DataSource;
+  return { guard: new AuthGuard(jwt, reflector, dataSource), jwt, dataSource };
 }
 
 describe('AuthGuard', () => {
@@ -68,5 +72,17 @@ describe('AuthGuard', () => {
     await expect(
       guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('invalida de inmediato una sesión de tenant suspendido o usuario desactivado', async () => {
+    const { guard, dataSource } = createGuard({
+      'auth:requiredRoles': ['GUARDIA'],
+      'auth:requiresTenant': true,
+    });
+    jest.mocked(dataSource.query).mockResolvedValue([{ active: false }]);
+
+    await expect(
+      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
