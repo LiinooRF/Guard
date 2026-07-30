@@ -1,9 +1,13 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import { ROLES } from '@voxia/shared';
 import type { Request, Response } from 'express';
 
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
+import type { AuthenticatedUser } from './auth.guard';
 import { AuthService } from './auth.service';
 import type { AuthenticatedSession } from './auth.types';
+import { Public } from './decorators/public.decorator';
+import { Roles } from './decorators/roles.decorator';
 import { LoginDto } from './dto/login.dto';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -16,6 +20,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Public()
   async login(
     @Body() input: LoginDto,
     @Res({ passthrough: true }) response: Response,
@@ -33,6 +38,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
   async logout(
     @Req() request: Request & { cookies?: Record<string, string> },
     @Res({ passthrough: true }) response: Response,
@@ -40,6 +46,20 @@ export class AuthController {
     await this.auth.logout(request.cookies?.voxia_refresh);
     response.clearCookie('voxia_access', { path: '/' });
     response.clearCookie('voxia_refresh', { path: '/' });
+  }
+
+  @Get('session')
+  @Roles(...ROLES)
+  session(@Req() request: Request & { user?: AuthenticatedUser }) {
+    return {
+      user: request.user
+        ? {
+            id: request.user.sub,
+            tenantId: request.user.tenant_id,
+            role: request.user.role,
+          }
+        : null,
+    };
   }
 
   private setSessionCookies(response: Response, session: AuthenticatedSession): void {

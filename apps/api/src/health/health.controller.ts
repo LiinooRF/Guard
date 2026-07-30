@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 /**
  * `/health` responde si el proceso esta vivo. `/ready` responde si puede
@@ -11,6 +12,7 @@ import { SkipTenantContext } from '../database/tenant-context/skip-tenant-contex
  */
 @Controller()
 @SkipTenantContext()
+@Public()
 export class HealthController {
   @Get('health')
   health() {
