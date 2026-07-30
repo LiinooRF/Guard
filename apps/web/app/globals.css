@@ -179,6 +179,7 @@ a { color: inherit; text-decoration: none; }
 .billing-amount { justify-self: end; font-size: .8rem; }
 .danger-button { color: #a93744; border-color: #f2cbd0; }
 .row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
+.security-policy-form { margin-bottom: 1rem; }
 
 @media (min-width: 901px) {
   .login-shell { grid-template-columns: minmax(23rem, 46%) 1fr; }

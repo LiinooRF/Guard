@@ -12,6 +12,7 @@ import { AuthService } from '../auth/auth.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
+import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 
 interface UserRow {
   id: string;
@@ -75,6 +76,69 @@ export class AdminService {
       role: user.role_key,
       isActive: user.is_active,
       siteIds: user.site_ids,
+    }));
+  }
+
+  async getAuthPolicy() {
+    const rows = await this.tenantContext.manager.query<Array<{
+      max_failed_attempts: number;
+      window_seconds: number;
+      base_lock_seconds: number;
+      max_lock_seconds: number;
+    }>>(`
+      SELECT max_failed_attempts, window_seconds, base_lock_seconds, max_lock_seconds
+      FROM tenant_auth_policies
+      WHERE tenant_id = app_tenant_id()
+    `);
+    const policy = rows[0];
+    return {
+      maxFailedAttempts: policy?.max_failed_attempts ?? 5,
+      windowSeconds: policy?.window_seconds ?? 900,
+      baseLockSeconds: policy?.base_lock_seconds ?? 300,
+      maxLockSeconds: policy?.max_lock_seconds ?? 3600,
+    };
+  }
+
+  async updateAuthPolicy(input: UpdateAuthPolicyDto) {
+    if (input.maxLockSeconds < input.baseLockSeconds) {
+      throw new BadRequestException('El bloqueo máximo no puede ser menor al inicial');
+    }
+    await this.tenantContext.manager.query(
+      `INSERT INTO tenant_auth_policies (
+        tenant_id, max_failed_attempts, window_seconds,
+        base_lock_seconds, max_lock_seconds
+      ) VALUES (app_tenant_id(), $1, $2, $3, $4)
+      ON CONFLICT (tenant_id) DO UPDATE SET
+        max_failed_attempts = EXCLUDED.max_failed_attempts,
+        window_seconds = EXCLUDED.window_seconds,
+        base_lock_seconds = EXCLUDED.base_lock_seconds,
+        max_lock_seconds = EXCLUDED.max_lock_seconds,
+        updated_at = now()`,
+      [
+        input.maxFailedAttempts,
+        input.windowSeconds,
+        input.baseLockSeconds,
+        input.maxLockSeconds,
+      ],
+    );
+    return this.getAuthPolicy();
+  }
+
+  async listSecurityEvents() {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      event_type: string;
+      created_at: Date;
+    }>>(`
+      SELECT id, event_type, created_at
+      FROM security_events
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+    return rows.map((event) => ({
+      id: event.id,
+      type: event.event_type,
+      createdAt: event.created_at,
     }));
   }
 

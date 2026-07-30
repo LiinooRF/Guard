@@ -190,6 +190,71 @@ describeAuth('AuthService (integración)', () => {
     expect(remaining).toHaveLength(0);
   });
 
+  it('bloquea por identidad aunque cambie la IP y escala bloqueos configurables', async () => {
+    const identity = 'guardia@demo-pacifico.test';
+    const identityHash = createHash('sha256').update(identity).digest('hex');
+    const lockKey = `auth:login-lock:identity:${identityHash}`;
+    await admin.query(`
+      UPDATE tenant_auth_policies
+      SET max_failed_attempts = 3,
+          window_seconds = 60,
+          base_lock_seconds = 60,
+          max_lock_seconds = 600
+      WHERE tenant_id = 'b0000000-0000-4000-8000-000000000001'
+    `);
+    await redis.del(
+      lockKey,
+      `auth:login-attempts:identity:${identityHash}`,
+      `auth:login-lock-level:${identityHash}`,
+    );
+
+    const failFromChangingIps = async (offset: number) =>
+      auth.login(
+        { identity, password: 'PasswordIncorrecta!' },
+        `192.0.2.${offset}`,
+      );
+
+    try {
+      await expect(failFromChangingIps(1)).rejects.toMatchObject({ status: 401 });
+      await expect(failFromChangingIps(2)).rejects.toMatchObject({ status: 401 });
+      await expect(failFromChangingIps(3)).rejects.toMatchObject({ status: 429 });
+      const firstLockTtl = await redis.ttl(lockKey);
+      await expect(
+        auth.login({ identity, password: 'DemoGuardia2026!' }, '198.51.100.10'),
+      ).rejects.toMatchObject({ status: 429 });
+
+      await redis.del(lockKey);
+      await expect(failFromChangingIps(4)).rejects.toMatchObject({ status: 401 });
+      await expect(failFromChangingIps(5)).rejects.toMatchObject({ status: 401 });
+      await expect(failFromChangingIps(6)).rejects.toMatchObject({ status: 429 });
+      const secondLockTtl = await redis.ttl(lockKey);
+      expect(secondLockTtl).toBeGreaterThan(firstLockTtl);
+
+      const events = await admin.query<{ count: string }>(`
+        SELECT count(*)::text AS count
+        FROM security_events
+        WHERE tenant_id = 'b0000000-0000-4000-8000-000000000001'
+          AND identity_hash = $1
+      `, [identityHash]);
+      expect(Number(events.rows[0]?.count)).toBeGreaterThanOrEqual(2);
+    } finally {
+      await redis.del(
+        lockKey,
+        `auth:login-attempts:identity:${identityHash}`,
+        `auth:login-lock-level:${identityHash}`,
+      );
+      await admin.query(`DELETE FROM security_events WHERE identity_hash = $1`, [identityHash]);
+      await admin.query(`
+        UPDATE tenant_auth_policies
+        SET max_failed_attempts = 5,
+            window_seconds = 900,
+            base_lock_seconds = 300,
+            max_lock_seconds = 3600
+        WHERE tenant_id = 'b0000000-0000-4000-8000-000000000001'
+      `);
+    }
+  });
+
   it('obliga a seleccionar tenant cuando la identidad tiene más de uno', async () => {
     await admin.query(
       `INSERT INTO memberships (tenant_id, user_id, role_key)

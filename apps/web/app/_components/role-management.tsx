@@ -50,6 +50,19 @@ export interface TenantSite {
   supervisorCount: number;
 }
 
+export interface AuthPolicy {
+  maxFailedAttempts: number;
+  windowSeconds: number;
+  baseLockSeconds: number;
+  maxLockSeconds: number;
+}
+
+export interface SecurityEvent {
+  id: string;
+  type: 'login_locked';
+  createdAt: string;
+}
+
 export function PlatformManagement({
   tenants,
   billing,
@@ -244,10 +257,14 @@ function formatClp(value: number) {
 export function AdminManagement({
   users,
   sites,
+  authPolicy,
+  securityEvents,
   apiUrl,
 }: {
   users: TenantUser[];
   sites: TenantSite[];
+  authPolicy: AuthPolicy;
+  securityEvents: SecurityEvent[];
   apiUrl: string;
 }) {
   const router = useRouter();
@@ -324,6 +341,20 @@ export function AdminManagement({
     startTransition(() => router.refresh());
   }
 
+  async function updateSecurityPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const response = await apiRequest(`${apiUrl}/admin/security/policy`, 'PATCH', {
+      maxFailedAttempts: Number(data.get('maxFailedAttempts')),
+      windowSeconds: Number(data.get('windowMinutes')) * 60,
+      baseLockSeconds: Number(data.get('baseLockMinutes')) * 60,
+      maxLockSeconds: Number(data.get('maxLockMinutes')) * 60,
+    });
+    if (!response.ok) return setMessage(await responseMessage(response));
+    setMessage('Política de acceso actualizada.');
+    startTransition(() => router.refresh());
+  }
+
   return (
     <>
       {message && <p className="management-message sticky-message" role="status">{message}</p>}
@@ -389,6 +420,28 @@ export function AdminManagement({
           ))}
         </div>
       </section>
+      <section className="management-card management-wide" id="seguridad">
+        <div className="card-heading">
+          <div><span className="eyebrow">Protección de acceso</span><h2>Intentos y bloqueos</h2></div>
+          <span className="status-pill">{securityEvents.length} alertas</span>
+        </div>
+        <form className="management-form security-policy-form" onSubmit={updateSecurityPolicy}>
+          <label>Intentos permitidos<input name="maxFailedAttempts" type="number" min={3} max={20} defaultValue={authPolicy.maxFailedAttempts} required /></label>
+          <label>Ventana (minutos)<input name="windowMinutes" type="number" min={1} max={1440} defaultValue={authPolicy.windowSeconds / 60} required /></label>
+          <label>Bloqueo inicial (minutos)<input name="baseLockMinutes" type="number" min={1} max={1440} defaultValue={authPolicy.baseLockSeconds / 60} required /></label>
+          <label>Bloqueo máximo (minutos)<input name="maxLockMinutes" type="number" min={1} max={10080} defaultValue={authPolicy.maxLockSeconds / 60} required /></label>
+          <button className="primary-button" disabled={pending}>Guardar política</button>
+        </form>
+        <div className="management-list">
+          {securityEvents.map((securityEvent) => (
+            <article className="management-row" key={securityEvent.id}>
+              <div><strong>Cuenta bloqueada por intentos fallidos</strong><small>{formatDateTime(securityEvent.createdAt)}</small></div>
+              <span className="state-chip suspended">Revisar</span>
+            </article>
+          ))}
+          {!securityEvents.length ? <div className="dashboard-empty"><strong>Sin bloqueos recientes</strong><span>No se han alcanzado los umbrales configurados.</span></div> : null}
+        </div>
+      </section>
     </>
   );
 }
@@ -409,4 +462,11 @@ async function responseMessage(response: Response) {
   } catch {
     return 'No fue posible completar la operación.';
   }
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('es-CL', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
 }

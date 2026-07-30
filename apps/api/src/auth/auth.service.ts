@@ -46,6 +46,20 @@ interface StoredSession {
   lastUsedAt: string;
 }
 
+interface LoginSecurityPolicy {
+  maxAttempts: number;
+  windowSeconds: number;
+  baseLockSeconds: number;
+  maxLockSeconds: number;
+}
+
+const DEFAULT_LOGIN_POLICY: LoginSecurityPolicy = {
+  maxAttempts: 5,
+  windowSeconds: 15 * 60,
+  baseLockSeconds: 5 * 60,
+  maxLockSeconds: 60 * 60,
+};
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -61,15 +75,38 @@ export class AuthService {
     sourceIp = 'unknown',
     device = 'Dispositivo desconocido',
   ): Promise<LoginResult> {
-    const rateLimitKey = await this.checkLoginRateLimit(input.identity, sourceIp);
     const rows = await this.lookupIdentity(input.identity);
+    const policy = rows[0]
+      ? {
+          maxAttempts: rows[0].max_failed_attempts,
+          windowSeconds: rows[0].window_seconds,
+          baseLockSeconds: rows[0].base_lock_seconds,
+          maxLockSeconds: rows[0].max_lock_seconds,
+        }
+      : DEFAULT_LOGIN_POLICY;
+    const identityHash = createHash('sha256').update(input.identity).digest('hex');
+    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
+    await this.assertLoginNotLocked(identityHash, ipHash);
     const passwordHash = rows[0]?.password_hash ?? DUMMY_PASSWORD_HASH;
     const passwordIsValid = await verify(passwordHash, input.password).catch(() => false);
 
     if (!passwordIsValid || rows.length === 0) {
+      const locked = await this.recordFailedLogin(identityHash, ipHash, policy);
+      if (locked && rows[0]?.tenant_id) {
+        await this.dataSource.query(
+          `SELECT record_login_lock($1, $2, $3)`,
+          [rows[0].tenant_id, rows[0].user_id, identityHash],
+        );
+      }
+      if (locked) {
+        throw new HttpException(
+          'Demasiados intentos. Espera antes de volver a intentarlo.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
       throw new UnauthorizedException('Credenciales inválidas');
     }
-    await this.redis.del(rateLimitKey);
+    await this.clearFailedLogin(identityHash);
 
     const activeRows = rows.filter(
       (row) => row.is_platform_role || row.tenant_status === 'active',
@@ -101,34 +138,78 @@ export class AuthService {
     return this.createSession(selected, device);
   }
 
-  private async checkLoginRateLimit(identity: string, sourceIp: string): Promise<string> {
+  private async assertLoginNotLocked(identityHash: string, ipHash: string): Promise<void> {
     if (this.redis.status === 'wait') await this.redis.connect();
-    const identityHash = createHash('sha256').update(identity).digest('hex');
-    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
-    const identityKey = `auth:limit:identity:${identityHash}:${ipHash}`;
-    const ipKey = `auth:limit:ip:${ipHash}`;
-    const script = `
-      local identity_count = redis.call('INCR', KEYS[1])
-      local ip_count = redis.call('INCR', KEYS[2])
-      if identity_count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-      if ip_count == 1 then redis.call('EXPIRE', KEYS[2], ARGV[1]) end
-      return { identity_count, ip_count }
-    `;
-    const counts = (await this.redis.eval(
-      script,
-      2,
-      identityKey,
-      ipKey,
-      15 * 60,
-    )) as [number, number];
-
-    if (Number(counts[0]) > 5 || Number(counts[1]) > 100) {
+    const locked = await this.redis.exists(
+      `auth:login-lock:identity:${identityHash}`,
+      `auth:login-lock:ip:${ipHash}`,
+    );
+    if (locked) {
       throw new HttpException(
-        'Demasiados intentos. Espera unos minutos antes de reintentar.',
+        'Demasiados intentos. Espera antes de volver a intentarlo.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    return identityKey;
+  }
+
+  private async recordFailedLogin(
+    identityHash: string,
+    ipHash: string,
+    policy: LoginSecurityPolicy,
+  ): Promise<boolean> {
+    const now = Date.now();
+    const member = `${now}:${randomUUID()}`;
+    const script = `
+      local now = tonumber(ARGV[1])
+      local window_start = now - (tonumber(ARGV[2]) * 1000)
+      for index = 1, 2 do
+        redis.call('ZREMRANGEBYSCORE', KEYS[index], '-inf', window_start)
+        redis.call('ZADD', KEYS[index], now, ARGV[3])
+        redis.call('EXPIRE', KEYS[index], ARGV[2])
+      end
+      local identity_count = redis.call('ZCARD', KEYS[1])
+      local ip_count = redis.call('ZCARD', KEYS[2])
+      local identity_locked = 0
+      if identity_count >= tonumber(ARGV[4]) then
+        local level = redis.call('INCR', KEYS[5])
+        redis.call('EXPIRE', KEYS[5], ARGV[6])
+        local duration = math.min(
+          tonumber(ARGV[5]) * math.pow(2, level - 1),
+          tonumber(ARGV[6])
+        )
+        redis.call('SET', KEYS[3], '1', 'EX', math.floor(duration))
+        redis.call('DEL', KEYS[1])
+        identity_locked = 1
+      end
+      if ip_count >= tonumber(ARGV[4]) * 10 then
+        redis.call('SET', KEYS[4], '1', 'EX', ARGV[5])
+        redis.call('DEL', KEYS[2])
+      end
+      return identity_locked
+    `;
+    const locked = await this.redis.eval(
+      script,
+      5,
+      `auth:login-attempts:identity:${identityHash}`,
+      `auth:login-attempts:ip:${ipHash}`,
+      `auth:login-lock:identity:${identityHash}`,
+      `auth:login-lock:ip:${ipHash}`,
+      `auth:login-lock-level:${identityHash}`,
+      now,
+      policy.windowSeconds,
+      member,
+      policy.maxAttempts,
+      policy.baseLockSeconds,
+      policy.maxLockSeconds,
+    );
+    return Number(locked) === 1;
+  }
+
+  private async clearFailedLogin(identityHash: string): Promise<void> {
+    await this.redis.del(
+      `auth:login-attempts:identity:${identityHash}`,
+      `auth:login-lock-level:${identityHash}`,
+    );
   }
 
   async logout(refreshToken?: string): Promise<void> {

@@ -8,6 +8,10 @@ export interface AuthIdentityRow {
   tenant_status: 'active' | 'suspended' | null;
   role_key: Role;
   is_platform_role: boolean;
+  max_failed_attempts: number;
+  window_seconds: number;
+  base_lock_seconds: number;
+  max_lock_seconds: number;
 }
 
 export interface TenantChoice {

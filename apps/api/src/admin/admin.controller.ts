@@ -7,6 +7,7 @@ import { AdminService } from './admin.service';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { CreateTenantUserDto } from './dto/create-user.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
+import { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 
 class UserParam {
   @IsUUID()
@@ -37,6 +38,21 @@ export class AdminController {
   @Get('users')
   listUsers() {
     return this.admin.listUsers();
+  }
+
+  @Get('security/policy')
+  getAuthPolicy() {
+    return this.admin.getAuthPolicy();
+  }
+
+  @Patch('security/policy')
+  updateAuthPolicy(@Body() input: UpdateAuthPolicyDto) {
+    return this.admin.updateAuthPolicy(input);
+  }
+
+  @Get('security/events')
+  securityEvents() {
+    return this.admin.listSecurityEvents();
   }
 
   @Post('users')

@@ -5,11 +5,13 @@ import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import {
   AdminManagement,
+  type AuthPolicy,
   type PlatformBilling,
   type PlatformTenant,
   PlatformManagement,
   type TenantSite,
   type TenantUser,
+  type SecurityEvent,
 } from '../../_components/role-management';
 import { SessionManagement, type UserSession } from '../../_components/session-management';
 
@@ -83,11 +85,13 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
     );
   }
 
-  const [overview, users, sites, sessions] = await Promise.all([
+  const [overview, users, sites, sessions, authPolicy, securityEvents] = await Promise.all([
     loadTenantOverview(),
     role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
     role === 'admin' ? loadAdminSites() : Promise.resolve([]),
     loadSessions(),
+    role === 'admin' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
+    role === 'admin' ? loadSecurityEvents() : Promise.resolve([]),
   ]);
   const isSupervisor = role === 'supervisor';
 
@@ -136,7 +140,13 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
         )}
       </section>
       {role === 'admin' && (
-        <AdminManagement users={users} sites={sites} apiUrl={publicApiUrl()} />
+        <AdminManagement
+          users={users}
+          sites={sites}
+          authPolicy={authPolicy}
+          securityEvents={securityEvents}
+          apiUrl={publicApiUrl()}
+        />
       )}
       <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
     </DashboardShell>
@@ -243,6 +253,23 @@ function loadAdminSites() {
 
 function loadSessions() {
   return authenticatedGet<UserSession[]>('/auth/sessions', []);
+}
+
+function loadAuthPolicy() {
+  return authenticatedGet<AuthPolicy>('/admin/security/policy', defaultAuthPolicy());
+}
+
+function loadSecurityEvents() {
+  return authenticatedGet<SecurityEvent[]>('/admin/security/events', []);
+}
+
+function defaultAuthPolicy(): AuthPolicy {
+  return {
+    maxFailedAttempts: 5,
+    windowSeconds: 900,
+    baseLockSeconds: 300,
+    maxLockSeconds: 3600,
+  };
 }
 
 function formatTime(value: string) {
