@@ -32,7 +32,8 @@ psql -v ON_ERROR_STOP=1 \
 	WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
 	\gexec
 
-	GRANT USAGE, CREATE ON SCHEMA public TO :"app_user";
+	GRANT USAGE ON SCHEMA public TO :"app_user";
+	REVOKE CREATE ON SCHEMA public FROM :"app_user";
 
 	-- Todo objeto creado despues hereda estos permisos, para no depender de que
 	-- alguien recuerde un GRANT en cada migracion.
