@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { IsBoolean, IsUUID } from 'class-validator';
 
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -47,6 +47,11 @@ export class AdminController {
   @Patch('users/:userId/active')
   setUserActive(@Param() params: UserParam, @Body() input: UpdateActiveDto) {
     return this.admin.setUserActive(params.userId, input.isActive);
+  }
+
+  @Delete('users/:userId/sessions')
+  revokeUserSessions(@Param() params: UserParam) {
+    return this.admin.revokeUserSessions(params.userId);
   }
 
   @Get('sites')

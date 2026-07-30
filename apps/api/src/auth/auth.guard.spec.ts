@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException, type ExecutionContext } from
 import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
 import type { DataSource } from 'typeorm';
+import type Redis from 'ioredis';
 
 import { AuthGuard, type AuthenticatedUser } from './auth.guard';
 
@@ -35,7 +36,17 @@ function createGuard(metadata: Record<string, unknown>, payload = VALID_USER) {
   const dataSource = {
     query: jest.fn().mockResolvedValue([{ active: true }]),
   } as unknown as DataSource;
-  return { guard: new AuthGuard(jwt, reflector, dataSource), jwt, dataSource };
+  const redis = {
+    exists: jest.fn().mockResolvedValue(0),
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue('OK'),
+  } as unknown as Redis;
+  return {
+    guard: new AuthGuard(jwt, reflector, dataSource, redis),
+    jwt,
+    dataSource,
+    redis,
+  };
 }
 
 describe('AuthGuard', () => {
@@ -80,6 +91,18 @@ describe('AuthGuard', () => {
       'auth:requiresTenant': true,
     });
     jest.mocked(dataSource.query).mockResolvedValue([{ active: false }]);
+
+    await expect(
+      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('invalida inmediatamente una familia de sesión revocada', async () => {
+    const { guard, redis } = createGuard({
+      'auth:requiredRoles': ['GUARDIA'],
+      'auth:requiresTenant': true,
+    });
+    jest.mocked(redis.exists).mockResolvedValue(1);
 
     await expect(
       guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),

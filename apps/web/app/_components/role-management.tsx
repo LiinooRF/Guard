@@ -295,6 +295,16 @@ export function AdminManagement({
     startTransition(() => router.refresh());
   }
 
+  async function revokeUserSessions(user: TenantUser) {
+    const response = await fetch(`${apiUrl}/admin/users/${user.id}/sessions`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (!response.ok) return setMessage(await responseMessage(response));
+    const result = (await response.json()) as { revokedSessions: number };
+    setMessage(`${result.revokedSessions} sesión(es) cerrada(s) para ${user.givenName}.`);
+  }
+
   async function toggleSite(site: TenantSite) {
     const response = await apiRequest(`${apiUrl}/admin/sites/${site.id}/active`, 'PATCH', {
       isActive: !site.isActive,
@@ -347,7 +357,12 @@ export function AdminManagement({
             <article className="management-row user-row" key={user.id}>
               <div><strong>{user.givenName} {user.familyName}</strong><small>{user.email ?? user.username} · {user.role}</small></div>
               <span className={`state-chip ${user.isActive ? 'active' : 'suspended'}`}>{user.isActive ? 'Activo' : 'Inactivo'}</span>
-              {user.role !== 'ADMIN' && <button className="secondary-button" onClick={() => toggleUser(user)} disabled={pending}>{user.isActive ? 'Desactivar' : 'Activar'}</button>}
+              {user.role !== 'ADMIN' ? (
+                <div className="row-actions">
+                  <button className="secondary-button" onClick={() => revokeUserSessions(user)} disabled={pending}>Cerrar sesiones</button>
+                  <button className="secondary-button" onClick={() => toggleUser(user)} disabled={pending}>{user.isActive ? 'Desactivar' : 'Activar'}</button>
+                </div>
+              ) : null}
               {user.role === 'SUPERVISOR' && (
                 <div className="site-assignment">
                   {sites.filter((site) => site.isActive).map((site) => (

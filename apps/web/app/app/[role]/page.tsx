@@ -11,6 +11,7 @@ import {
   type TenantSite,
   type TenantUser,
 } from '../../_components/role-management';
+import { SessionManagement, type UserSession } from '../../_components/session-management';
 
 const ROLE_CONTENT = {
   guardia: {
@@ -51,7 +52,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
   if (!content) notFound();
 
   if (role === 'guardia') {
-    const data = await loadGuardHome();
+    const [data, sessions] = await Promise.all([loadGuardHome(), loadSessions()]);
     const subtitle = data.hasAssignment && data.patrol
       ? `Tu turno en ${data.patrol.siteName}.`
       : 'Aquí verás tu próxima tarea cuando sea asignada.';
@@ -59,14 +60,16 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
     return (
       <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined>
         <GuardHome data={data} apiUrl={publicApiUrl()} />
+        <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
       </DashboardShell>
     );
   }
 
   if (role === 'superadmin') {
-    const [tenants, billing] = await Promise.all([
+    const [tenants, billing, sessions] = await Promise.all([
       loadPlatformTenants(),
       loadPlatformBilling(),
+      loadSessions(),
     ]);
     return (
       <DashboardShell
@@ -75,14 +78,16 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
         subtitle="Crea empresas, entrega su administración y controla el acceso a la plataforma."
       >
         <PlatformManagement tenants={tenants} billing={billing} apiUrl={publicApiUrl()} />
+        <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
       </DashboardShell>
     );
   }
 
-  const [overview, users, sites] = await Promise.all([
+  const [overview, users, sites, sessions] = await Promise.all([
     loadTenantOverview(),
     role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
     role === 'admin' ? loadAdminSites() : Promise.resolve([]),
+    loadSessions(),
   ]);
   const isSupervisor = role === 'supervisor';
 
@@ -133,6 +138,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
       {role === 'admin' && (
         <AdminManagement users={users} sites={sites} apiUrl={publicApiUrl()} />
       )}
+      <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
     </DashboardShell>
   );
 }
@@ -233,6 +239,10 @@ function loadAdminUsers() {
 
 function loadAdminSites() {
   return authenticatedGet<TenantSite[]>('/admin/sites', []);
+}
+
+function loadSessions() {
+  return authenticatedGet<UserSession[]>('/auth/sessions', []);
 }
 
 function formatTime(value: string) {

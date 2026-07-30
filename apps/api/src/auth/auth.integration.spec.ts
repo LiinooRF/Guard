@@ -148,6 +148,48 @@ describeAuth('AuthService (integración)', () => {
     }
   });
 
+  it('lista dispositivos y permite revocar una sesión o todas', async () => {
+    const first = await auth.login(
+      {
+        identity: 'guardia@demo-pacifico.test',
+        password: 'DemoGuardia2026!',
+      },
+      'test',
+      'Firefox de prueba',
+    );
+    const second = await auth.login(
+      {
+        identity: 'guardia@demo-pacifico.test',
+        password: 'DemoGuardia2026!',
+      },
+      'test',
+      'Android de prueba',
+    );
+    if ('requiresTenantSelection' in first || 'requiresTenantSelection' in second) {
+      throw new Error('Login demo ambiguo');
+    }
+    const firstPayload = await new JwtService({
+      secret: 'secreto-de-prueba-con-mas-de-32-caracteres',
+    }).verifyAsync<{ sid: string }>(first.accessToken);
+    const secondPayload = await new JwtService({
+      secret: 'secreto-de-prueba-con-mas-de-32-caracteres',
+    }).verifyAsync<{ sid: string }>(second.accessToken);
+
+    const sessions = await auth.listSessions(first.user.id, firstPayload.sid);
+    expect(sessions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ device: 'Firefox de prueba', current: true }),
+      expect.objectContaining({ device: 'Android de prueba', current: false }),
+    ]));
+
+    await expect(auth.revokeSession(first.user.id, secondPayload.sid)).resolves.toBe(true);
+    await expect(auth.refresh(second.refreshToken)).rejects.toMatchObject({ status: 401 });
+    await expect(auth.refresh(first.refreshToken)).resolves.toBeTruthy();
+
+    await auth.revokeAllSessions(first.user.id);
+    const remaining = await auth.listSessions(first.user.id, firstPayload.sid);
+    expect(remaining).toHaveLength(0);
+  });
+
   it('obliga a seleccionar tenant cuando la identidad tiene más de uno', async () => {
     await admin.query(
       `INSERT INTO memberships (tenant_id, user_id, role_key)

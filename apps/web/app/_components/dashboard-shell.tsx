@@ -9,16 +9,19 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#empresas', icon: '▦', label: 'Empresas' },
     { href: '#licencias', icon: '$', label: 'Licencias' },
     { href: '#alta', icon: '+', label: 'Nueva empresa' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
   ],
   ADMIN: [
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
     { href: '#rondas', icon: '◎', label: 'Rondas' },
     { href: '#usuarios', icon: '♙', label: 'Usuarios' },
     { href: '#recintos', icon: '▦', label: 'Recintos' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
   ],
   SUPERVISOR: [
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
     { href: '#rondas', icon: '◎', label: 'Rondas asignadas' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
   ],
 };
 

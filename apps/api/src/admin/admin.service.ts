@@ -8,6 +8,7 @@ import { argon2id, hash } from 'argon2';
 import { randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
 
+import { AuthService } from '../auth/auth.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
@@ -37,7 +38,10 @@ interface SiteRow {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly auth: AuthService,
+  ) {}
 
   async listUsers() {
     const rows = await this.tenantContext.manager.query<UserRow[]>(`
@@ -122,7 +126,21 @@ export class AdminService {
       [userId, isActive],
     );
     if (!result.length) throw new NotFoundException('Usuario administrable no encontrado');
-    return { id: userId, isActive };
+    const revokedSessions = isActive ? 0 : await this.auth.revokeAllSessions(userId);
+    return { id: userId, isActive, revokedSessions };
+  }
+
+  async revokeUserSessions(userId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT users.id
+       FROM users
+       JOIN memberships ON memberships.user_id = users.id
+       WHERE users.id = $1
+         AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')`,
+      [userId],
+    );
+    if (!rows.length) throw new NotFoundException('Usuario administrable no encontrado');
+    return { userId, revokedSessions: await this.auth.revokeAllSessions(userId) };
   }
 
   async listSites() {

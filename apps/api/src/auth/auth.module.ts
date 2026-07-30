@@ -31,5 +31,6 @@ import { authRedisProvider } from './redis.provider';
       useClass: AuthGuard,
     },
   ],
+  exports: [AuthService],
 })
 export class AuthModule {}

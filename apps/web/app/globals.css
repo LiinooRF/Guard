@@ -177,6 +177,8 @@ a { color: inherit; text-decoration: none; }
 .section-explanation { margin: .7rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.55; }
 .billing-units { color: var(--blue); font-size: .7rem; font-weight: 800; }
 .billing-amount { justify-self: end; font-size: .8rem; }
+.danger-button { color: #a93744; border-color: #f2cbd0; }
+.row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 
 @media (min-width: 901px) {
   .login-shell { grid-template-columns: minmax(23rem, 46%) 1fr; }

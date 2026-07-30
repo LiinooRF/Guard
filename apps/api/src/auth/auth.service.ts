@@ -36,6 +36,16 @@ interface RefreshSession {
   role: Role;
 }
 
+interface StoredSession {
+  familyId: string;
+  userId: string;
+  tenantId: string | null;
+  role: Role;
+  device: string;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -46,7 +56,11 @@ export class AuthService {
     @Inject(AUTH_REDIS) private readonly redis: Redis,
   ) {}
 
-  async login(input: LoginDto, sourceIp = 'unknown'): Promise<LoginResult> {
+  async login(
+    input: LoginDto,
+    sourceIp = 'unknown',
+    device = 'Dispositivo desconocido',
+  ): Promise<LoginResult> {
     const rateLimitKey = await this.checkLoginRateLimit(input.identity, sourceIp);
     const rows = await this.lookupIdentity(input.identity);
     const passwordHash = rows[0]?.password_hash ?? DUMMY_PASSWORD_HASH;
@@ -84,7 +98,7 @@ export class AuthService {
       };
     }
 
-    return this.createSession(selected);
+    return this.createSession(selected, device);
   }
 
   private async checkLoginRateLimit(identity: string, sourceIp: string): Promise<string> {
@@ -121,7 +135,14 @@ export class AuthService {
     if (!refreshToken) return;
     if (this.redis.status === 'wait') await this.redis.connect();
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
-    await this.redis.del(`auth:refresh:${refreshHash}`);
+    const serialized = await this.redis.get(`auth:refresh:${refreshHash}`);
+    if (!serialized) return;
+    try {
+      const stored = JSON.parse(serialized) as RefreshSession;
+      await this.revokeFamily(stored.familyId);
+    } catch {
+      await this.redis.del(`auth:refresh:${refreshHash}`);
+    }
   }
 
   async refresh(refreshToken?: string): Promise<AuthenticatedSession> {
@@ -168,7 +189,8 @@ export class AuthService {
       throw new UnauthorizedException('Sesión inválida o expirada');
     }
 
-    return this.rotateSession(stored);
+    const session = await this.getStoredSession(stored.familyId);
+    return this.rotateSession(stored, session);
   }
 
   private async lookupIdentity(identity: string): Promise<AuthIdentityRow[]> {
@@ -189,7 +211,49 @@ export class AuthService {
     return rows.length === 1 ? rows[0] : undefined;
   }
 
-  private async createSession(identity: AuthIdentityRow): Promise<AuthenticatedSession> {
+  async listSessions(userId: string, currentFamilyId: string) {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const familyIds = await this.redis.smembers(`auth:user-sessions:${userId}`);
+    if (!familyIds.length) return [];
+    const serialized = await this.redis.mget(
+      familyIds.map((familyId) => `auth:session:${familyId}`),
+    );
+    const sessions = serialized.flatMap((value) => {
+      if (!value) return [];
+      try {
+        const session = JSON.parse(value) as StoredSession;
+        return [{
+          id: session.familyId,
+          device: session.device,
+          createdAt: session.createdAt,
+          lastUsedAt: session.lastUsedAt,
+          current: session.familyId === currentFamilyId,
+        }];
+      } catch {
+        return [];
+      }
+    });
+    return sessions.toSorted((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt));
+  }
+
+  async revokeSession(userId: string, familyId: string): Promise<boolean> {
+    const session = await this.getStoredSession(familyId);
+    if (!session || session.userId !== userId) return false;
+    await this.revokeFamily(familyId);
+    return true;
+  }
+
+  async revokeAllSessions(userId: string): Promise<number> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const familyIds = await this.redis.smembers(`auth:user-sessions:${userId}`);
+    await Promise.all(familyIds.map((familyId) => this.revokeFamily(familyId)));
+    return familyIds.length;
+  }
+
+  private async createSession(
+    identity: AuthIdentityRow,
+    device: string,
+  ): Promise<AuthenticatedSession> {
     // Conecta de forma diferida para que readiness pueda informar Redis caído sin
     // impedir que Nest construya el módulo.
     if (this.redis.status === 'wait') await this.redis.connect();
@@ -200,16 +264,39 @@ export class AuthService {
       role: identity.role_key satisfies Role,
       sid: familyId,
     };
-    return this.issueSession(payload);
+    const now = new Date().toISOString();
+    return this.issueSession(payload, {
+      familyId,
+      userId: identity.user_id,
+      tenantId: identity.tenant_id,
+      role: identity.role_key,
+      device: device.slice(0, 180),
+      createdAt: now,
+      lastUsedAt: now,
+    });
   }
 
-  private rotateSession(stored: RefreshSession): Promise<AuthenticatedSession> {
+  private rotateSession(
+    stored: RefreshSession,
+    session: StoredSession | null,
+  ): Promise<AuthenticatedSession> {
+    const now = new Date().toISOString();
     return this.issueSession({
       sub: stored.userId,
       tenant_id: stored.tenantId,
       role: stored.role,
       sid: stored.familyId,
-    });
+    }, session
+      ? { ...session, lastUsedAt: now }
+      : {
+          familyId: stored.familyId,
+          userId: stored.userId,
+          tenantId: stored.tenantId,
+          role: stored.role,
+          device: 'Dispositivo desconocido',
+          createdAt: now,
+          lastUsedAt: now,
+        });
   }
 
   private async issueSession(payload: {
@@ -217,7 +304,7 @@ export class AuthService {
     tenant_id: string | null;
     role: Role;
     sid: string;
-  }): Promise<AuthenticatedSession> {
+  }, session: StoredSession): Promise<AuthenticatedSession> {
     const accessToken = await this.jwt.signAsync(payload, { expiresIn: ACCESS_TTL_SECONDS });
     const refreshToken = randomBytes(48).toString('base64url');
     const refreshHash = createHash('sha256').update(refreshToken).digest('hex');
@@ -234,17 +321,24 @@ export class AuthService {
       redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
       redis.call('SADD', KEYS[2], ARGV[3])
       redis.call('EXPIRE', KEYS[2], ARGV[2])
+      redis.call('SET', KEYS[4], ARGV[4], 'EX', ARGV[2])
+      redis.call('SADD', KEYS[5], ARGV[5])
+      redis.call('EXPIRE', KEYS[5], ARGV[2])
       return 1
     `;
     const issued = await this.redis.eval(
       issueScript,
-      3,
+      5,
       `auth:refresh:${refreshHash}`,
       familyKey,
       `auth:revoked-family:${payload.sid}`,
+      `auth:session:${payload.sid}`,
+      `auth:user-sessions:${payload.sub}`,
       serialized,
       REFRESH_TTL_SECONDS,
       refreshHash,
+      JSON.stringify(session),
+      payload.sid,
     );
     if (Number(issued) !== 1) {
       throw new UnauthorizedException('Sesión inválida o expirada');
@@ -269,16 +363,35 @@ export class AuthService {
       for _, hash in ipairs(hashes) do
         redis.call('DEL', 'auth:refresh:' .. hash)
       end
+      local stored_session = redis.call('GET', KEYS[3])
+      if stored_session then
+        local session = cjson.decode(stored_session)
+        redis.call('SREM', 'auth:user-sessions:' .. session.userId, ARGV[2])
+      end
       redis.call('DEL', KEYS[1])
+      redis.call('DEL', KEYS[3])
       redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
       return #hashes
     `;
     await this.redis.eval(
       revokeScript,
-      2,
+      3,
       `auth:family:${familyId}`,
       `auth:revoked-family:${familyId}`,
+      `auth:session:${familyId}`,
       REFRESH_TTL_SECONDS,
+      familyId,
     );
+  }
+
+  private async getStoredSession(familyId: string): Promise<StoredSession | null> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const serialized = await this.redis.get(`auth:session:${familyId}`);
+    if (!serialized) return null;
+    try {
+      return JSON.parse(serialized) as StoredSession;
+    } catch {
+      return null;
+    }
   }
 }

@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -10,9 +11,11 @@ import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { ROLES, type Role } from '@voxia/shared';
 import type { Request } from 'express';
+import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 
 import { IS_PUBLIC } from './decorators/public.decorator';
+import { AUTH_REDIS } from './redis.provider';
 import { REQUIRED_ROLES } from './decorators/roles.decorator';
 import { REQUIRES_TENANT } from './decorators/tenant-scope.decorator';
 
@@ -36,6 +39,7 @@ export class AuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
     private readonly dataSource: DataSource,
+    @Inject(AUTH_REDIS) private readonly redis: Redis,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -66,6 +70,22 @@ export class AuthGuard implements CanActivate {
     if (!ROLES.includes(payload.role) || !requiredRoles.includes(payload.role)) {
       this.auditDenied(context, 'role_forbidden', payload);
       throw new ForbiddenException('No tienes permiso para esta operación');
+    }
+
+    if (await this.redis.exists(`auth:revoked-family:${payload.sid}`)) {
+      this.auditDenied(context, 'revoked_session', payload);
+      throw new UnauthorizedException('La sesión ya no está activa');
+    }
+    const sessionKey = `auth:session:${payload.sid}`;
+    const serializedSession = await this.redis.get(sessionKey);
+    if (serializedSession) {
+      try {
+        const session = JSON.parse(serializedSession) as Record<string, unknown>;
+        session.lastUsedAt = new Date().toISOString();
+        await this.redis.set(sessionKey, JSON.stringify(session), 'KEEPTTL');
+      } catch {
+        // Una metadata dañada no concede ni quita acceso; el JWT y la revocación mandan.
+      }
     }
 
     const requiresTenant = this.reflector.getAllAndOverride<boolean>(REQUIRES_TENANT, targets);
