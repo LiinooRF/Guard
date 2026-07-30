@@ -15,6 +15,26 @@ jobs:
     name: typecheck y build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voxia
+          POSTGRES_PASSWORD: cambiar_en_ci
+          POSTGRES_DB: voxia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      DATABASE_TEST_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      DATABASE_APP_TEST_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
 
     steps:
       - uses: actions/checkout@v6
@@ -26,6 +46,24 @@ jobs:
 
       - name: Instalar dependencias
         run: npm ci
+
+      - name: Crear rol restringido y migrar PostgreSQL
+        env:
+          PGPASSWORD: cambiar_en_ci
+        run: |
+          psql -h localhost -U voxia -d voxia -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE voxia_app LOGIN PASSWORD 'cambiar_app_en_ci'
+            NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          GRANT USAGE ON SCHEMA public TO voxia_app;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO voxia_app;
+          SQL
+          npm run db:migrate --workspace @voxia/api
+
+      - name: Cargar datos aislados de prueba
+        env:
+          DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
+        run: npm run seed --workspace @voxia/api
 
       # shared se compila primero: api y web importan sus tipos.
       - name: Compilar @voxia/shared
