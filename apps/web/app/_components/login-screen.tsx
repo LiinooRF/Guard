@@ -2,6 +2,7 @@
 
 import type { Role } from '@voxia/shared';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
@@ -34,10 +35,15 @@ const DEMO_ROLES: Array<{ role: Role; label: string; description: string; href: 
 ];
 
 export function LoginScreen() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'error' | 'offline'>('idle');
+  const [tenantId, setTenantId] = useState('');
+  const [tenantChoices, setTenantChoices] = useState<
+    Array<{ tenantId: string; tenantName: string; role: Role }>
+  >([]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,9 +57,48 @@ export function LoginScreen() {
     }
 
     setStatus('loading');
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    // El endpoint real pertenece a #47. El mensaje no confirma si la identidad existe.
-    setStatus('error');
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:13001/api'}/auth/login`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity,
+            password,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        requiresTenantSelection?: boolean;
+        tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
+        user?: { role: Role };
+      };
+
+      if (result.requiresTenantSelection && result.tenants) {
+        setTenantChoices(result.tenants);
+        setStatus('idle');
+        return;
+      }
+      if (!response.ok || !result.user) {
+        setStatus('error');
+        return;
+      }
+
+      router.push(`/demo/${result.user.role.toLowerCase()}`);
+      router.refresh();
+    } catch {
+      setStatus(navigator.onLine ? 'error' : 'offline');
+    }
+  }
+
+  function useDemoAccount() {
+    setIdentity('guardia@demo-andina.test');
+    setPassword('DemoGuardia2026!');
+    setStatus('idle');
   }
 
   return (
@@ -128,6 +173,23 @@ export function LoginScreen() {
               </label>
               <button className="text-button" type="button">¿Olvidaste tu contraseña?</button>
             </div>
+            {tenantChoices.length > 1 ? (
+              <label>
+                Empresa
+                <select
+                  onChange={(event) => setTenantId(event.target.value)}
+                  required
+                  value={tenantId}
+                >
+                  <option value="">Selecciona dónde ingresar</option>
+                  {tenantChoices.map((tenant) => (
+                    <option key={tenant.tenantId} value={tenant.tenantId}>
+                      {tenant.tenantName} · {tenant.role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {status === 'error' ? (
               <p className="form-message error" role="alert">
                 No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.
@@ -142,10 +204,10 @@ export function LoginScreen() {
               {status === 'loading' ? 'Verificando…' : 'Ingresar'}
               <span aria-hidden="true">{status === 'loading' ? '···' : '→'}</span>
             </button>
-            <p className="form-note">
-              El acceso real se habilitará al integrar el endpoint de autenticación. Por ahora
-              puedes recorrer los paneles demostrativos.
-            </p>
+            <button className="demo-login-button" onClick={useDemoAccount} type="button">
+              Completar cuenta demo de Guardia
+            </button>
+            <p className="form-note">Cuenta local de prueba; no existe en producción.</p>
           </form>
 
           <div className="demo-area">

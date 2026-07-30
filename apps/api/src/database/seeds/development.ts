@@ -1,5 +1,6 @@
 import 'dotenv/config';
 
+import { argon2id, hash } from 'argon2';
 import { Client } from 'pg';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -51,7 +52,11 @@ const DEMO_TENANTS: DemoTenant[] = [
   },
 ];
 
-async function seedTenant(client: Client, demo: DemoTenant): Promise<void> {
+async function seedTenant(
+  client: Client,
+  demo: DemoTenant,
+  passwordHash: string,
+): Promise<void> {
   await client.query('BEGIN');
 
   try {
@@ -70,14 +75,18 @@ async function seedTenant(client: Client, demo: DemoTenant): Promise<void> {
     if (existingMembership.rowCount === 0) {
       await client.query(
         `INSERT INTO users (id, email, password_hash, given_name, family_name)
-         VALUES ($1, $2, 'LOGIN_DESHABILITADO_SEED', 'Guardia', 'Demo')`,
-        [demo.userId, demo.email],
+         VALUES ($1, $2, $3, 'Guardia', 'Demo')`,
+        [demo.userId, demo.email, passwordHash],
       );
     }
     await client.query(
       `INSERT INTO memberships (tenant_id, user_id, role_key)
        VALUES ($1, $2, 'GUARDIA') ON CONFLICT DO NOTHING`,
       [demo.tenantId, demo.userId],
+    );
+    await client.query(
+      `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`,
+      [passwordHash, demo.userId],
     );
     await client.query(
       `INSERT INTO sites (id, tenant_id, branch_name, name, address, latitude, longitude)
@@ -132,12 +141,23 @@ async function seedTenant(client: Client, demo: DemoTenant): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('El seed de desarrollo no puede ejecutarse en producción');
+  }
+
+  const demoPassword = process.env.DEMO_PASSWORD ?? 'DemoGuardia2026!';
+  const passwordHash = await hash(demoPassword, {
+    type: argon2id,
+    memoryCost: 65_536,
+    timeCost: 3,
+    parallelism: 1,
+  });
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
 
   try {
     for (const demo of DEMO_TENANTS) {
-      await seedTenant(client, demo);
+      await seedTenant(client, demo, passwordHash);
     }
     console.log(`Seed listo: ${DEMO_TENANTS.length} tenants demo aislados`);
   } finally {

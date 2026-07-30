@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Brand } from './brand';
+import { LogoutButton } from './logout-button';
 
 export function DashboardShell({
   role,
@@ -38,7 +38,7 @@ export function DashboardShell({
           </div>
           <div className="topbar-actions">
             <span className="live-badge">● En línea</span>
-            <Link className="secondary-button" href="/">Cambiar rol</Link>
+            <LogoutButton />
           </div>
         </header>
         {children}

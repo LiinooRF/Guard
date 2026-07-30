@@ -29,11 +29,21 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_TEST_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_APP_TEST_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
       REDIS_URL: redis://localhost:6379
+      REDIS_TEST_URL: redis://localhost:6379
       JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
 
     steps:
