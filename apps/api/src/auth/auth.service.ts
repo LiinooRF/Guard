@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -9,12 +10,19 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ROLES, type Role } from '@voxia/shared';
-import { verify } from 'argon2';
+import { argon2id, hash, verify } from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 
 import type { LoginDto } from './dto/login.dto';
+import {
+  createAuthActionToken,
+  hashAuthActionToken,
+  type AuthActionPurpose,
+} from './auth-action-token';
+import type { CompleteAuthActionDto } from './dto/complete-auth-action.dto';
+import { MailService } from './mail.service';
 import type {
   AuthenticatedSession,
   AuthIdentityRow,
@@ -68,7 +76,76 @@ export class AuthService {
     private readonly dataSource: DataSource,
     private readonly jwt: JwtService,
     @Inject(AUTH_REDIS) private readonly redis: Redis,
+    private readonly mail: MailService,
   ) {}
+
+  async requestPasswordReset(email: string, sourceIp: string): Promise<void> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const identityHash = createHash('sha256').update(email).digest('hex');
+    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
+    const allowed = await this.redis.eval(
+      `
+        if redis.call('EXISTS', KEYS[1]) == 1
+          or redis.call('EXISTS', KEYS[2]) == 1 then
+          return 0
+        end
+        redis.call('SET', KEYS[1], '1', 'EX', ARGV[1])
+        redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+        return 1
+      `,
+      2,
+      `auth:password-reset:identity:${identityHash}`,
+      `auth:password-reset:ip:${ipHash}`,
+      5 * 60,
+    );
+    if (Number(allowed) !== 1) return;
+
+    const rows = await this.dataSource.query<Array<{
+      user_id: string;
+      email: string;
+      tenant_id: string | null;
+    }>>(`SELECT * FROM lookup_recovery_identity($1)`, [email]);
+    const identity = rows[0];
+    if (!identity) return;
+
+    const action = createAuthActionToken(30 * 60 * 1000);
+    try {
+      await this.dataSource.query(
+        `SELECT issue_auth_action_token($1, $2, 'password_reset', $3, $4)`,
+        [identity.user_id, identity.tenant_id, action.tokenHash, action.expiresAt],
+      );
+      await this.mail.passwordReset(identity.email, action.token);
+    } catch {
+      this.logger.error(JSON.stringify({ event: 'password_reset_delivery_failed' }));
+    }
+  }
+
+  completePasswordReset(input: CompleteAuthActionDto): Promise<void> {
+    return this.consumeAuthAction(input, 'password_reset');
+  }
+
+  completeInvitation(input: CompleteAuthActionDto): Promise<void> {
+    return this.consumeAuthAction(input, 'invitation');
+  }
+
+  private async consumeAuthAction(
+    input: CompleteAuthActionDto,
+    purpose: AuthActionPurpose,
+  ): Promise<void> {
+    const passwordHash = await hash(input.password, {
+      type: argon2id,
+      memoryCost: 65_536,
+      timeCost: 3,
+      parallelism: 1,
+    });
+    const rows = await this.dataSource.query<Array<{ user_id: string | null }>>(
+      `SELECT consume_auth_action_token($1, $2, $3) AS user_id`,
+      [hashAuthActionToken(input.token), purpose, passwordHash],
+    );
+    const userId = rows[0]?.user_id;
+    if (!userId) throw new BadRequestException('El enlace no es válido o ya venció');
+    await this.revokeAllSessions(userId);
+  }
 
   async login(
     input: LoginDto,

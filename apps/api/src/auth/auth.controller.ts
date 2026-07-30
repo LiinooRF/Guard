@@ -18,9 +18,11 @@ import { SkipTenantContext } from '../database/tenant-context/skip-tenant-contex
 import type { AuthenticatedUser } from './auth.guard';
 import { AuthService } from './auth.service';
 import type { AuthenticatedSession } from './auth.types';
+import { CompleteAuthActionDto } from './dto/complete-auth-action.dto';
 import { Public } from './decorators/public.decorator';
 import { Permissions } from './decorators/permissions.decorator';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -84,6 +86,33 @@ export class AuthController {
       expiresIn: result.expiresIn,
       user: result.user,
     };
+  }
+
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Public()
+  async requestPasswordReset(
+    @Body() input: RequestPasswordResetDto,
+    @Req() request: Request,
+  ): Promise<{ message: string }> {
+    await this.auth.requestPasswordReset(input.email, request.ip ?? 'unknown');
+    return {
+      message: 'Si el correo está registrado, recibirás instrucciones para continuar.',
+    };
+  }
+
+  @Post('password-reset/complete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
+  completePasswordReset(@Body() input: CompleteAuthActionDto): Promise<void> {
+    return this.auth.completePasswordReset(input);
+  }
+
+  @Post('invitations/complete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
+  completeInvitation(@Body() input: CompleteAuthActionDto): Promise<void> {
+    return this.auth.completeInvitation(input);
   }
 
   @Get('session')

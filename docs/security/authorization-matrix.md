@@ -36,8 +36,9 @@ consultas parten de `supervisor_sites` y RLS mantiene el aislamiento del tenant.
 | Plataforma | empresas y estado | `platform:tenants:manage` | `SUPERADMIN` |
 | Plataforma | facturación y métricas | `platform:metrics:read` | `SUPERADMIN` |
 
-`login`, `logout`, `refresh`, `health`, `ready` y los defaults públicos de
-reglas son las únicas rutas públicas inventariadas.
+`login`, `logout`, `refresh`, solicitud/consumo de recuperación e invitación,
+`health`, `ready` y los defaults públicos de reglas son las únicas rutas
+públicas inventariadas.
 
 ## Controles automáticos
 

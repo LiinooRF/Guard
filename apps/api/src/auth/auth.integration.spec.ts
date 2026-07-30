@@ -5,6 +5,8 @@ import { Client } from 'pg';
 import { DataSource } from 'typeorm';
 
 import { AuthService } from './auth.service';
+import { createAuthActionToken } from './auth-action-token';
+import type { MailService } from './mail.service';
 
 const adminUrl = process.env.DATABASE_TEST_URL;
 const appUrl = process.env.DATABASE_APP_TEST_URL;
@@ -16,6 +18,7 @@ describeAuth('AuthService (integración)', () => {
   let dataSource: DataSource;
   let redis: Redis;
   let auth: AuthService;
+  let mail: Pick<MailService, 'invitation' | 'passwordReset'>;
 
   beforeAll(async () => {
     admin = new Client({ connectionString: adminUrl });
@@ -23,6 +26,10 @@ describeAuth('AuthService (integración)', () => {
     redis = new Redis(redisUrl!, { maxRetriesPerRequest: 1 });
     await Promise.all([admin.connect(), dataSource.initialize()]);
     await redis.flushdb();
+    mail = {
+      invitation: jest.fn().mockResolvedValue(undefined),
+      passwordReset: jest.fn().mockResolvedValue(undefined),
+    };
     auth = new AuthService(
       dataSource,
       new JwtService({
@@ -34,6 +41,7 @@ describeAuth('AuthService (integración)', () => {
         },
       }),
       redis,
+      mail as MailService,
     );
   });
 
@@ -195,12 +203,17 @@ describeAuth('AuthService (integración)', () => {
     const identityHash = createHash('sha256').update(identity).digest('hex');
     const lockKey = `auth:login-lock:identity:${identityHash}`;
     await admin.query(`
-      UPDATE tenant_auth_policies
-      SET max_failed_attempts = 3,
-          window_seconds = 60,
-          base_lock_seconds = 60,
-          max_lock_seconds = 600
-      WHERE tenant_id = 'b0000000-0000-4000-8000-000000000001'
+      INSERT INTO tenant_auth_policies (
+        tenant_id, max_failed_attempts, window_seconds,
+        base_lock_seconds, max_lock_seconds
+      ) VALUES (
+        'b0000000-0000-4000-8000-000000000001', 3, 60, 60, 600
+      )
+      ON CONFLICT (tenant_id) DO UPDATE SET
+        max_failed_attempts = EXCLUDED.max_failed_attempts,
+        window_seconds = EXCLUDED.window_seconds,
+        base_lock_seconds = EXCLUDED.base_lock_seconds,
+        max_lock_seconds = EXCLUDED.max_lock_seconds
     `);
     await redis.del(
       lockKey,
@@ -285,5 +298,61 @@ describeAuth('AuthService (integración)', () => {
            AND user_id = 'a0000000-0000-4000-8000-000000000002'`,
       );
     }
+  });
+
+  it('consume invitaciones una sola vez y nunca guarda el token en claro', async () => {
+    const userId = 'a0000000-0000-4000-8000-000000000002';
+    const original = await admin.query<{ password_hash: string }>(
+      `SELECT password_hash FROM users WHERE id = $1`,
+      [userId],
+    );
+    const action = createAuthActionToken(60_000);
+
+    try {
+      await admin.query(
+        `SELECT issue_auth_action_token($1, $2, 'invitation', $3, $4)`,
+        [
+          userId,
+          'a0000000-0000-4000-8000-000000000001',
+          action.tokenHash,
+          action.expiresAt,
+        ],
+      );
+      const stored = await admin.query<{ token_hash: string }>(
+        `SELECT token_hash FROM auth_action_tokens WHERE user_id = $1 AND purpose = 'invitation'`,
+        [userId],
+      );
+      expect(stored.rows[0]?.token_hash).toBe(action.tokenHash);
+      expect(stored.rows[0]?.token_hash).not.toBe(action.token);
+
+      await expect(
+        auth.completeInvitation({ token: action.token, password: 'NuevaClaveSegura2026!' }),
+      ).resolves.toBeUndefined();
+      await expect(
+        auth.completeInvitation({ token: action.token, password: 'OtraClaveSegura2026!' }),
+      ).rejects.toMatchObject({ status: 400 });
+    } finally {
+      await admin.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [
+        original.rows[0]!.password_hash,
+        userId,
+      ]);
+      await admin.query(`DELETE FROM auth_action_tokens WHERE user_id = $1`, [userId]);
+    }
+  });
+
+  it('responde igual al recuperar un correo existente o inexistente', async () => {
+    await auth.requestPasswordReset('guardia@demo-andina.test', '198.51.100.20');
+    await auth.requestPasswordReset('inexistente@example.test', '198.51.100.21');
+
+    expect(mail.passwordReset).toHaveBeenCalledTimes(1);
+    expect(mail.passwordReset).toHaveBeenCalledWith(
+      'guardia@demo-andina.test',
+      expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    );
+    await admin.query(
+      `DELETE FROM auth_action_tokens
+       WHERE user_id = 'a0000000-0000-4000-8000-000000000002'
+         AND purpose = 'password_reset'`,
+    );
   });
 });

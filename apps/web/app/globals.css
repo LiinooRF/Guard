@@ -66,6 +66,8 @@ a { color: inherit; text-decoration: none; }
 .form-message { margin: 0; border: 1px solid; border-radius: .65rem; padding: .7rem .8rem; font-size: .72rem; line-height: 1.45; }
 .form-message.error { border-color: #f2cbd0; color: #a93744; background: #fff5f6; }
 .form-message.offline { border-color: #efd7ae; color: #916217; background: #fff9ed; }
+.form-message.success { border-color: #cceadd; color: #13714c; background: #f1fbf6; }
+.recovery-link { min-height: 2.75rem; justify-self: center; padding: .5rem; }
 .demo-area { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
 .demo-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; color: #333b4e; font-size: .78rem; font-weight: 780; }
 .demo-heading small { color: #9298a8; font-weight: 600; }

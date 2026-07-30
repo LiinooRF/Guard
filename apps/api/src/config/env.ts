@@ -67,6 +67,10 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error('MAIL_DRIVER=smtp requiere SMTP_HOST');
   }
 
+  if (env.NODE_ENV === 'production' && env.MAIL_DRIVER !== 'smtp') {
+    throw new Error('en produccion MAIL_DRIVER debe ser smtp');
+  }
+
   // En produccion no se envia correo real por un canal sin cifrar.
   if (env.NODE_ENV === 'production' && env.MAIL_DRIVER === 'smtp' && !env.SMTP_SECURE) {
     throw new Error('en produccion MAIL_DRIVER=smtp requiere SMTP_SECURE=true');

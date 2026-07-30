@@ -33,8 +33,9 @@ export class CreateTenantUserDto {
   @IsIn(['SUPERVISOR', 'GUARDIA'])
   role!: 'SUPERVISOR' | 'GUARDIA';
 
+  @IsOptional()
   @IsString()
   @MinLength(12)
   @MaxLength(128)
-  password!: string;
+  password?: string;
 }

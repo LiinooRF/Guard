@@ -281,11 +281,16 @@ export function AdminManagement({
       email: data.get('email') || undefined,
       username: data.get('username') || undefined,
       role: data.get('role'),
-      password: data.get('password'),
+      password: data.get('password') || undefined,
     });
     if (!response.ok) return setMessage(await responseMessage(response));
+    const result = (await response.json()) as { invitationSent: boolean };
     form.reset();
-    setMessage('Usuario creado. Entrega la credencial por un canal seguro.');
+    setMessage(
+      result.invitationSent
+        ? 'Usuario creado. La invitación fue enviada a su correo.'
+        : 'Usuario creado. Entrega la credencial por un canal seguro.',
+    );
     startTransition(() => router.refresh());
   }
 
@@ -367,7 +372,7 @@ export function AdminManagement({
             <label>Rol<select name="role"><option value="GUARDIA">Guardia</option><option value="SUPERVISOR">Supervisor</option></select></label>
             <label>Correo (opcional)<input name="email" type="email" /></label>
             <label>Usuario (si no tiene correo)<input name="username" minLength={4} /></label>
-            <label>Clave inicial<input name="password" type="password" minLength={12} required autoComplete="new-password" /></label>
+            <label>Clave inicial (solo sin correo)<input name="password" type="password" minLength={12} autoComplete="new-password" /></label>
             <button className="primary-button" disabled={pending}>Crear usuario</button>
           </form>
         </section>

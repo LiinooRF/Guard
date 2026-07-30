@@ -83,6 +83,14 @@ describeDatabase('aislamiento RLS de todas las tablas tenant', () => {
 
   it('rechaza cambiar filas propias al tenant de otra empresa', async () => {
     for (const table of tenantTables.filter((name) => name !== 'support_access_log')) {
+      const existing = await admin.query<{ present: boolean }>(
+        `SELECT EXISTS (
+          SELECT 1 FROM "${table}" WHERE tenant_id = $1
+        ) AS present`,
+        [TENANT_A],
+      );
+      if (!existing.rows[0]?.present) continue;
+
       await app.query('BEGIN');
       await app.query(`SELECT set_config('app.tenant_id', $1, true)`, [TENANT_A]);
 

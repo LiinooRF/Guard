@@ -3,12 +3,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { argon2id, hash } from 'argon2';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
 
 import { AuthService } from '../auth/auth.service';
+import { createAuthActionToken } from '../auth/auth-action-token';
+import { MailService } from '../auth/mail.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
@@ -42,6 +45,7 @@ export class AdminService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly auth: AuthService,
+    private readonly mail: MailService,
   ) {}
 
   async listUsers() {
@@ -146,8 +150,14 @@ export class AdminService {
     if (!input.email && !input.username) {
       throw new BadRequestException('Debes indicar correo o nombre de usuario');
     }
+    if (!input.email && !input.password) {
+      throw new BadRequestException('La credencial sin correo requiere una clave inicial');
+    }
     const userId = randomUUID();
-    const passwordHash = await hash(input.password, {
+    const provisionalPassword = input.email
+      ? randomBytes(32).toString('base64url')
+      : input.password!;
+    const passwordHash = await hash(provisionalPassword, {
       type: argon2id,
       memoryCost: 65_536,
       timeCost: 3,
@@ -173,7 +183,24 @@ export class AdminService {
       }
       throw error;
     }
-    return { id: userId };
+    if (input.email) {
+      const invitation = createAuthActionToken(24 * 60 * 60 * 1000);
+      await this.tenantContext.manager.query(
+        `SELECT issue_auth_action_token(
+          $1, app_tenant_id(), 'invitation', $2, $3
+        )`,
+        [userId, invitation.tokenHash, invitation.expiresAt],
+      );
+      try {
+        await this.mail.invitation(input.email.toLowerCase(), invitation.token);
+      } catch {
+        throw new ServiceUnavailableException(
+          'No fue posible enviar la invitación. Inténtalo nuevamente.',
+        );
+      }
+      return { id: userId, invitationSent: true };
+    }
+    return { id: userId, invitationSent: false };
   }
 
   async setUserActive(userId: string, isActive: boolean) {

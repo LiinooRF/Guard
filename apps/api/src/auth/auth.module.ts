@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { MailService } from './mail.service';
 import { authRedisProvider } from './redis.provider';
 
 @Module({
@@ -25,12 +26,13 @@ import { authRedisProvider } from './redis.provider';
   controllers: [AuthController],
   providers: [
     AuthService,
+    MailService,
     authRedisProvider,
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
     },
   ],
-  exports: [AuthService],
+  exports: [AuthService, MailService],
 })
 export class AuthModule {}
