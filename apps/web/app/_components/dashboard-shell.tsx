@@ -1,0 +1,48 @@
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+
+import { Brand } from './brand';
+
+export function DashboardShell({
+  role,
+  title,
+  subtitle,
+  children,
+}: {
+  role: string;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <main className="dashboard-shell">
+      <aside className="sidebar">
+        <Brand compact />
+        <nav aria-label="Navegación principal">
+          <a className="nav-item active" href="#resumen"><span>⌂</span> Resumen</a>
+          <a className="nav-item" href="#operacion"><span>◎</span> Operación</a>
+          <a className="nav-item" href="#alertas"><span>△</span> Alertas</a>
+          <a className="nav-item" href="#informes"><span>▤</span> Informes</a>
+        </nav>
+        <div className="sidebar-footer">
+          <span className="avatar">MC</span>
+          <span><strong>Matías Castro</strong><small>{role}</small></span>
+        </div>
+      </aside>
+      <section className="dashboard-content">
+        <header className="topbar">
+          <div>
+            <span className="eyebrow">{role} · Vista demostrativa</span>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+          </div>
+          <div className="topbar-actions">
+            <span className="live-badge">● En línea</span>
+            <Link className="secondary-button" href="/">Cambiar rol</Link>
+          </div>
+        </header>
+        {children}
+      </section>
+    </main>
+  );
+}
