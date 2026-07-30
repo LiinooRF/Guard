@@ -1,6 +1,8 @@
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { DashboardShell } from '../../_components/dashboard-shell';
+import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 
 const ROLE_CONTENT = {
   guardia: {
@@ -50,6 +52,19 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
   const content = ROLE_CONTENT[role as keyof typeof ROLE_CONTENT];
   if (!content) notFound();
 
+  if (role === 'guardia') {
+    const data = await loadGuardHome();
+    const subtitle = data.hasAssignment && data.patrol
+      ? `Tu turno en ${data.patrol.siteName}.`
+      : 'Aquí verás tu próxima tarea cuando sea asignada.';
+
+    return (
+      <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined>
+        <GuardHome data={data} apiUrl={publicApiUrl()} />
+      </DashboardShell>
+    );
+  }
+
   return (
     <DashboardShell role={content.role} title={content.title} subtitle={content.subtitle}>
       <section className="stat-grid" id="resumen">
@@ -84,9 +99,6 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
             <span><small>Guardia</small><strong>Matías Castro</strong></span>
             <span><small>Tiempo estimado</small><strong>28 min</strong></span>
           </div>
-          {role === 'guardia' ? (
-            <button className="scan-button" type="button"><span>⌁</span> Escanear punto NFC</button>
-          ) : null}
         </article>
 
         <article className="alerts-card" id="alertas">
@@ -107,4 +119,37 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
       </section>
     </DashboardShell>
   );
+}
+
+function publicApiUrl() {
+  return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:13001/api';
+}
+
+async function loadGuardHome(): Promise<GuardHomeData> {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get('voxia_access');
+  if (!accessToken) return noAssignment();
+
+  const internalApiUrl = process.env.API_INTERNAL_URL ?? publicApiUrl();
+  try {
+    const response = await fetch(`${internalApiUrl}/guard/home`, {
+      headers: { cookie: `voxia_access=${accessToken.value}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return noAssignment();
+    return (await response.json()) as GuardHomeData;
+  } catch {
+    return {
+      ...noAssignment(),
+      message: 'No pudimos consultar tu turno. Revisa la conexión e intenta nuevamente.',
+    };
+  }
+}
+
+function noAssignment(): GuardHomeData {
+  return {
+    hasAssignment: false,
+    message: 'Inicia sesión como guardia para consultar una asignación real.',
+    synchronization: { pendingItems: 0 },
+  };
 }

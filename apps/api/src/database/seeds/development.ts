@@ -121,9 +121,18 @@ async function seedTenant(
       `INSERT INTO patrols
         (id, tenant_id, site_id, route_id, guard_id, scheduled_start_at,
          scheduled_end_at, expected_checkpoint_ids)
-       VALUES ($1, $2, $3, $4, $5, date_trunc('day', now()) + interval '22 hours',
-         date_trunc('day', now()) + interval '1 day 6 hours', $6::jsonb)
-       ON CONFLICT (id) DO NOTHING`,
+       VALUES (
+         $1, $2, $3, $4, $5,
+         (date_trunc('day', now() AT TIME ZONE 'America/Santiago') + interval '22 hours')
+           AT TIME ZONE 'America/Santiago',
+         (date_trunc('day', now() AT TIME ZONE 'America/Santiago') + interval '1 day 6 hours')
+           AT TIME ZONE 'America/Santiago',
+         $6::jsonb
+       )
+       ON CONFLICT (id) DO UPDATE SET
+         scheduled_start_at = EXCLUDED.scheduled_start_at,
+         scheduled_end_at = EXCLUDED.scheduled_end_at,
+         expected_checkpoint_ids = EXCLUDED.expected_checkpoint_ids`,
       [
         demo.patrolId,
         demo.tenantId,

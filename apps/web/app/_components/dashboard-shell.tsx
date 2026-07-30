@@ -8,22 +8,28 @@ export function DashboardShell({
   title,
   subtitle,
   children,
+  streamlined = false,
 }: {
   role: string;
   title: string;
   subtitle: string;
   children: ReactNode;
+  streamlined?: boolean;
 }) {
   return (
     <main className="dashboard-shell">
       <aside className="sidebar">
         <Brand compact />
-        <nav aria-label="Navegación principal">
-          <a className="nav-item active" href="#resumen"><span>⌂</span> Resumen</a>
-          <a className="nav-item" href="#operacion"><span>◎</span> Operación</a>
-          <a className="nav-item" href="#alertas"><span>△</span> Alertas</a>
-          <a className="nav-item" href="#informes"><span>▤</span> Informes</a>
-        </nav>
+        {streamlined ? (
+          <div className="guard-nav-note">Solo verás la tarea que debes realizar ahora.</div>
+        ) : (
+          <nav aria-label="Navegación principal">
+            <a className="nav-item active" href="#resumen"><span>⌂</span> Resumen</a>
+            <a className="nav-item" href="#operacion"><span>◎</span> Operación</a>
+            <a className="nav-item" href="#alertas"><span>△</span> Alertas</a>
+            <a className="nav-item" href="#informes"><span>▤</span> Informes</a>
+          </nav>
+        )}
         <div className="sidebar-footer">
           <span className="avatar">MC</span>
           <span><strong>Matías Castro</strong><small>{role}</small></span>
@@ -32,7 +38,7 @@ export function DashboardShell({
       <section className="dashboard-content">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{role} · Vista demostrativa</span>
+            <span className="eyebrow">{role}{streamlined ? ' · Operación' : ' · Vista demostrativa'}</span>
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
