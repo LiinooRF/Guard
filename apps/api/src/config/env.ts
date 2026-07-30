@@ -20,15 +20,26 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
-  // El proveedor de correo aun no esta decidido (issue #9). El codigo va contra
-  // una interfaz, asi que cambiar de proveedor es cambiar esta variable.
-  MAIL_DRIVER: z.enum(['mailpit', 'smtp', 'brevo']).default('mailpit'),
+  // El proveedor de correo aun NO esta decidido (issue #9). El codigo va contra
+  // la interfaz MailProvider, asi que elegir despues no cuesta nada.
+  //
+  //   mailpit  desarrollo: captura todo, nada sale a internet
+  //   smtp     cualquier servidor SMTP: Postal o Mailu self-hosted, un relay
+  //            externo, SES... solo cambian las SMTP_*
+  //
+  // El driver `smtp` generico cubre cualquier proveedor. No agregamos un
+  // adaptador por marca hasta que se decida y haya una razon concreta para
+  // usar su API en vez de SMTP.
+  MAIL_DRIVER: z.enum(['mailpit', 'smtp']).default('mailpit'),
   MAIL_FROM: z.string().default('VoxIA Control <no-reply@localhost>'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
-  BREVO_API_KEY: z.string().optional(),
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
 });
@@ -52,11 +63,13 @@ export function validateEnv(raw: Record<string, unknown>): Env {
 
   // Coherencia entre el driver de correo y sus credenciales: si no se valida
   // aca, el error aparece recien cuando alguien no recibe su invitacion.
-  if (env.MAIL_DRIVER === 'brevo' && !env.BREVO_API_KEY) {
-    throw new Error('MAIL_DRIVER=brevo requiere BREVO_API_KEY');
-  }
   if (env.MAIL_DRIVER === 'smtp' && !env.SMTP_HOST) {
     throw new Error('MAIL_DRIVER=smtp requiere SMTP_HOST');
+  }
+
+  // En produccion no se envia correo real por un canal sin cifrar.
+  if (env.NODE_ENV === 'production' && env.MAIL_DRIVER === 'smtp' && !env.SMTP_SECURE) {
+    throw new Error('en produccion MAIL_DRIVER=smtp requiere SMTP_SECURE=true');
   }
 
   return env;
