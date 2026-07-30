@@ -7,6 +7,7 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
   SUPERADMIN: [
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
     { href: '#empresas', icon: '▦', label: 'Empresas' },
+    { href: '#licencias', icon: '$', label: 'Licencias' },
     { href: '#alta', icon: '+', label: 'Nueva empresa' },
   ],
   ADMIN: [

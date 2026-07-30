@@ -33,6 +33,11 @@ export class PlatformController {
     return this.platform.createTenant(request.user.sub, input);
   }
 
+  @Get('billing/current')
+  billing(@Req() request: Request & { user: AuthenticatedUser }) {
+    return this.platform.currentBilling(request.user.sub);
+  }
+
   @Patch(':tenantId/status')
   updateStatus(
     @Req() request: Request & { user: AuthenticatedUser },

@@ -174,6 +174,9 @@ a { color: inherit; text-decoration: none; }
 .tenant-filters label { display: grid; gap: .3rem; color: var(--muted); font-size: .62rem; font-weight: 750; }
 .tenant-filters input, .tenant-filters select { min-width: 0; min-height: 2.7rem; border: 1px solid #d9deea; border-radius: .65rem; padding: 0 .7rem; color: var(--ink); background: #fbfcfe; }
 .limit-warning { display: inline-flex; margin-top: .45rem; border-radius: 99px; padding: .3rem .5rem; color: #916217; background: #fff6df; font-size: .6rem; font-weight: 800; }
+.section-explanation { margin: .7rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.55; }
+.billing-units { color: var(--blue); font-size: .7rem; font-weight: 800; }
+.billing-amount { justify-self: end; font-size: .8rem; }
 
 @media (min-width: 901px) {
   .login-shell { grid-template-columns: minmax(23rem, 46%) 1fr; }

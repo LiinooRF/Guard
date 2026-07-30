@@ -19,6 +19,16 @@ export interface PlatformTenant {
   lastPatrolAt: string | null;
 }
 
+export interface PlatformBilling {
+  tenantId: string;
+  displayName: string;
+  activeSiteCount: number;
+  activeSupervisorCount: number;
+  billableUnitCount: number;
+  netAmountClp: number;
+  billingMonth: string;
+}
+
 export interface TenantUser {
   id: string;
   email: string | null;
@@ -42,9 +52,11 @@ export interface TenantSite {
 
 export function PlatformManagement({
   tenants,
+  billing,
   apiUrl,
 }: {
   tenants: PlatformTenant[];
+  billing: PlatformBilling[];
   apiUrl: string;
 }) {
   const router = useRouter();
@@ -189,6 +201,25 @@ export function PlatformManagement({
         </div>
       </section>
       </div>
+      <section className="management-card management-wide" id="licencias">
+        <div className="card-heading">
+          <div><span className="eyebrow">Mes en curso</span><h2>Unidades facturables</h2></div>
+          <span className="status-pill">{billing.reduce((sum, item) => sum + item.billableUnitCount, 0)} unidades</span>
+        </div>
+        <p className="section-explanation">Se cobran recintos y supervisores activos. Los guardias no generan unidades.</p>
+        <div className="management-list">
+          {billing.map((item) => (
+            <article className="management-row billing-row" key={item.tenantId}>
+              <div>
+                <strong>{item.displayName}</strong>
+                <small>{item.activeSiteCount} recintos + {item.activeSupervisorCount} supervisores</small>
+              </div>
+              <span className="billing-units">{item.billableUnitCount} unidades</span>
+              <strong className="billing-amount">{formatClp(item.netAmountClp)}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
     </>
   );
 }
@@ -200,6 +231,14 @@ function PlatformMetric({ label, value, detail }: { label: string; value: number
 function formatActivity(value: string | null) {
   if (!value) return 'Sin rondas registradas';
   return new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium' }).format(new Date(value));
+}
+
+function formatClp(value: number) {
+  return new Intl.NumberFormat('es-CL', {
+    style: 'currency',
+    currency: 'CLP',
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 export function AdminManagement({

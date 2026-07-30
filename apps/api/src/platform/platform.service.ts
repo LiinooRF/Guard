@@ -26,6 +26,16 @@ interface TenantRow {
   created_at: Date;
 }
 
+interface BillingRow {
+  tenant_id: string;
+  display_name: string;
+  active_site_count: number;
+  active_supervisor_count: number;
+  billable_unit_count: number;
+  net_amount_clp: number;
+  billing_month: string;
+}
+
 @Injectable()
 export class PlatformService {
   constructor(private readonly dataSource: DataSource) {}
@@ -91,6 +101,21 @@ export class PlatformService {
     }
 
     return { id: tenantId, adminId };
+  }
+
+  async currentBilling(actorId: string) {
+    const rows = await this.withPlatformActor(actorId, (manager) =>
+      manager.query<BillingRow[]>(`SELECT * FROM platform_current_billing($1)`, [actorId]),
+    );
+    return rows.map((row) => ({
+      tenantId: row.tenant_id,
+      displayName: row.display_name,
+      activeSiteCount: row.active_site_count,
+      activeSupervisorCount: row.active_supervisor_count,
+      billableUnitCount: row.billable_unit_count,
+      netAmountClp: row.net_amount_clp,
+      billingMonth: row.billing_month,
+    }));
   }
 
   async setTenantStatus(

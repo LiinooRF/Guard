@@ -5,6 +5,7 @@ import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import {
   AdminManagement,
+  type PlatformBilling,
   type PlatformTenant,
   PlatformManagement,
   type TenantSite,
@@ -63,14 +64,17 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
   }
 
   if (role === 'superadmin') {
-    const tenants = await loadPlatformTenants();
+    const [tenants, billing] = await Promise.all([
+      loadPlatformTenants(),
+      loadPlatformBilling(),
+    ]);
     return (
       <DashboardShell
         role={content.role}
         title="Administración de la plataforma"
         subtitle="Crea empresas, entrega su administración y controla el acceso a la plataforma."
       >
-        <PlatformManagement tenants={tenants} apiUrl={publicApiUrl()} />
+        <PlatformManagement tenants={tenants} billing={billing} apiUrl={publicApiUrl()} />
       </DashboardShell>
     );
   }
@@ -217,6 +221,10 @@ async function authenticatedGet<T>(path: string, fallback: T): Promise<T> {
 
 function loadPlatformTenants() {
   return authenticatedGet<PlatformTenant[]>('/platform/tenants', []);
+}
+
+function loadPlatformBilling() {
+  return authenticatedGet<PlatformBilling[]>('/platform/tenants/billing/current', []);
 }
 
 function loadAdminUsers() {
