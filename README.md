@@ -9,6 +9,11 @@ cumplimiento baja del umbral configurado, el informe va directo al admin de la e
 El backlog completo son **19 épicas y 100 sub-tareas** en los
 [issues](https://github.com/4l4h3rg4/Guard/issues).
 
+> **Antes de escribir código, lee [CLAUDE.md](./CLAUDE.md).** Es el contexto completo del proyecto:
+> el modelo de dominio, las decisiones ya tomadas, las trampas del rubro (por qué el NFC no funciona
+> en un WebView, por qué la ruta "óptima" es un riesgo de seguridad, por qué las fotos no pueden venir
+> de la galería) y las cinco reglas que no se negocian. Sirve igual para personas y para agentes de IA.
+
 > **Nombre del producto vs nombre del repo.** El producto es **VoxIA Control**. El repositorio
 > todavía se llama `Guard`, que fue el nombre de trabajo inicial. Renombrarlo requiere permisos de
 > admin y está en la lista de pendientes al final de este archivo. `Guard` aparece solo en la URL de
