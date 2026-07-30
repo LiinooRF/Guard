@@ -45,6 +45,8 @@ jobs:
       REDIS_URL: redis://localhost:6379
       REDIS_TEST_URL: redis://localhost:6379
       JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
+      # Datos efímeros: la base del runner se destruye al terminar el job.
+      DEMO_PASSWORD: DemoGuardia2026!
 
     steps:
       - uses: actions/checkout@v6
