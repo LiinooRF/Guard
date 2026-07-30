@@ -53,3 +53,30 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           echo "docker-compose.yml es valido"
+
+  images:
+    name: imagen ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            dockerfile: Dockerfile.api
+          - service: web
+            dockerfile: Dockerfile.web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Construir imagen de ${{ matrix.service }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
