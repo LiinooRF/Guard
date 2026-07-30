@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { DATABASE_ENTITIES } from './data-source';
+import { TenantContextInterceptor } from './tenant-context/tenant-context.interceptor';
+import { TenantContextService } from './tenant-context/tenant-context.service';
 
 @Module({
   imports: [
@@ -22,5 +25,14 @@ import { DATABASE_ENTITIES } from './data-source';
       }),
     }),
   ],
+  providers: [
+    TenantContextService,
+    Reflector,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantContextInterceptor,
+    },
+  ],
+  exports: [TenantContextService],
 })
 export class DatabaseModule {}

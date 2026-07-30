@@ -6,6 +6,8 @@ import {
   ROLES,
 } from '@voxia/shared';
 
+import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
+
 /**
  * Endpoint de humo del scaffolding: prueba que `@voxia/shared` se resuelve
  * correctamente desde la API. Cuando Dev D implemente el issue #16, este
@@ -13,6 +15,7 @@ import {
  * plataforma -> tenant -> recinto -> punto.
  */
 @Controller('rules')
+@SkipTenantContext()
 export class RulesController {
   @Get('defaults')
   defaults() {
