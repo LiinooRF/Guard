@@ -6,8 +6,11 @@ El guardia recorre puntos de control, escanea la etiqueta NFC de cada uno, fotog
 críticos, y al escanear el último punto el informe se genera y se envía **automáticamente**. Si el
 cumplimiento baja del umbral configurado, el informe va directo al admin de la empresa.
 
-El backlog completo son **19 épicas y 100 sub-tareas** en los
+El backlog completo son **137 issues** —20 épicas y sus sub-tareas— en los
 [issues](https://github.com/4l4h3rg4/Guard/issues).
+
+**Si un issue no tiene a nadie asignado, está libre.** Antes de empezar a trabajarlo, asígnatelo: es
+lo único que impide que dos personas hagan lo mismo.
 
 > **Antes de escribir código, lee [CLAUDE.md](./CLAUDE.md).** Es el contexto completo del proyecto:
 > el modelo de dominio, las decisiones ya tomadas, las trampas del rubro (por qué el NFC no funciona
@@ -148,12 +151,17 @@ Sé honesto con lo que está probado y lo que no:
 
 | | Estado |
 |---|---|
-| `npm install` del workspace | **verificado** — 603 paquetes, sin errores |
-| `npm run typecheck` (shared + api + web) | **verificado** — sin errores |
-| `npm run build` (shared + api + web) | **verificado** — los tres compilan |
-| `docker compose up` | **sin verificar** — Docker Desktop estaba apagado al momento de armarlo |
+| `npm install` del workspace | **verificado en CI** |
+| `npm run typecheck` (shared + api + web) | **verificado en CI** |
+| `npm run build` (shared + api + web) | **verificado en CI** |
+| Sintaxis del `docker-compose.yml` | **verificado en CI** |
+| Construcción de las imágenes de `api` y `web` | **verificado en CI** |
+| `docker compose up` levantando los servicios | **sin verificar** |
 | API respondiendo en runtime | **sin verificar** |
-| `apps/mobile` | **sin verificar** — lo inicializa Dev C, ver su README |
+| `apps/mobile` | **sin inicializar** — lo hace Dev C, ver su README |
+
+Que la CI construya la imagen prueba que el Dockerfile compila, **no** que el servicio arranque y
+responda. Son dos cosas distintas y las dos últimas filas siguen abiertas.
 
 ---
 

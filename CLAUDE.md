@@ -116,6 +116,20 @@ de init falla el arranque si lo detectara.
 
 > **Trampa concreta**: usa `SET LOCAL app.tenant_id` dentro de transacción, nunca `SET`. Con `SET`, la
 > variable queda pegada a la conexión del pool y el siguiente request hereda el tenant anterior.
+>
+> En la práctica se resuelve con `set_config('app.tenant_id', $1, true)` — el tercer parámetro en
+> `true` es lo mismo que `SET LOCAL`, y además acepta parámetro ligado, así que no hay que concatenar
+> el UUID dentro del SQL.
+
+Tres cosas que se derivan de esto y se equivocan seguido:
+
+1. **`ENABLE ROW LEVEL SECURITY` no basta: falta `FORCE`.** Sin `FORCE`, el dueño de la tabla se salta
+   sus propias políticas, y las migraciones y el seed corren justamente como dueño.
+2. **La política tiene que fallar cerrada.** `NULLIF(current_setting('app.tenant_id', true), '')::uuid`
+   devuelve `NULL` cuando no hay contexto, y `tenant_id = NULL` no es verdadero: sin contexto no se ve
+   nada. Nunca escribas una política que abra cuando el valor está vacío.
+3. **Migraciones y aplicación usan roles distintos.** El rol de la API no debe poder crear ni alterar
+   tablas. Ver `CONTRIBUTING.md` → "Base de datos": es la trampa que ya nos costó un PR.
 
 ### 2. La autorización se resuelve en el servidor
 
@@ -240,6 +254,7 @@ entregada por el admin.
 | Mapas | **OpenStreetMap** (Leaflet o MapLibre) | Google Maps exige tarjeta de crédito, y dentro de un recinto privado ninguno de los dos tiene datos útiles |
 | Correo | Interfaz `MailProvider` + driver `smtp` genérico | Un solo adaptador SMTP cubre cualquier proveedor |
 | Optimización de rutas | **Descartada** | Ver "la ruta óptima es un problema de seguridad" |
+| Chat en terreno | **Descartado** | Todo equipo de seguridad en Chile ya opera con WhatsApp y no se le gana en eso. La única razón válida sería la trazabilidad, y hoy no justifica el costo. Documentado en #122 |
 | Crash reporting | Sentry, opcional y fuera del MVP | |
 
 ### Sobre el correo
@@ -263,12 +278,19 @@ Están documentadas dentro de sus issues, con opciones y trade-offs. **No las ci
 | Proveedor de correo | #9 |
 | Modelo de licencias por tenant | #2 |
 | Routing de dominio white-label (incluye cómo resuelve el tenant la app móvil, que no tiene barra de direcciones) | #19 |
+| Si el control de acceso de visitantes entra al producto | #139 |
+| Cómo entra el `SUPERADMIN` al contexto de tenant sin saltarse RLS | #45 |
+
+La última es la más urgente y bloquea código que ya está escrito: el interceptor exige `tenant_id` en
+la sesión, y el `SUPERADMIN` por definición no tiene uno. La salida **no** es marcar sus endpoints
+para que se salten el contexto —eso deja al rol más poderoso corriendo sin RLS—, sino que abra un
+acceso con motivo y vencimiento registrado en `support_access_log`.
 
 ---
 
 ## El backlog
 
-**19 épicas y 100 sub-tareas** en los issues. Las épicas llevan label `epic` y **no se implementan
+**137 issues: 20 épicas y el resto sub-tareas.** Las épicas llevan label `epic` y **no se implementan
 directo**: agrupan las sub-tareas, que son el trabajo real.
 
 Orden de dependencias — nada arranca antes que #6 y #7:
@@ -277,10 +299,16 @@ Orden de dependencias — nada arranca antes que #6 y #7:
 #6 infra ──► #7 datos+RLS ──► #8 sesiones ──► #1 login ──┬─► #3 admin
                           └─► #16 reglas ──► #12 rondas ─┼─► #4 supervisor
                               #10 recintos ─► #11 NFC ───┴─► #5 app guardia
-                                             #14 offline
+                                             #14 offline    #122 eventos
                                              #15 mapas ──► #17 informes
                                                            #18 Play Store
 ```
+
+**#122 (eventos en terreno)** es la épica más nueva y la que más se subestima: el botón de pánico y el
+libro de novedades comparten un solo modelo —un evento con GPS, fotos y nivel de criticidad—, donde el
+pánico es simplemente la criticidad máxima con entrega garantizada. No los implementes como módulos
+separados. El libro es **append-only**: termina en juicios laborales, y un registro editable no sirve
+como prueba.
 
 Labels: `area:*` (infra, db, auth, api, web, mobile, notif, reports, geo) · `role:*` · `P0|P1|P2` ·
 `mvp` · `spike`.
@@ -323,10 +351,15 @@ Lo verificado y lo que no, para que no asumas de más:
 
 | | Estado |
 |---|---|
-| `npm install`, `typecheck`, `build` de shared/api/web | **verificado** |
-| `docker compose up` | **sin verificar** |
+| `npm install`, `typecheck`, `build` de shared/api/web | **verificado en CI** |
+| Sintaxis del `docker-compose.yml` | **verificado en CI** |
+| Construcción de las imágenes de `api` y `web` | **verificado en CI** |
+| `docker compose up` levantando los servicios de verdad | **sin verificar** |
 | API respondiendo en runtime | **sin verificar** |
 | `apps/mobile` | **sin inicializar** — es el primer paso de #18 |
+
+Que la CI construya la imagen no es lo mismo que que el servicio arranque y responda: lo primero
+prueba que el Dockerfile compila, no que la aplicación funciona.
 
 El scaffolding tiene dos endpoints de humo: `/health` y `/api/rules/defaults`. El segundo existe solo
 para probar que `@voxia/shared` se resuelve desde la API; se reemplaza al implementar #16.
