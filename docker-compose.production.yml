@@ -82,7 +82,7 @@ services:
       - /bin/sh
       - -ec
       - >-
-        node node_modules/typeorm/cli.js migration:run
+        node apps/api/node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js &&
         exec node apps/api/dist/main.js
     volumes:
@@ -91,7 +91,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=voxia_internal
-      - traefik.http.routers.api.rule=Host(`${APP_DOMAIN}`) && PathPrefix(`/api`)
+      - traefik.http.routers.api.rule=Host(`${APP_DOMAIN}`) && (PathPrefix(`/api`) || Path(`/health`) || Path(`/ready`))
       - traefik.http.routers.api.entrypoints=websecure
       - traefik.http.routers.api.tls.certresolver=letsencrypt
       - traefik.http.services.api.loadbalancer.server.port=3001
@@ -137,7 +137,10 @@ services:
 
   traefik:
     <<: *security
-    image: traefik:v3.5
+    image: traefik:v3.7.9
+    environment:
+      # Docker Engine 29 ya no acepta el API legado que algunos builds negocian.
+      DOCKER_API_VERSION: "1.44"
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
@@ -159,7 +162,15 @@ services:
       - letsencrypt_data:/letsencrypt
     networks: [edge, internal]
     healthcheck:
-      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      test:
+        [
+          "CMD",
+          "traefik",
+          "healthcheck",
+          "--ping",
+          "--ping.entrypoint=ping",
+          "--entrypoints.ping.address=:8082",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
