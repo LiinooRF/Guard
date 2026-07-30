@@ -1,0 +1,42 @@
+# dependencias
+node_modules/
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# entorno — NUNCA commitear valores reales
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# expo
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+android/
+ios/
+
+# evidencia fotografica en desarrollo
+storage/
+uploads/
+
+# logs y coverage
+*.log
+npm-debug.log*
+coverage/
+
+# editores y sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

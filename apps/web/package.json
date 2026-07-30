@@ -1,0 +1,24 @@
+{
+  "name": "@voxia/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Panel web de VoxIA Control (Next.js) — SUPERADMIN, ADMIN y SUPERVISOR",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@voxia/shared": "*",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "voxia-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS multi-tenant de monitoreo de rondas de vigilancia con etiquetas NFC",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "infra:reset": "docker compose down -v && docker compose up -d",
+    "dev:api": "npm run dev --workspace @voxia/api",
+    "dev:web": "npm run dev --workspace @voxia/web",
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "build": "npm run build --workspace @voxia/shared && npm run build --workspace @voxia/api && npm run build --workspace @voxia/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}

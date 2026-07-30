@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------------------
+# VoxIA Control — dueños por area.
+#
+# Los 4 carriles del mes 1, elegidos para que se bloqueen lo menos posible:
+#
+#   Dev A  Plataforma   infra Docker/Dokploy (#6), datos + RLS (#7), correo (#9)
+#   Dev B  Auth y web   sesiones (#8), login 4 roles (#1), panel admin (#3)
+#   Dev C  Movil        escaneo NFC (#11), offline (#14), app guardia (#5), Expo (#18)
+#   Dev D  Dominio      recintos (#10), rondas (#12), reglas (#16), mapas (#15), informes (#17)
+#
+# PENDIENTE: reemplazar los marcadores por los usuarios reales de GitHub.
+# Colaboradores actuales: 4l4h3rg4 (admin), LiinooRF, BrunoAle-115.
+# Falta invitar al cuarto — eso lo tiene que hacer 4l4h3rg4.
+#
+# CODEOWNERS solo pide revision automatica. Para que sea obligatoria hace falta
+# proteccion de rama, que tambien requiere permisos de admin.
+# ---------------------------------------------------------------------------
+
+# Por defecto, cualquiera del equipo puede revisar.
+*                       @4l4h3rg4
+
+# Plataforma — Dev A
+/docker/                @4l4h3rg4
+/docker-compose.yml     @4l4h3rg4
+/.github/workflows/     @4l4h3rg4
+
+# Auth y web — Dev B
+# /apps/web/            @dev-b
+
+# Movil — Dev C
+# /apps/mobile/         @dev-c
+
+# Dominio — Dev D
+# /apps/api/src/rules/  @dev-d
+
+# El contrato compartido rompe a los otros tres si cambia:
+# que lo revise mas de una persona.
+/packages/shared/       @4l4h3rg4 @LiinooRF
