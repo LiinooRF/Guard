@@ -45,3 +45,68 @@ export function crossesTenants(role: Role): boolean {
 export function isScopedToAssignedSites(role: Role): boolean {
   return role === 'SUPERVISOR';
 }
+
+/**
+ * Acciones autorizables del producto.
+ *
+ * Los guards consumen este catalogo; no contienen `if (role === ...)`. Agregar
+ * un permiso nuevo solo exige declararlo aca y asignarlo en ROLE_PERMISSIONS.
+ * El alcance por tenant y por recinto se valida ademas del permiso.
+ */
+export const PERMISSIONS = [
+  'platform:tenants:manage',
+  'platform:metrics:read',
+  'platform:branding:manage',
+  'platform:support:access',
+  'tenant:users:manage',
+  'tenant:sites:manage',
+  'tenant:rules:manage',
+  'tenant:stats:read',
+  'tenant:audit:read',
+  'routes:manage',
+  'shifts:manage',
+  'patrols:monitor',
+  'patrols:execute',
+  'reports:read',
+  'incidents:create',
+] as const;
+
+export const permissionSchema = z.enum(PERMISSIONS);
+export type Permission = z.infer<typeof permissionSchema>;
+
+/**
+ * Fuente de verdad de la matriz rol x permiso.
+ *
+ * No hay herencia implicita entre roles: SUPERADMIN administra la plataforma,
+ * pero no opera silenciosamente dentro de un tenant. El acceso de soporte es
+ * un permiso explicito y cada uso debe quedar auditado.
+ */
+export const ROLE_PERMISSIONS = {
+  SUPERADMIN: [
+    'platform:tenants:manage',
+    'platform:metrics:read',
+    'platform:branding:manage',
+    'platform:support:access',
+  ],
+  ADMIN: [
+    'tenant:users:manage',
+    'tenant:sites:manage',
+    'tenant:rules:manage',
+    'tenant:stats:read',
+    'tenant:audit:read',
+    'reports:read',
+  ],
+  SUPERVISOR: [
+    'routes:manage',
+    'shifts:manage',
+    'patrols:monitor',
+    'reports:read',
+    'incidents:create',
+  ],
+  GUARDIA: ['patrols:execute', 'incidents:create'],
+} as const satisfies Record<Role, readonly Permission[]>;
+
+export function hasPermission(role: Role, permission: Permission): boolean {
+  const granted: readonly Permission[] = ROLE_PERMISSIONS[role];
+  return granted.includes(permission);
+}
