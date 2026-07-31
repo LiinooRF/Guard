@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { validateEnv } from './config/env';
 import { HealthController } from './health/health.controller';
+import { MailModule } from './mail/mail.module';
 import { RulesController } from './rules/rules.controller';
 
 @Module({
@@ -13,6 +14,7 @@ import { RulesController } from './rules/rules.controller';
       envFilePath: ['../../.env'],
       validate: validateEnv,
     }),
+    MailModule,
   ],
   controllers: [HealthController, RulesController],
 })

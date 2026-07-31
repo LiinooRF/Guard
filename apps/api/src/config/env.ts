@@ -32,8 +32,10 @@ const envSchema = z.object({
   // usar su API en vez de SMTP.
   MAIL_DRIVER: z.enum(['mailpit', 'smtp']).default('mailpit'),
   MAIL_FROM: z.string().default('VoxIA Control <no-reply@localhost>'),
+  MAILPIT_HOST: z.string().default('localhost'),
+  MAILPIT_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_SECURE: z
