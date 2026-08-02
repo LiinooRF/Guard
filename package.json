@@ -21,7 +21,14 @@
     "dev:mobile": "npm --prefix apps/mobile run start",
     "build": "npm run build --workspace @voxia/shared && npm run build --workspace @voxia/api && npm run build --workspace @voxia/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "eslint . --max-warnings 0",
     "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.22",
+    "typescript-eslint": "^8.65.0"
   }
 }
