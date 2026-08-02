@@ -1,0 +1,136 @@
+# Stack de VoxIA Control para desplegar EN DOKPLOY.
+#
+# Por que existe este archivo y no reusamos docker-compose.production.yml:
+# aquel trae su propio Traefik en los puertos 80 y 443, que es exactamente
+# donde ya escucha el Traefik de Dokploy. Los dos no pueden convivir.
+#
+#   docker-compose.yml             -> desarrollo local (postgres, redis, mailpit)
+#   docker-compose.production.yml  -> VPS pelado, sin Dokploy, con su propio Traefik
+#   docker-compose.dokploy.yml     -> este: Dokploy pone el proxy, el TLS y el dominio
+#
+# En Dokploy, `api` y `web` se publican asignandoles un dominio desde la
+# pestaña Domains del servicio. Por eso estan en `dokploy-network`, que es la
+# red externa que crea Dokploy. `postgres` y `redis` NO estan ahi a proposito:
+# no se exponen a internet nunca.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Los lee 01-app-role.sh para crear el rol de la aplicacion.
+      DATABASE_APP_USER: ${DATABASE_APP_USER}
+      DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # CRITICO: aca vive 01-app-role.sh, que crea voxia_app sin BYPASSRLS y
+      # aborta el arranque si el rol quedara con ese privilegio. Una base creada
+      # sin este montaje pierde la unica verificacion del aislamiento entre
+      # empresas. No lo quites.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - internal
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    # Corre las migraciones (como dueño del esquema, via MIGRATION_DATABASE_URL)
+    # y recien despues arranca la API. Con una sola replica esto es seguro; si
+    # algun dia hay varias, las migraciones pasan a un paso de deploy aparte
+    # para que no corran en paralelo.
+    command:
+      - sh
+      - -c
+      - >-
+        node node_modules/typeorm/cli.js migration:run
+        -d apps/api/dist/database/data-source.js
+        && exec node apps/api/dist/main.js
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # La aplicacion en runtime: sin permiso para crear ni alterar tablas.
+      DATABASE_URL: ${DATABASE_URL}
+      # Las migraciones usan al dueño del esquema, no al rol de la app.
+      # Si las dos apuntaran al mismo rol, el primer CREATE TABLE falla con
+      # "permission denied for schema public".
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
+      MAIL_DRIVER: ${MAIL_DRIVER}
+      MAIL_FROM: ${MAIL_FROM}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_SECURE: ${SMTP_SECURE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - internal
+      - dokploy-network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+      - dokploy-network
+
+networks:
+  # La crea Dokploy al instalarse. `external` significa "ya existe, no la crees".
+  dokploy-network:
+    external: true
+  # Sin salida a internet: aca viven postgres y redis.
+  internal:
+
+volumes:
+  postgres_data:
+  redis_data:
