@@ -2,13 +2,15 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, staging]
   push:
     branches: [main, staging]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -107,6 +109,72 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           echo "docker-compose.yml es valido"
+
+      - name: Validar el compose de produccion
+        env:
+          POSTGRES_USER: voxia
+          POSTGRES_PASSWORD: validation-only
+          POSTGRES_DB: voxia
+          DATABASE_APP_USER: voxia_app
+          DATABASE_APP_PASSWORD: validation-app-only
+          REDIS_PASSWORD: validation-redis-only
+          JWT_SECRET: validation-secret-with-more-than-48-characters
+          MAIL_FROM: VoxIA <no-reply@example.test>
+          SMTP_HOST: smtp.example.test
+          SMTP_USER: validation
+          SMTP_PASSWORD: validation-only
+          APP_DOMAIN: control.example.test
+          ACME_EMAIL: operations@example.test
+        run: docker compose -f docker-compose.production.yml config --quiet
+
+  secrets:
+    name: historial sin secretos
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Escanear el historial completo
+        run: >-
+          docker run --rm
+          -v "$PWD:/repo"
+          ghcr.io/gitleaks/gitleaks:v8.30.1
+          git /repo --redact --no-banner
+
+  mobile:
+    name: shell Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Instalar dependencias aisladas
+        run: npm ci
+
+      - name: Auditar dependencias
+        run: npm audit --omit=dev
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validar configuracion Android de produccion
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_WEB_URL: https://control.example.test
+        run: npx expo config --type public --json >/dev/null
 
   images:
     name: imagen ${{ matrix.service }}

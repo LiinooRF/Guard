@@ -1,17 +1,36 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { ROLES } from '@voxia/shared';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
+import { IsUUID } from 'class-validator';
 import type { Request, Response } from 'express';
 
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
 import type { AuthenticatedUser } from './auth.guard';
 import { AuthService } from './auth.service';
 import type { AuthenticatedSession } from './auth.types';
+import { CompleteAuthActionDto } from './dto/complete-auth-action.dto';
 import { Public } from './decorators/public.decorator';
-import { Roles } from './decorators/roles.decorator';
+import { Permissions } from './decorators/permissions.decorator';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+class SessionParam {
+  @IsUUID()
+  sessionId!: string;
+}
 
 @Controller('auth')
 @SkipTenantContext()
@@ -26,7 +45,11 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.auth.login(input, request.ip);
+    const result = await this.auth.login(
+      input,
+      request.ip,
+      request.get('user-agent') ?? 'Dispositivo desconocido',
+    );
     if ('requiresTenantSelection' in result) return result;
 
     this.setSessionCookies(response, result);
@@ -65,8 +88,35 @@ export class AuthController {
     };
   }
 
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Public()
+  async requestPasswordReset(
+    @Body() input: RequestPasswordResetDto,
+    @Req() request: Request,
+  ): Promise<{ message: string }> {
+    await this.auth.requestPasswordReset(input.email, request.ip ?? 'unknown');
+    return {
+      message: 'Si el correo está registrado, recibirás instrucciones para continuar.',
+    };
+  }
+
+  @Post('password-reset/complete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
+  completePasswordReset(@Body() input: CompleteAuthActionDto): Promise<void> {
+    return this.auth.completePasswordReset(input);
+  }
+
+  @Post('invitations/complete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Public()
+  completeInvitation(@Body() input: CompleteAuthActionDto): Promise<void> {
+    return this.auth.completeInvitation(input);
+  }
+
   @Get('session')
-  @Roles(...ROLES)
+  @Permissions('account:sessions:manage')
   session(@Req() request: Request & { user?: AuthenticatedUser }) {
     return {
       user: request.user
@@ -77,6 +127,36 @@ export class AuthController {
           }
         : null,
     };
+  }
+
+  @Get('sessions')
+  @Permissions('account:sessions:manage')
+  sessions(@Req() request: Request & { user: AuthenticatedUser }) {
+    return this.auth.listSessions(request.user.sub, request.user.sid);
+  }
+
+  @Delete('sessions/:sessionId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('account:sessions:manage')
+  async revokeSession(
+    @Param() params: SessionParam,
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const revoked = await this.auth.revokeSession(request.user.sub, params.sessionId);
+    if (!revoked) throw new NotFoundException('Sesión no encontrada');
+    if (params.sessionId === request.user.sid) this.clearSessionCookies(response);
+  }
+
+  @Delete('sessions')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions('account:sessions:manage')
+  async revokeAllSessions(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    await this.auth.revokeAllSessions(request.user.sub);
+    this.clearSessionCookies(response);
   }
 
   private setSessionCookies(response: Response, session: AuthenticatedSession): void {
@@ -96,5 +176,10 @@ export class AuthController {
       ...common,
       maxAge: THIRTY_DAYS_MS,
     });
+  }
+
+  private clearSessionCookies(response: Response): void {
+    response.clearCookie('voxia_access', { path: '/' });
+    response.clearCookie('voxia_refresh', { path: '/' });
   }
 }

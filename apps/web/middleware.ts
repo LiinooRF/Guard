@@ -1,4 +1,3 @@
-import { jwtVerify } from 'jose/jwt/verify';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -19,17 +18,16 @@ export async function middleware(request: NextRequest) {
   }
   if (!accessToken) return clearSessionAndRedirect(request);
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return NextResponse.redirect(new URL('/', request.url));
+  const role = await resolveSession(request, accessToken);
+  if (role) {
+    if (
+      role === 'GUARDIA' &&
+      !request.headers.get('user-agent')?.includes('VoxIAAndroid/')
+    ) {
+      return clearSessionAndRedirect(request);
+    }
 
-  try {
-    const { payload } = await jwtVerify(accessToken, new TextEncoder().encode(secret), {
-      algorithms: ['HS256'],
-      issuer: 'voxia-api',
-      audience: 'voxia-clients',
-    });
-    const expectedPath = ROLE_PATHS[payload.role as keyof typeof ROLE_PATHS];
-    if (!expectedPath) return NextResponse.redirect(new URL('/', request.url));
+    const expectedPath = ROLE_PATHS[role];
 
     const requestedRole = request.nextUrl.pathname.split('/')[2];
     if (requestedRole !== expectedPath) {
@@ -37,12 +35,40 @@ export async function middleware(request: NextRequest) {
     }
 
     return NextResponse.next();
+  }
+
+  if (refreshToken) {
+    const refreshed = await refreshSession(request, refreshToken);
+    if (refreshed) return refreshed;
+  }
+  return clearSessionAndRedirect(request);
+}
+
+async function resolveSession(
+  request: NextRequest,
+  accessToken: string,
+): Promise<keyof typeof ROLE_PATHS | null> {
+  const apiUrl = process.env.API_INTERNAL_URL;
+  if (!apiUrl) return null;
+
+  try {
+    const response = await fetch(`${apiUrl}/auth/session`, {
+      headers: {
+        cookie: `voxia_access=${accessToken}`,
+        'x-request-id': request.headers.get('x-request-id') ?? crypto.randomUUID(),
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+
+    const result = (await response.json()) as {
+      user?: { role?: string } | null;
+    };
+    return result.user?.role && result.user.role in ROLE_PATHS
+      ? (result.user.role as keyof typeof ROLE_PATHS)
+      : null;
   } catch {
-    if (refreshToken) {
-      const refreshed = await refreshSession(request, refreshToken);
-      if (refreshed) return refreshed;
-    }
-    return clearSessionAndRedirect(request);
+    return null;
   }
 }
 

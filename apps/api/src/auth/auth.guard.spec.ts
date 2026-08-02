@@ -1,6 +1,9 @@
 import { ForbiddenException, UnauthorizedException, type ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
+import type { DataSource } from 'typeorm';
+import type Redis from 'ioredis';
+import { PERMISSIONS, ROLES, ROLE_PERMISSIONS, type Role } from '@voxia/shared';
 
 import { AuthGuard, type AuthenticatedUser } from './auth.guard';
 
@@ -31,7 +34,20 @@ function createGuard(metadata: Record<string, unknown>, payload = VALID_USER) {
   const reflector = {
     getAllAndOverride: jest.fn((key: string) => metadata[key]),
   } as unknown as Reflector;
-  return { guard: new AuthGuard(jwt, reflector), jwt };
+  const dataSource = {
+    query: jest.fn().mockResolvedValue([{ active: true }]),
+  } as unknown as DataSource;
+  const redis = {
+    exists: jest.fn().mockResolvedValue(0),
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue('OK'),
+  } as unknown as Redis;
+  return {
+    guard: new AuthGuard(jwt, reflector, dataSource, redis),
+    jwt,
+    dataSource,
+    redis,
+  };
 }
 
 describe('AuthGuard', () => {
@@ -47,15 +63,15 @@ describe('AuthGuard', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('exige token para endpoints con roles', async () => {
-    const { guard } = createGuard({ 'auth:requiredRoles': ['GUARDIA'] });
+  it('exige token para endpoints con permisos', async () => {
+    const { guard } = createGuard({ 'auth:requiredPermissions': ['patrols:execute'] });
     await expect(guard.canActivate(context())).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('adjunta identidad válida cuando rol y tenant coinciden', async () => {
     const request = { headers: {}, cookies: { voxia_access: 'valid' } };
     const { guard } = createGuard({
-      'auth:requiredRoles': ['GUARDIA'],
+      'auth:requiredPermissions': ['patrols:execute'],
       'auth:requiresTenant': true,
     });
 
@@ -63,10 +79,51 @@ describe('AuthGuard', () => {
     expect(request).toMatchObject({ user: VALID_USER });
   });
 
-  it('devuelve 403 cuando el rol no está autorizado', async () => {
-    const { guard } = createGuard({ 'auth:requiredRoles': ['ADMIN'] });
+  describe.each(ROLES)('matriz completa para %s', (role) => {
+    it.each(PERMISSIONS)('%s', async (permission) => {
+      const payload = { ...VALID_USER, role, tenant_id: tenantFor(role) };
+      const { guard } = createGuard(
+        {
+          'auth:requiredPermissions': [permission],
+          'auth:requiresTenant': role !== 'SUPERADMIN',
+        },
+        payload,
+      );
+      const result = guard.canActivate(context({ cookies: { voxia_access: 'valid' } }));
+
+      if ((ROLE_PERMISSIONS[role] as readonly string[]).includes(permission)) {
+        await expect(result).resolves.toBe(true);
+      } else {
+        await expect(result).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+  });
+
+  it('invalida de inmediato una sesión de tenant suspendido o usuario desactivado', async () => {
+    const { guard, dataSource } = createGuard({
+      'auth:requiredPermissions': ['patrols:execute'],
+      'auth:requiresTenant': true,
+    });
+    jest.mocked(dataSource.query).mockResolvedValue([{ active: false }]);
+
     await expect(
       guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('invalida inmediatamente una familia de sesión revocada', async () => {
+    const { guard, redis } = createGuard({
+      'auth:requiredPermissions': ['patrols:execute'],
+      'auth:requiresTenant': true,
+    });
+    jest.mocked(redis.exists).mockResolvedValue(1);
+
+    await expect(
+      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
+
+function tenantFor(role: Role): string | null {
+  return role === 'SUPERADMIN' ? null : VALID_USER.tenant_id;
+}
