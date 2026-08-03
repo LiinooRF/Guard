@@ -1,0 +1,75 @@
+# Despliega staging en el VPS SIN abrir el VPS a internet.
+#
+# El VPS vive solo dentro del tailnet (decision de seguridad deliberada), asi
+# que el webhook clasico de GitHub -> Dokploy no puede llegar. En su lugar, el
+# runner de Actions se une al tailnet con una llave efimera, dispara el deploy
+# por la API de Dokploy y espera el resultado.
+#
+# Necesita dos secrets del repo (Settings -> Secrets and variables -> Actions):
+#   TS_AUTHKEY       llave efimera de Tailscale (admin -> Settings -> Keys ->
+#                    Auth keys -> Generate: marcar "Ephemeral" y "Reusable")
+#   DOKPLOY_API_KEY  token de la API de Dokploy
+#
+# Sin los secrets el job termina en verde sin hacer nada, para no bloquear
+# los merges mientras no esten configurados.
+
+name: Deploy staging
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: desplegar en el VPS (via tailnet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_URL: http://100.96.183.27:3000
+      COMPOSE_ID: Fx-sNa4HYXy6wnE36cPbL
+
+    steps:
+      - name: Verificar secrets
+        id: check
+        run: |
+          if [ -n "$TS_AUTHKEY" ] && [ -n "$DOKPLOY_API_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "TS_AUTHKEY o DOKPLOY_API_KEY no configurados: no se despliega."
+          fi
+
+      - name: Unirse al tailnet
+        if: steps.check.outputs.ready == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: ""
+
+      - name: Disparar el deploy y esperar el resultado
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set -eu
+          curl -sf --max-time 30 -X POST "$DOKPLOY_URL/api/compose.deploy" \
+            -H "x-api-key: $DOKPLOY_API_KEY" -H "Content-Type: application/json" \
+            -d "{\"composeId\":\"$COMPOSE_ID\"}"
+          echo "deploy disparado, esperando..."
+          for i in $(seq 1 80); do
+            sleep 15
+            status=$(curl -sf --max-time 30 "$DOKPLOY_URL/api/compose.one?composeId=$COMPOSE_ID" \
+              -H "x-api-key: $DOKPLOY_API_KEY" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("composeStatus",""))')
+            echo "[$((i*15))s] $status"
+            if [ "$status" = "done" ]; then
+              echo "deploy OK"; exit 0
+            fi
+            if [ "$status" = "error" ] && [ "$i" -gt 2 ]; then
+              echo "el deploy termino en error: revisar Deployments en Dokploy"; exit 1
+            fi
+          done
+          echo "sin resultado tras 20 minutos"; exit 1
