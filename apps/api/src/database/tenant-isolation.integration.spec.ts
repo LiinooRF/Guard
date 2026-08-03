@@ -35,6 +35,14 @@ describeDatabase('aislamiento RLS de todas las tablas tenant', () => {
     await Promise.all([admin.end(), app.end()]);
   });
 
+  it('el rol de aplicacion no puede saltarse RLS', async () => {
+    const { rows } = await admin.query(
+      `SELECT rolbypassrls AS bypass, rolsuper AS super FROM pg_roles WHERE rolname = 'voxia_app'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ bypass: false, super: false });
+  });
+
   it('obliga RLS y al menos una política en el 100% de tablas con tenant_id', async () => {
     expect(tenantTables.length).toBeGreaterThan(0);
 
