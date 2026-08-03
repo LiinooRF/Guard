@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AdminModule } from './admin/admin.module';
+import { AuditModule } from './audit/audit.module';
 import { validateEnv } from './config/env';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
@@ -29,6 +30,7 @@ import { SyncModule } from './sync/sync.module';
     }),
     DatabaseModule,
     AdminModule,
+    AuditModule,
     DashboardModule,
     AuthModule,
     GuardModule,
