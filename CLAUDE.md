@@ -279,12 +279,20 @@ Están documentadas dentro de sus issues, con opciones y trade-offs. **No las ci
 | Modelo de licencias por tenant | #2 |
 | Routing de dominio white-label (incluye cómo resuelve el tenant la app móvil, que no tiene barra de direcciones) | #19 |
 | Si el control de acceso de visitantes entra al producto | #139 |
-| Cómo entra el `SUPERADMIN` al contexto de tenant sin saltarse RLS | #45 |
 
-La última es la más urgente y bloquea código que ya está escrito: el interceptor exige `tenant_id` en
-la sesión, y el `SUPERADMIN` por definición no tiene uno. La salida **no** es marcar sus endpoints
-para que se salten el contexto —eso deja al rol más poderoso corriendo sin RLS—, sino que abra un
-acceso con motivo y vencimiento registrado en `support_access_log`.
+### Cerrada: cómo entra el `SUPERADMIN` a un tenant (#109)
+
+Ya está implementado, y conviene saberlo antes de tocar el interceptor. El `SUPERADMIN` **no tiene
+`tenant_id`** en su sesión y **no** usa un rol con `BYPASSRLS`. Para entrar a los datos de una
+empresa:
+
+1. Abre una ventana con motivo escrito y vencimiento: `POST /api/platform/support-access`
+2. Manda la cabecera **`x-support-access-id`** en sus requests a ese tenant
+3. El interceptor valida vigencia y setea `app.support_access_id`, que es lo que activa
+   `app_has_audited_support_access()` en las políticas RLS
+
+RLS sigue activo: la política lo deja ver **solo ese tenant**. La ventana se topa en 8 horas y el
+`ADMIN` del tenant puede leer quién entró y por qué. Un bypass no deja rastro y no caduca; esto sí.
 
 ---
 
