@@ -40,6 +40,63 @@ services:
     networks:
       - internal
 
+  # Dump diario de PostgreSQL (issue #24, ver docs/respaldos.md).
+  # SIN perfil a proposito: el respaldo no es opcional, corre igual en staging
+  # y en produccion. Solo red interna: no expone nada.
+  # OJO: los dumps quedan en el MISMO disco que la base (volumen backup_data);
+  # la copia fuera del VPS esta pendiente de decidir (BACKUP_REMOTE en
+  # .env.example y docs/respaldos.md).
+  postgres-backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      # tzdata viene en la imagen; sin TZ el "04:00" seria UTC.
+      TZ: America/Santiago
+      PGHOST: postgres
+      # Dueño de la base, no voxia_app: el rol de la app no ve nada sin
+      # contexto de tenant (RLS falla cerrada) y el dump saldria vacio.
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    # La imagen de postgres ejecuta cualquier comando que no sea `postgres`
+    # tal cual, asi que este contenedor nunca levanta un servidor propio.
+    command:
+      - sh
+      - -c
+      - |
+        set -u
+        echo "[backup] servicio arriba; dump diario 04:00 America/Santiago, retencion $${BACKUP_RETENTION_DAYS} dias"
+        while true; do
+          objetivo=$$(date -d "$$(date +%F) 04:00" +%s)
+          ahora=$$(date +%s)
+          [ "$$objetivo" -le "$$ahora" ] && objetivo=$$((objetivo + 86400))
+          espera=$$((objetivo - ahora))
+          echo "[backup] proximo dump en $$espera segundos"
+          sleep "$$espera"
+          fecha=$$(date +%F)
+          destino=/backups/voxia-$$fecha.dump
+          inicio=$$(date +%s)
+          echo "[backup] inicio pg_dump $$fecha"
+          if pg_dump -Fc -f "$$destino.part" "$$PGDATABASE"; then
+            mv "$$destino.part" "$$destino"
+            echo "[backup] ok: $$destino ($$(du -h "$$destino" | cut -f1)) en $$(( $$(date +%s) - inicio ))s"
+          else
+            rm -f "$$destino.part"
+            echo "[backup] ERROR: pg_dump fallo; queda el dump anterior y se reintenta a las 04:00 siguientes" >&2
+          fi
+          find /backups -name 'voxia-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+        done
+    volumes:
+      - backup_data:/backups
+      # restore.sh montado aca para poder correrlo con `docker compose exec`.
+      - ./docker/postgres/backup:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -172,3 +229,4 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  backup_data:
