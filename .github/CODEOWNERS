@@ -17,8 +17,9 @@
 # ---------------------------------------------------------------------------
 
 # Por defecto, cualquiera del equipo puede revisar.
-*                       @4l4h3rg4
-
+# Nunca un solo duenio para `*`: si autorea un PR, nadie puede darle la
+# revision de code owner y el repo entero queda bloqueado (paso el 2026-08-02).
+*                       @4l4h3rg4 @LiinooRF @BrunoAle-115
 # Plataforma — Dev A
 /docker/                @4l4h3rg4
 /docker-compose.yml     @4l4h3rg4

@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { AdminModule } from './admin/admin.module';
 import { validateEnv } from './config/env';
+import { AuthModule } from './auth/auth.module';
+import { DatabaseModule } from './database/database.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { GuardModule } from './guard/guard.module';
 import { HealthController } from './health/health.controller';
+import { PlatformModule } from './platform/platform.module';
 import { RulesController } from './rules/rules.controller';
 
 @Module({
@@ -13,6 +19,12 @@ import { RulesController } from './rules/rules.controller';
       envFilePath: ['../../.env'],
       validate: validateEnv,
     }),
+    DatabaseModule,
+    AdminModule,
+    DashboardModule,
+    AuthModule,
+    GuardModule,
+    PlatformModule,
   ],
   controllers: [HealthController, RulesController],
 })

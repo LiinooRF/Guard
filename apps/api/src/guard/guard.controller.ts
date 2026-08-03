@@ -1,0 +1,28 @@
+import { Controller, Get, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+
+import type { AuthenticatedUser } from '../auth/auth.guard';
+import { Permissions } from '../auth/decorators/permissions.decorator';
+import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
+import { GuardService } from './guard.service';
+
+@Controller('guard')
+@TenantScope()
+export class GuardController {
+  constructor(private readonly guardService: GuardService) {}
+
+  @Get('home')
+  @Permissions('patrols:execute')
+  home(@Req() request: Request & { user: AuthenticatedUser }) {
+    return this.guardService.getHome(request.user.sub);
+  }
+
+  @Post('patrols/:patrolId/start')
+  @Permissions('patrols:execute')
+  start(
+    @Param('patrolId') patrolId: string,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.guardService.startPatrol(patrolId, request.user.sub);
+  }
+}

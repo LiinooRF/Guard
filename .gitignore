@@ -34,6 +34,13 @@ uploads/
 npm-debug.log*
 coverage/
 
+# artefactos locales de agentes y pruebas de navegador
+.agents/
+.claude/
+.playwright-cli/
+output/
+skills-lock.json
+
 # editores y sistema
 .DS_Store
 Thumbs.db
