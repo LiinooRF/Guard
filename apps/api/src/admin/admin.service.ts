@@ -1,0 +1,324 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { argon2id, hash } from 'argon2';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { QueryFailedError } from 'typeorm';
+
+import { AuthService } from '../auth/auth.service';
+import { createAuthActionToken } from '../auth/auth-action-token';
+import { MailService } from '../auth/mail.service';
+import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { CreateSiteDto } from './dto/create-site.dto';
+import type { CreateTenantUserDto } from './dto/create-user.dto';
+import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
+
+interface UserRow {
+  id: string;
+  email: string | null;
+  username: string | null;
+  given_name: string;
+  family_name: string;
+  role_key: 'ADMIN' | 'SUPERVISOR' | 'GUARDIA';
+  is_active: boolean;
+  site_ids: string[];
+}
+
+interface SiteRow {
+  id: string;
+  branch_name: string;
+  name: string;
+  address: string;
+  latitude: string | null;
+  longitude: string | null;
+  is_active: boolean;
+  checkpoint_count: number;
+  supervisor_count: number;
+}
+
+@Injectable()
+export class AdminService {
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly auth: AuthService,
+    private readonly mail: MailService,
+  ) {}
+
+  async listUsers() {
+    const rows = await this.tenantContext.manager.query<UserRow[]>(`
+      SELECT
+        users.id,
+        users.email,
+        users.username,
+        users.given_name,
+        users.family_name,
+        memberships.role_key,
+        users.is_active,
+        COALESCE(
+          array_agg(supervisor_sites.site_id)
+            FILTER (WHERE supervisor_sites.site_id IS NOT NULL),
+          ARRAY[]::uuid[]
+        ) AS site_ids
+      FROM memberships
+      JOIN users ON users.id = memberships.user_id
+      LEFT JOIN supervisor_sites
+        ON supervisor_sites.supervisor_id = users.id
+       AND memberships.role_key = 'SUPERVISOR'
+      GROUP BY users.id, memberships.role_key
+      ORDER BY memberships.role_key, users.given_name, users.family_name
+    `);
+    return rows.map((user) => ({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      givenName: user.given_name,
+      familyName: user.family_name,
+      role: user.role_key,
+      isActive: user.is_active,
+      siteIds: user.site_ids,
+    }));
+  }
+
+  async getAuthPolicy() {
+    const rows = await this.tenantContext.manager.query<Array<{
+      max_failed_attempts: number;
+      window_seconds: number;
+      base_lock_seconds: number;
+      max_lock_seconds: number;
+    }>>(`
+      SELECT max_failed_attempts, window_seconds, base_lock_seconds, max_lock_seconds
+      FROM tenant_auth_policies
+      WHERE tenant_id = app_tenant_id()
+    `);
+    const policy = rows[0];
+    return {
+      maxFailedAttempts: policy?.max_failed_attempts ?? 5,
+      windowSeconds: policy?.window_seconds ?? 900,
+      baseLockSeconds: policy?.base_lock_seconds ?? 300,
+      maxLockSeconds: policy?.max_lock_seconds ?? 3600,
+    };
+  }
+
+  async updateAuthPolicy(input: UpdateAuthPolicyDto) {
+    if (input.maxLockSeconds < input.baseLockSeconds) {
+      throw new BadRequestException('El bloqueo máximo no puede ser menor al inicial');
+    }
+    await this.tenantContext.manager.query(
+      `INSERT INTO tenant_auth_policies (
+        tenant_id, max_failed_attempts, window_seconds,
+        base_lock_seconds, max_lock_seconds
+      ) VALUES (app_tenant_id(), $1, $2, $3, $4)
+      ON CONFLICT (tenant_id) DO UPDATE SET
+        max_failed_attempts = EXCLUDED.max_failed_attempts,
+        window_seconds = EXCLUDED.window_seconds,
+        base_lock_seconds = EXCLUDED.base_lock_seconds,
+        max_lock_seconds = EXCLUDED.max_lock_seconds,
+        updated_at = now()`,
+      [
+        input.maxFailedAttempts,
+        input.windowSeconds,
+        input.baseLockSeconds,
+        input.maxLockSeconds,
+      ],
+    );
+    return this.getAuthPolicy();
+  }
+
+  async listSecurityEvents() {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      event_type: string;
+      created_at: Date;
+    }>>(`
+      SELECT id, event_type, created_at
+      FROM security_events
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+    return rows.map((event) => ({
+      id: event.id,
+      type: event.event_type,
+      createdAt: event.created_at,
+    }));
+  }
+
+  async createUser(input: CreateTenantUserDto) {
+    if (!input.email && !input.username) {
+      throw new BadRequestException('Debes indicar correo o nombre de usuario');
+    }
+    if (!input.email && !input.password) {
+      throw new BadRequestException('La credencial sin correo requiere una clave inicial');
+    }
+    const userId = randomUUID();
+    const provisionalPassword = input.email
+      ? randomBytes(32).toString('base64url')
+      : input.password!;
+    const passwordHash = await hash(provisionalPassword, {
+      type: argon2id,
+      memoryCost: 65_536,
+      timeCost: 3,
+      parallelism: 1,
+    });
+
+    try {
+      await this.tenantContext.manager.query(
+        `SELECT admin_create_tenant_user($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          userId,
+          input.email?.toLowerCase() ?? null,
+          input.username?.toLowerCase() ?? null,
+          passwordHash,
+          input.givenName,
+          input.familyName,
+          input.role,
+        ],
+      );
+    } catch (error) {
+      if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+        throw new ConflictException('El correo o nombre de usuario ya está registrado');
+      }
+      throw error;
+    }
+    if (input.email) {
+      const invitation = createAuthActionToken(24 * 60 * 60 * 1000);
+      await this.tenantContext.manager.query(
+        `SELECT issue_auth_action_token(
+          $1, app_tenant_id(), 'invitation', $2, $3
+        )`,
+        [userId, invitation.tokenHash, invitation.expiresAt],
+      );
+      try {
+        await this.mail.invitation(input.email.toLowerCase(), invitation.token);
+      } catch {
+        throw new ServiceUnavailableException(
+          'No fue posible enviar la invitación. Inténtalo nuevamente.',
+        );
+      }
+      return { id: userId, invitationSent: true };
+    }
+    return { id: userId, invitationSent: false };
+  }
+
+  async setUserActive(userId: string, isActive: boolean) {
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE users
+       SET is_active = $2, updated_at = now()
+       WHERE id = $1
+         AND EXISTS (
+           SELECT 1 FROM memberships
+           WHERE memberships.user_id = users.id
+             AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')
+         )
+       RETURNING id`,
+      [userId, isActive],
+    );
+    if (!result.length) throw new NotFoundException('Usuario administrable no encontrado');
+    const revokedSessions = isActive ? 0 : await this.auth.revokeAllSessions(userId);
+    return { id: userId, isActive, revokedSessions };
+  }
+
+  async revokeUserSessions(userId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT users.id
+       FROM users
+       JOIN memberships ON memberships.user_id = users.id
+       WHERE users.id = $1
+         AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')`,
+      [userId],
+    );
+    if (!rows.length) throw new NotFoundException('Usuario administrable no encontrado');
+    return { userId, revokedSessions: await this.auth.revokeAllSessions(userId) };
+  }
+
+  async listSites() {
+    const rows = await this.tenantContext.manager.query<SiteRow[]>(`
+      SELECT
+        sites.id,
+        sites.branch_name,
+        sites.name,
+        sites.address,
+        sites.latitude,
+        sites.longitude,
+        sites.is_active,
+        count(DISTINCT checkpoints.id)::integer AS checkpoint_count,
+        count(DISTINCT supervisor_sites.supervisor_id)::integer AS supervisor_count
+      FROM sites
+      LEFT JOIN checkpoints ON checkpoints.site_id = sites.id
+      LEFT JOIN supervisor_sites ON supervisor_sites.site_id = sites.id
+      GROUP BY sites.id
+      ORDER BY sites.is_active DESC, sites.name
+    `);
+    return rows.map((site) => ({
+      id: site.id,
+      branchName: site.branch_name,
+      name: site.name,
+      address: site.address,
+      latitude: site.latitude === null ? null : Number(site.latitude),
+      longitude: site.longitude === null ? null : Number(site.longitude),
+      isActive: site.is_active,
+      checkpointCount: site.checkpoint_count,
+      supervisorCount: site.supervisor_count,
+    }));
+  }
+
+  async createSite(input: CreateSiteDto) {
+    const siteId = randomUUID();
+    await this.tenantContext.manager.query(
+      `INSERT INTO sites (
+        id, tenant_id, branch_name, name, address, latitude, longitude
+      ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6)`,
+      [
+        siteId,
+        input.branchName,
+        input.name,
+        input.address,
+        input.latitude ?? null,
+        input.longitude ?? null,
+      ],
+    );
+    return { id: siteId };
+  }
+
+  async setSiteActive(siteId: string, isActive: boolean) {
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE sites SET is_active = $2 WHERE id = $1 RETURNING id`,
+      [siteId, isActive],
+    );
+    if (!result.length) throw new NotFoundException('Recinto no encontrado');
+    return { id: siteId, isActive };
+  }
+
+  async setSupervisorSite(supervisorId: string, siteId: string, assigned: boolean) {
+    if (assigned) {
+      const result = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+        `INSERT INTO supervisor_sites (tenant_id, supervisor_id, site_id)
+         SELECT app_tenant_id(), membership.user_id, site.id
+         FROM memberships membership
+         JOIN sites site ON site.id = $2 AND site.is_active
+         WHERE membership.user_id = $1
+           AND membership.role_key = 'SUPERVISOR'
+         ON CONFLICT DO NOTHING
+         RETURNING site_id`,
+        [supervisorId, siteId],
+      );
+      if (!result.length) {
+        const existing = await this.tenantContext.manager.query<Array<{ present: boolean }>>(
+          `SELECT true AS present FROM supervisor_sites
+           WHERE supervisor_id = $1 AND site_id = $2`,
+          [supervisorId, siteId],
+        );
+        if (!existing.length) throw new NotFoundException('Supervisor o recinto no encontrado');
+      }
+    } else {
+      await this.tenantContext.manager.query(
+        `DELETE FROM supervisor_sites WHERE supervisor_id = $1 AND site_id = $2`,
+        [supervisorId, siteId],
+      );
+    }
+    return { supervisorId, siteId, assigned };
+  }
+}

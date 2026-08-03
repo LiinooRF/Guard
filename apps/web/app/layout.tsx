@@ -3,7 +3,10 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'VoxIA Control — monitoreo de rondas',
+  title: {
+    default: 'VoxIA Control',
+    template: '%s · VoxIA Control',
+  },
   description:
     'SaaS multi-tenant de monitoreo de rondas de vigilancia con etiquetas NFC',
 };
@@ -12,6 +15,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  themeColor: '#111b32',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
