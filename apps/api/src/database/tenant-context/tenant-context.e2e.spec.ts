@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { TenantContextInterceptor } from './tenant-context.interceptor';
+import { SupportAccessService } from '../../platform-data/support-access.service';
 import { TenantContextService } from './tenant-context.service';
 
 const appDatabaseUrl = process.env.DATABASE_APP_TEST_URL;
@@ -47,7 +48,12 @@ describeDatabase('contexto tenant HTTP (e2e)', () => {
       next();
     });
     app.useGlobalInterceptors(
-      new TenantContextInterceptor(dataSource, tenantContext, new Reflector()),
+      new TenantContextInterceptor(
+        dataSource,
+        tenantContext,
+        new Reflector(),
+        new SupportAccessService(dataSource),
+      ),
     );
     await app.listen(0, '127.0.0.1');
   });

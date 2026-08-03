@@ -4,6 +4,7 @@ import { defer, lastValueFrom, of } from 'rxjs';
 import type { DataSource, QueryRunner } from 'typeorm';
 
 import { TenantContextInterceptor } from './tenant-context.interceptor';
+import { SupportAccessService } from '../../platform-data/support-access.service';
 import { TenantContextService } from './tenant-context.service';
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -20,17 +21,25 @@ function executionContext(tenantId?: string): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+/**
+ * Sin acceso de soporte: resolve devuelve null, que es el camino normal de
+ * cualquier request con tenant en la sesion.
+ */
+const sinSoporte = () =>
+  ({ resolve: jest.fn().mockResolvedValue(null) }) as unknown as SupportAccessService;
+
 describe('TenantContextInterceptor', () => {
-  it('deniega un request sin tenant autenticado', () => {
+  it('deniega un request sin tenant autenticado', async () => {
     const interceptor = new TenantContextInterceptor(
       {} as DataSource,
       new TenantContextService(),
       { getAllAndOverride: () => false } as unknown as Reflector,
+      sinSoporte(),
     );
 
-    expect(() => interceptor.intercept(executionContext(), { handle: () => of(null) })).toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      interceptor.intercept(executionContext(), { handle: () => of(null) }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('mantiene aislados 50 requests concurrentes y libera sus conexiones', async () => {
@@ -70,6 +79,7 @@ describe('TenantContextInterceptor', () => {
       dataSource,
       context,
       { getAllAndOverride: () => false } as unknown as Reflector,
+      sinSoporte(),
     );
     const tenantIds = Array.from(
       { length: 50 },
@@ -77,7 +87,7 @@ describe('TenantContextInterceptor', () => {
     );
 
     const results = await Promise.all(
-      tenantIds.map((tenantId) => {
+      tenantIds.map(async (tenantId) => {
         const next: CallHandler = {
           handle: () =>
             defer(async () => {
@@ -85,7 +95,7 @@ describe('TenantContextInterceptor', () => {
               return (context.manager as unknown as { tenantId: string }).tenantId;
             }),
         };
-        return lastValueFrom(interceptor.intercept(executionContext(tenantId), next));
+        return lastValueFrom(await interceptor.intercept(executionContext(tenantId), next));
       }),
     );
 

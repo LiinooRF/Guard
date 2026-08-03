@@ -3,6 +3,7 @@ import { APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { SupportAccessService } from '../platform-data/support-access.service';
 import { DATABASE_ENTITIES } from './data-source';
 import { TenantContextInterceptor } from './tenant-context/tenant-context.interceptor';
 import { TenantContextService } from './tenant-context/tenant-context.service';
@@ -27,12 +28,13 @@ import { TenantContextService } from './tenant-context/tenant-context.service';
   ],
   providers: [
     TenantContextService,
+    SupportAccessService,
     Reflector,
     {
       provide: APP_INTERCEPTOR,
       useClass: TenantContextInterceptor,
     },
   ],
-  exports: [TenantContextService],
+  exports: [TenantContextService, SupportAccessService],
 })
 export class DatabaseModule {}
