@@ -134,20 +134,23 @@ mientras el rol real se salta las políticas, que es el peor error posible: el q
 
 ## Si tocas dependencias (leelo, nos costo dos CI rojas)
 
-Cuando agregues o quites un paquete, **regenera el lockfile desde cero**:
+Cuando agregues o quites un paquete, **verifica el lockfile con el mismo comando que
+usa la CI** antes de subir:
 
 ```bash
-rm package-lock.json
-npm install --package-lock-only
+rm -rf node_modules
+npm ci
 ```
 
-Por que: `npm install` normal, corriendo en Windows o macOS, **poda del lockfile las
-dependencias opcionales que solo aplican a Linux** (subarboles nativos como `@emnapi/*`).
-En tu maquina todo pasa; en la CI y en la imagen Docker, `npm ci` se niega con
-`Missing: ... from lock file` y falla el build entero.
+Por que: `npm install` corriendo en Windows o macOS **poda del lockfile entradas que solo
+aplican a Linux** (subarboles nativos como `@emnapi/*`) o las mueve de lugar. En tu maquina
+todo sigue funcionando porque `node_modules` ya existe; en la CI y en la imagen Docker,
+`npm ci` se niega con `Missing: ... from lock file` y falla el build entero.
 
-`--package-lock-only` resuelve el arbol completo para todas las plataformas sin instalar
-nada. Confirma que el lockfile quedo bien antes de commitear.
+`npm ci` borra `node_modules` y instala EXACTAMENTE lo que dice el lockfile: si pasa en tu
+maquina, pasa en la CI. Regenerar el lockfile desde cero **no** alcanza — produce un arbol
+distinto al que ya estaba verde. Si `npm ci` se queja, compara tu lockfile con el de
+`staging` y restaura las entradas que npm haya movido o borrado.
 
 ## Commits
 
