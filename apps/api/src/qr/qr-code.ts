@@ -68,8 +68,10 @@ const CENTROS_ALINEACION: readonly (readonly number[])[] = [
   [6, 28, 50],
 ];
 
-/** Bits sobrantes que se rellenan con ceros al final del area de datos. */
-const BITS_RESTO: readonly number[] = [0, 7, 7, 7, 7, 7, 0, 0, 0, 0];
+// Los bits de resto de la norma (0 o 7 segun la version) no se declaran: la
+// colocacion corta con `indice >= totalBits` y deja esos modulos en 0, que es
+// justo lo que la norma especifica que valgan. Declararlos seria describir un
+// relleno que ya ocurre solo.
 
 // ------------------------------------------------------------------ GF(256)
 
