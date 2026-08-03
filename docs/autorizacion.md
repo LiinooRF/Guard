@@ -3,7 +3,7 @@
 La autorización se decide en la API. La interfaz puede ocultar acciones, pero eso no reemplaza los
 guards del servidor.
 
-La fuente de verdad ejecutable es `packages/shared/src/roles.ts`: `PERMISSIONS` define el catálogo y
+La fuente de verdad ejecutable es `packages/shared/src/permissions.ts`: `PERMISSIONS` define el catálogo y
 `ROLE_PERMISSIONS` la matriz. Los tests y los guards deben importar esas constantes; no deben mantener
 copias ni preguntar directamente por un rol.
 

@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type { Role } from './roles';
 
 /**
@@ -27,6 +29,7 @@ export const PERMISSIONS = [
   'incidents:create',
 ] as const;
 
+export const permissionSchema = z.enum(PERMISSIONS);
 export type Permission = (typeof PERMISSIONS)[number];
 
 export const ROLE_PERMISSIONS = {
