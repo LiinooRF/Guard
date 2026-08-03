@@ -161,6 +161,81 @@ GET   /platform/tenants/billing/current                platform:metrics:read
 GET   /platform/tenants/mail-queue                     ← estado de la cola de correo
 ```
 
+### Auditoría y estadísticas — ADMIN
+
+```
+GET /admin/audit          tenant:audit:read
+    ?actorId= &action= &from= &to= &limit=      (limit tope 500)
+    → [{ id, actorId, actorLabel, action, entityType, entityId, summary, createdAt }]
+GET /admin/audit/actions  tenant:audit:read     → las acciones presentes, para el filtro
+
+GET /admin/stats/overview tenant:stats:read     ?from= &to=
+    → { threshold, global{...}, byBranch[...], worstSites[...] }   (peor primero)
+GET /admin/stats/trend    tenant:stats:read     ?from= &to= &branchName=
+    → [{ week, patrols, compliancePct }]
+```
+
+La auditoría es **solo lectura**: es append-only en PostgreSQL, la API ni siquiera tiene permiso de
+`UPDATE`. Muestra `actorLabel`, no `actorId` — el id puede apuntar a un usuario ya eliminado.
+
+### Turnos y jornada
+
+```
+GET  /supervisor/sites/:siteId/shifts        shifts:manage
+POST /supervisor/sites/:siteId/shifts        {name, startsAt, endsAt, weekdays?, entryToleranceMin?}
+POST /supervisor/shifts/:shiftId/assignments {guardId, serviceDate}      shifts:manage
+GET  /supervisor/sites/:siteId/on-duty       patrols:monitor  ← quién está de servicio AHORA
+```
+
+`startsAt > endsAt` es un **turno nocturno** que cruza medianoche, no un error. La respuesta trae
+`crossesMidnight` para que la interfaz lo muestre bien.
+
+### Informes y evidencia
+
+```
+GET  /reports/patrols/:patrolId              reports:read   → PDF (application/pdf)
+GET  /reports/sites/:siteId?from=&to=        reports:read   → PDF de resumen por sucursal
+GET  /evidence/patrols/:patrolId/photos      reports:read   → metadatos del anexo fotográfico
+```
+
+Los dos primeros devuelven **bytes de PDF**, no JSON: descárgalos con `blob`, no con `.json()`.
+
+### Escalamiento y eventos
+
+```
+GET  /escalation/policies                    tenant:security:manage
+PUT  /escalation/policies                    reemplaza el set completo
+POST /escalation/notifications/:id/acknowledge   patrols:monitor  ← acuse de recibo
+GET  /supervisor/sites/:siteId/events        patrols:monitor  ← novedades y pánico juntos
+```
+
+La bandeja de eventos trae `criticality` (`info|baja|media|alta|panico`). **El pánico no es otra
+cosa**: es la criticidad máxima de una novedad.
+
+### Geolocalización y consentimiento
+
+```
+GET    /geo/patrols/:patrolId/track          patrols:monitor  → traza + distancia y duración
+POST   /geo/consent    /  DELETE /geo/consent  /  GET /geo/consent     account:sessions:manage
+```
+
+**Sin consentimiento vigente el servidor rechaza la traza con 403.** No es validación de formulario:
+es requisito legal en Chile y de Google Play. Si construyes pantalla de consentimiento, el texto debe
+decir qué se rastrea, cuándo y por cuánto tiempo (ver `docs/geolocalizacion-y-consentimiento.md`).
+
+### SUPERADMIN — acceso de soporte a una empresa
+
+```
+GET    /platform/support-access               platform:support:access  → ventanas vigentes
+POST   /platform/support-access               {tenantId, reason, minutes?}
+DELETE /platform/support-access/:id           cerrar antes de que venza
+```
+
+Así entra el SUPERADMIN a los datos de una empresa: abre una ventana con **motivo escrito** y después
+manda la cabecera **`x-support-access-id`** en cada request a ese tenant. La ventana vence sola (tope
+8 horas) y el ADMIN de la empresa puede ver quién entró. Si construyes esta pantalla, el motivo es
+obligatorio y **no debe tener un valor por defecto**: escribirlo es el punto.
+
 ### Panel general
 ```
 GET /dashboard/tenant     tenant:dashboard:read   ← ADMIN y SUPERVISOR
