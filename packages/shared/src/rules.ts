@@ -39,6 +39,20 @@ export const patrolRulesSchema = z.object({
   gpsValidationRadiusM: z.number().int().min(5).max(1000).default(50),
 
   /**
+   * Cada cuantos segundos muestrea la posicion la app durante la ronda. Lo lee
+   * el dispositivo: el intervalo no se codifica en el cliente. Mas frecuente =
+   * traza mas fiel y bateria mas corta.
+   */
+  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(60),
+
+  /**
+   * Dias que se conserva la traza del recorrido. Mucho mas corta que la
+   * retencion de fotos a proposito: la traza es mas invasiva y mucho mas
+   * voluminosa (un punto por minuto son ~480 filas por turno de 8 horas).
+   */
+  gpsTrackRetentionDays: z.number().int().min(7).max(365).default(90),
+
+  /**
    * Orden aleatorio anti-predictibilidad.
    *
    * En vigilancia una ronda siempre igual es una ronda predecible, y la
@@ -57,6 +71,29 @@ export const patrolRulesSchema = z.object({
    * una etiqueta NFC hay que ir a tocarla.
    */
   allowQrFallback: z.boolean().default(true),
+
+  /**
+   * Maximo de operaciones por lote de sincronizacion offline (#14). Una ronda
+   * completa en un subterraneo son decenas de escaneos y novedades; el limite
+   * protege al servidor sin castigar al guardia, que reenvia el resto en el
+   * lote siguiente.
+   */
+  syncMaxBatchSize: z.number().int().min(1).max(1000).default(200),
+
+  /**
+   * Criticidades que disparan la cadena de escalamiento (#126). Antes estaba
+   * fijo en el codigo; hay empresas que quieren que 'media' despierte al
+   * supervisor y otras que no.
+   */
+  escalationCriticalities: z
+    .array(z.enum(['media', 'alta', 'panico']))
+    .default(['alta', 'panico']),
+
+  /**
+   * Minutos que espera la cadena antes de subir al nivel siguiente cuando la
+   * politica de ese nivel no define un delay propio.
+   */
+  escalationDefaultDelayMin: z.number().int().min(0).max(1440).default(10),
 
   /** Minutos tras los cuales una ronda sin cerrar se marca como vencida. */
   maxPatrolDurationMin: z.number().int().min(5).max(1440).default(480),

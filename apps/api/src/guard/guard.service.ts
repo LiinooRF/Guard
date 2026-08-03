@@ -3,6 +3,7 @@ import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
 import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { EscalationService } from '../escalation/escalation.service';
 import { MailQueueService } from '../mail/mail-queue.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
@@ -13,25 +14,6 @@ import type { ShiftMarkDto } from './dto/shift-mark.dto';
  * La regla que dio origen al producto: si el cumplimiento queda bajo el
  * umbral, la alerta va DIRECTO al admin de la empresa. Ver issue #64.
  */
-const ALERTA_PANICO = {
-  subject: 'PÁNICO: {{guard}} en {{site}}',
-  text:
-    '{{guard}} activó el botón de pánico en {{site}}.\n\n' +
-    'Hora (servidor): {{at}}\n' +
-    'Ubicación: {{location}}\n\n' +
-    'Contacta al guardia y revisa el panel de VoxIA Control AHORA.',
-} as const;
-
-const ALERTA_EVENTO = {
-  subject: 'Novedad de criticidad alta en {{site}}',
-  text:
-    '{{guard}} reportó una novedad de criticidad alta en {{site}}:\n\n' +
-    '"{{text}}"\n\n' +
-    'Hora (servidor): {{at}}\n' +
-    'Ubicación: {{location}}\n\n' +
-    'Revisa el detalle en el panel de VoxIA Control.',
-} as const;
-
 const ALERTA_BAJO_UMBRAL = {
   subject: 'Cumplimiento bajo el umbral: {{route}} en {{site}} ({{pct}}%)',
   text:
@@ -68,6 +50,7 @@ export class GuardService {
     private readonly tenantContext: TenantContextService,
     private readonly mail: MailQueueService,
     private readonly rules: RulesService,
+    private readonly escalation: EscalationService,
   ) {}
 
   async getHome(guardId: string) {
@@ -495,10 +478,10 @@ export class GuardService {
       eventId = existing[0]?.id;
     }
 
-    // El escalamiento configurable por tenant es #126; por ahora, alta y
-    // panico avisan directo a los admins. El reenvio idempotente NO re-avisa.
+    // Que criticidades escalan lo decide la regla del tenant (#126). El
+    // reenvio idempotente sigue sin re-avisar.
     let notified = false;
-    if (!replay && (input.criticality === 'alta' || input.criticality === 'panico')) {
+    if (!replay) {
       notified = await this.notificarEvento(eventId!, patrol.site_id, guardId, input);
     }
 
@@ -520,46 +503,14 @@ export class GuardService {
     input: ReportEventDto,
   ) {
     try {
-      const contexto = await this.tenantContext.manager.query<Array<{
-        tenant_id: string;
-        site_name: string;
-        guard_name: string;
-      }>>(
-        `SELECT s.tenant_id, s.name AS site_name,
-                (u.given_name || ' ' || u.family_name) AS guard_name
-         FROM sites s, users u
-         WHERE s.id = $1 AND u.id = $2`,
-        [siteId, guardId],
-      );
-      const info = contexto[0];
-      if (!info) return false;
-
-      const admins = await this.tenantContext.manager.query<Array<{ id: string; email: string }>>(
-        `SELECT u.id, u.email
-         FROM memberships m
-         JOIN users u ON u.id = m.user_id
-         WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
-      );
-      if (!admins.length) return false;
-
-      const plantilla = input.criticality === 'panico' ? ALERTA_PANICO : ALERTA_EVENTO;
-      const vars = {
-        site: info.site_name,
-        guard: info.guard_name,
-        text: input.text ?? '(sin texto)',
-        at: new Date().toISOString(),
-        location:
-          input.latitude !== undefined && input.longitude !== undefined
-            ? `${input.latitude}, ${input.longitude}`
-            : 'sin GPS',
-      };
-      for (const admin of admins) {
-        await this.mail.enqueue(
-          { to: admin.email, template: plantilla, variables: vars, tenantId: info.tenant_id },
-          { idempotencyKey: `field-event:${eventId}:${admin.id}` },
-        );
-      }
-      return true;
+      const notificados = await this.escalation.notify(eventId, input.criticality, {
+        siteId,
+        guardId,
+        text: input.text,
+        latitude: input.latitude,
+        longitude: input.longitude,
+      });
+      return notificados > 0;
     } catch (error) {
       this.logger.warn(
         JSON.stringify({
