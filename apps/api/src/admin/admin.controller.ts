@@ -4,10 +4,12 @@ import { IsBoolean, IsUUID } from 'class-validator';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { AdminService } from './admin.service';
+import { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { CreateTenantUserDto } from './dto/create-user.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
 import { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
+import { PhotoOverrideDto, UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 
 class UserParam {
   @IsUUID()
@@ -22,6 +24,11 @@ class SiteParam {
 class AssignmentParam extends UserParam {
   @IsUUID()
   siteId!: string;
+}
+
+class CheckpointParam {
+  @IsUUID()
+  checkpointId!: string;
 }
 
 class AssignmentDto {
@@ -101,5 +108,35 @@ export class AdminController {
     @Body() input: AssignmentDto,
   ) {
     return this.admin.setSupervisorSite(params.userId, params.siteId, input.assigned);
+  }
+
+  @Get('sites/:siteId/checkpoints')
+  @Permissions('tenant:sites:manage')
+  listCheckpoints(@Param() params: SiteParam) {
+    return this.admin.listCheckpoints(params.siteId);
+  }
+
+  @Post('sites/:siteId/checkpoints')
+  @Permissions('tenant:sites:manage')
+  createCheckpoint(@Param() params: SiteParam, @Body() input: CreateCheckpointDto) {
+    return this.admin.createCheckpoint(params.siteId, input);
+  }
+
+  @Patch('checkpoints/:checkpointId')
+  @Permissions('tenant:sites:manage')
+  updateCheckpoint(@Param() params: CheckpointParam, @Body() input: UpdateCheckpointDto) {
+    return this.admin.updateCheckpoint(params.checkpointId, input);
+  }
+
+  @Patch('checkpoints/:checkpointId/photo')
+  @Permissions('tenant:sites:manage')
+  setCheckpointPhoto(@Param() params: CheckpointParam, @Body() input: PhotoOverrideDto) {
+    return this.admin.setCheckpointPhoto(params.checkpointId, input.requiresPhoto);
+  }
+
+  @Patch('checkpoints/:checkpointId/active')
+  @Permissions('tenant:sites:manage')
+  setCheckpointActive(@Param() params: CheckpointParam, @Body() input: UpdateActiveDto) {
+    return this.admin.setCheckpointActive(params.checkpointId, input.isActive);
   }
 }

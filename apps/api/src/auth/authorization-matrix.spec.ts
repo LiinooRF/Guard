@@ -65,6 +65,11 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
     ['ADMIN'],
     true,
   ),
+  secured(AdminController, 'listCheckpoints', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(AdminController, 'createCheckpoint', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(AdminController, 'updateCheckpoint', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(AdminController, 'setCheckpointPhoto', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(AdminController, 'setCheckpointActive', ['tenant:sites:manage'], ['ADMIN'], true),
 
   secured(
     DashboardController,

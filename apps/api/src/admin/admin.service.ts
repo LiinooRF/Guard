@@ -13,9 +13,11 @@ import { AuthService } from '../auth/auth.service';
 import { createAuthActionToken } from '../auth/auth-action-token';
 import { MailService } from '../auth/mail.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
 import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
+import type { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 
 interface UserRow {
   id: string;
@@ -38,6 +40,20 @@ interface SiteRow {
   is_active: boolean;
   checkpoint_count: number;
   supervisor_count: number;
+}
+
+interface CheckpointRow {
+  id: string;
+  site_id: string;
+  name: string;
+  description: string | null;
+  suggested_order: number;
+  kind: 'normal' | 'acceso_critico';
+  latitude: string | null;
+  longitude: string | null;
+  requires_photo: boolean | null;
+  instructions: string | null;
+  is_active: boolean;
 }
 
 @Injectable()
@@ -320,5 +336,100 @@ export class AdminService {
       );
     }
     return { supervisorId, siteId, assigned };
+  }
+
+  private async ensureSite(siteId: string) {
+    const site = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT id FROM sites WHERE id = $1`,
+      [siteId],
+    );
+    if (!site.length) throw new NotFoundException('Recinto no encontrado');
+  }
+
+  async listCheckpoints(siteId: string) {
+    await this.ensureSite(siteId);
+    const rows = await this.tenantContext.manager.query<CheckpointRow[]>(
+      `SELECT id, site_id, name, description, suggested_order, kind,
+              latitude, longitude, requires_photo, instructions, is_active
+       FROM checkpoints
+       WHERE site_id = $1
+       ORDER BY suggested_order, name`,
+      [siteId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      siteId: row.site_id,
+      name: row.name,
+      description: row.description,
+      suggestedOrder: row.suggested_order,
+      kind: row.kind,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
+      requiresPhoto: row.requires_photo,
+      instructions: row.instructions,
+      isActive: row.is_active,
+    }));
+  }
+
+  async createCheckpoint(siteId: string, input: CreateCheckpointDto) {
+    await this.ensureSite(siteId);
+    const checkpointId = randomUUID();
+    await this.tenantContext.manager.query(
+      `INSERT INTO checkpoints (
+        id, tenant_id, site_id, name, description, suggested_order, kind,
+        latitude, longitude, requires_photo, instructions
+      ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        checkpointId,
+        siteId,
+        input.name,
+        input.description ?? null,
+        input.suggestedOrder ?? 0,
+        input.kind ?? 'normal',
+        input.latitude ?? null,
+        input.longitude ?? null,
+        input.requiresPhoto ?? null,
+        input.instructions ?? null,
+      ],
+    );
+    return { id: checkpointId };
+  }
+
+  async updateCheckpoint(checkpointId: string, input: UpdateCheckpointDto) {
+    const campos: Array<[columna: string, valor: unknown]> = [];
+    if (input.name !== undefined) campos.push(['name', input.name]);
+    if (input.description !== undefined) campos.push(['description', input.description]);
+    if (input.kind !== undefined) campos.push(['kind', input.kind]);
+    if (input.suggestedOrder !== undefined) campos.push(['suggested_order', input.suggestedOrder]);
+    if (input.latitude !== undefined) campos.push(['latitude', input.latitude]);
+    if (input.longitude !== undefined) campos.push(['longitude', input.longitude]);
+    if (input.instructions !== undefined) campos.push(['instructions', input.instructions]);
+    if (!campos.length) throw new BadRequestException('Nada que actualizar');
+
+    const sets = campos.map(([columna], i) => `${columna} = $${i + 2}`).join(', ');
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE checkpoints SET ${sets} WHERE id = $1 RETURNING id`,
+      [checkpointId, ...campos.map(([, valor]) => valor)],
+    );
+    if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    return { id: checkpointId };
+  }
+
+  async setCheckpointPhoto(checkpointId: string, requiresPhoto: boolean | null) {
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE checkpoints SET requires_photo = $2 WHERE id = $1 RETURNING id`,
+      [checkpointId, requiresPhoto],
+    );
+    if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    return { id: checkpointId, requiresPhoto };
+  }
+
+  async setCheckpointActive(checkpointId: string, isActive: boolean) {
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE checkpoints SET is_active = $2 WHERE id = $1 RETURNING id`,
+      [checkpointId, isActive],
+    );
+    if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    return { id: checkpointId, isActive };
   }
 }
