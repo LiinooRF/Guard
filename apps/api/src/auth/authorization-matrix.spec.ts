@@ -90,6 +90,9 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(GuardController, 'start', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'scan', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'reportEvent', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GuardController, 'startShift', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GuardController, 'endShift', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GuardController, 'startVoluntaryPatrol', ['patrols:execute'], ['GUARDIA'], true),
 
   secured(SupervisorController, 'listRoutes', ['routes:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'createRoute', ['routes:manage'], ['SUPERVISOR'], true),
@@ -98,6 +101,10 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SupervisorController, 'createPatrol', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listPatrols', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listEvents', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'listShifts', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'createShift', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'assignShift', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'onDutyNow', ['patrols:monitor'], ['SUPERVISOR'], true),
 
   secured(
     PlatformController,

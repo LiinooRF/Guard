@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
+import type { AssignShiftDto, CreateShiftDto } from './dto/create-shift.dto';
 import type { CreatePatrolDto } from './dto/create-patrol.dto';
 import type {
   CreateRouteDto,
@@ -320,6 +322,113 @@ export class SupervisorService {
       expectedCheckpoints: orden.length,
       orderMode: modo,
     };
+  }
+
+  // ------------------------------------------------------------------ turnos
+
+  async listShifts(siteId: string, supervisorId: string) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string; name: string; starts_at: string; ends_at: string;
+      weekdays: number[]; entry_tolerance_min: number; is_active: boolean;
+      asignados_hoy: string;
+    }>>(
+      `SELECT s.id, s.name, s.starts_at, s.ends_at, s.weekdays,
+              s.entry_tolerance_min, s.is_active,
+              count(a.id) FILTER (WHERE a.service_date = current_date)::text AS asignados_hoy
+       FROM shifts s
+       LEFT JOIN shift_assignments a ON a.shift_id = s.id
+       WHERE s.site_id = $1
+       GROUP BY s.id
+       ORDER BY s.starts_at`,
+      [siteId],
+    );
+    return rows.map((s) => ({
+      id: s.id,
+      name: s.name,
+      startsAt: s.starts_at,
+      endsAt: s.ends_at,
+      weekdays: s.weekdays,
+      entryToleranceMin: s.entry_tolerance_min,
+      isActive: s.is_active,
+      // Turno nocturno: la ventana cruza medianoche.
+      crossesMidnight: s.starts_at > s.ends_at,
+      assignedToday: Number(s.asignados_hoy),
+    }));
+  }
+
+  async createShift(siteId: string, supervisorId: string, input: CreateShiftDto) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    if (input.startsAt === input.endsAt) {
+      throw new BadRequestException('El turno no puede empezar y terminar a la misma hora');
+    }
+    const shiftId = randomUUID();
+    await this.tenantContext.manager.query(
+      `INSERT INTO shifts (id, tenant_id, site_id, name, starts_at, ends_at,
+                           weekdays, entry_tolerance_min)
+       VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6::smallint[], $7)`,
+      [
+        shiftId, siteId, input.name, input.startsAt, input.endsAt,
+        input.weekdays ?? [0, 1, 2, 3, 4, 5, 6],
+        input.entryToleranceMin ?? 15,
+      ],
+    );
+    return { id: shiftId, crossesMidnight: input.startsAt > input.endsAt };
+  }
+
+  async assignShift(shiftId: string, supervisorId: string, input: AssignShiftDto) {
+    const turnos = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+      `SELECT site_id FROM shifts WHERE id = $1 AND is_active`,
+      [shiftId],
+    );
+    const turno = turnos[0];
+    if (!turno) throw new NotFoundException('El turno no existe o esta inactivo');
+    await this.ensureAssignedSite(turno.site_id, supervisorId);
+
+    const guardias = await this.tenantContext.manager.query<Array<{ user_id: string }>>(
+      `SELECT user_id FROM memberships WHERE user_id = $1 AND role_key = 'GUARDIA'`,
+      [input.guardId],
+    );
+    if (!guardias.length) throw new NotFoundException('El guardia no existe en esta empresa');
+
+    const asignado = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `INSERT INTO shift_assignments (tenant_id, shift_id, guard_id, service_date)
+       VALUES (app_tenant_id(), $1, $2, $3)
+       ON CONFLICT (tenant_id, shift_id, guard_id, service_date) DO NOTHING
+       RETURNING id`,
+      [shiftId, input.guardId, input.serviceDate],
+    );
+    if (!asignado.length) {
+      throw new ConflictException('Ese guardia ya esta asignado a este turno en esa fecha');
+    }
+    return { id: asignado[0]!.id, shiftId, guardId: input.guardId, serviceDate: input.serviceDate };
+  }
+
+  /** Quien esta de servicio AHORA en el recinto: de aqui sale el escalamiento. */
+  async onDutyNow(siteId: string, supervisorId: string) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      assignment_id: string; guard_id: string; guard_name: string;
+      shift_name: string; started_at: Date; service_date: string;
+    }>>(
+      `SELECT a.id AS assignment_id, a.guard_id,
+              (u.given_name || ' ' || u.family_name) AS guard_name,
+              s.name AS shift_name, a.started_at, a.service_date
+       FROM shift_assignments a
+       JOIN shifts s ON s.id = a.shift_id
+       JOIN users u ON u.id = a.guard_id
+       WHERE s.site_id = $1 AND a.status = 'en_curso'
+       ORDER BY a.started_at`,
+      [siteId],
+    );
+    return rows.map((r) => ({
+      assignmentId: r.assignment_id,
+      guardId: r.guard_id,
+      guardName: r.guard_name,
+      shiftName: r.shift_name,
+      startedAt: r.started_at,
+      serviceDate: r.service_date,
+    }));
   }
 
   /** La bandeja: novedades y panico juntos, misma consulta, misma auditoria. */

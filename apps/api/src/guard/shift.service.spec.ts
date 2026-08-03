@@ -1,0 +1,92 @@
+import { GuardService } from './guard.service';
+import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { MailQueueService } from '../mail/mail-queue.service';
+import type { RulesService } from '../rules/rules.service';
+import { patrolRulesSchema } from '@voxia/shared';
+
+const sinCorreo = () =>
+  ({ enqueue: jest.fn().mockResolvedValue({ jobId: 'mail-job' }) }) as unknown as MailQueueService;
+const sinReglas = () =>
+  ({ effective: jest.fn().mockResolvedValue(patrolRulesSchema.parse({})) }) as unknown as RulesService;
+
+function servicio(query: jest.Mock) {
+  return new GuardService(
+    { manager: { query } } as unknown as TenantContextService,
+    sinCorreo(),
+    sinReglas(),
+  );
+}
+
+describe('GuardService — jornada (#131)', () => {
+  it('marcar entrada deja al guardia en servicio', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'asig-1', status: 'asignado', shift_name: 'Nocturno' }])
+      .mockResolvedValueOnce([]);
+    await expect(
+      servicio(query).startShift('guard-id', { latitude: -33.45, longitude: -70.66 }),
+    ).resolves.toMatchObject({ assignmentId: 'asig-1', status: 'en_curso', onDuty: true });
+  });
+
+  it('sin turno asignado no se puede marcar entrada', async () => {
+    const query = jest.fn().mockResolvedValueOnce([]);
+    await expect(servicio(query).startShift('guard-id', {})).rejects.toThrow(
+      'No tienes un turno asignado para marcar entrada',
+    );
+  });
+
+  it('marcar salida sin jornada abierta es un conflicto, no un cierre silencioso', async () => {
+    const query = jest.fn().mockResolvedValueOnce([]); // el UPDATE no toco filas
+    await expect(servicio(query).endShift('guard-id', {})).rejects.toThrow(
+      'No tienes una jornada abierta',
+    );
+  });
+
+  it('marcar salida cierra la jornada en curso', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{ id: 'asig-1' }]);
+    await expect(servicio(query).endShift('guard-id', {})).resolves.toMatchObject({
+      assignmentId: 'asig-1',
+      status: 'cerrado',
+      onDuty: false,
+    });
+  });
+});
+
+describe('GuardService — ronda voluntaria (#133)', () => {
+  it('queda marcada como voluntaria y se cuelga de la jornada abierta', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }]) // ruta activa
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }, { checkpoint_id: 'cp-2' }])
+      .mockResolvedValueOnce([{ id: 'asig-1' }]) // jornada en curso
+      .mockResolvedValueOnce([]); // INSERT
+    const service = servicio(query);
+
+    await expect(service.startVoluntaryPatrol('guard-id', 'route-1')).resolves.toMatchObject({
+      status: 'en_curso',
+      isVoluntary: true,
+      expectedCheckpoints: 2,
+    });
+    const insert = query.mock.calls.find(([sql]: [string]) => sql.includes('INSERT INTO patrols'));
+    expect(insert[0]).toContain('is_voluntary');
+    expect(insert[1][5]).toBe('asig-1');
+  });
+
+  it('sin jornada abierta igual se puede: la ronda voluntaria no exige turno', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }, { checkpoint_id: 'cp-2' }])
+      .mockResolvedValueOnce([]) // sin jornada
+      .mockResolvedValueOnce([]);
+    await expect(
+      servicio(query).startVoluntaryPatrol('guard-id', 'route-1'),
+    ).resolves.toMatchObject({ isVoluntary: true });
+  });
+
+  it('una ruta sin secuencia valida se rechaza', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }]); // solo 1 punto
+    await expect(servicio(query).startVoluntaryPatrol('guard-id', 'route-1')).rejects.toThrow(
+      'La ruta no tiene una secuencia valida',
+    );
+  });
+});

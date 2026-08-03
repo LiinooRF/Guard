@@ -7,6 +7,7 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { CreatePatrolDto } from './dto/create-patrol.dto';
 import { CreateRouteDto, UpdateRouteDto } from './dto/create-route.dto';
+import { AssignShiftDto, CreateShiftDto } from './dto/create-shift.dto';
 import { UpdateActiveDto } from '../admin/dto/update-active.dto';
 import { SupervisorService } from './supervisor.service';
 
@@ -18,6 +19,11 @@ class SiteParam {
 class RouteParam {
   @IsUUID()
   routeId!: string;
+}
+
+class ShiftParam {
+  @IsUUID()
+  shiftId!: string;
 }
 
 type Autenticado = Request & { user: AuthenticatedUser };
@@ -77,6 +83,38 @@ export class SupervisorController {
   @Permissions('patrols:monitor')
   listPatrols(@Param() params: SiteParam, @Req() request: Autenticado) {
     return this.supervisor.listPatrols(params.siteId, request.user.sub);
+  }
+
+  @Get('sites/:siteId/shifts')
+  @Permissions('shifts:manage')
+  listShifts(@Param() params: SiteParam, @Req() request: Autenticado) {
+    return this.supervisor.listShifts(params.siteId, request.user.sub);
+  }
+
+  @Post('sites/:siteId/shifts')
+  @Permissions('shifts:manage')
+  createShift(
+    @Param() params: SiteParam,
+    @Body() input: CreateShiftDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.supervisor.createShift(params.siteId, request.user.sub, input);
+  }
+
+  @Post('shifts/:shiftId/assignments')
+  @Permissions('shifts:manage')
+  assignShift(
+    @Param() params: ShiftParam,
+    @Body() input: AssignShiftDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.supervisor.assignShift(params.shiftId, request.user.sub, input);
+  }
+
+  @Get('sites/:siteId/on-duty')
+  @Permissions('patrols:monitor')
+  onDutyNow(@Param() params: SiteParam, @Req() request: Autenticado) {
+    return this.supervisor.onDutyNow(params.siteId, request.user.sub);
   }
 
   @Get('sites/:siteId/events')
