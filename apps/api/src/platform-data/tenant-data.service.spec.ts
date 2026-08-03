@@ -75,7 +75,7 @@ describe('TenantDataService.scheduleDeletion', () => {
       .mockResolvedValueOnce([
         {
           id: 'solicitud-1',
-          tenant_id: TENANT,
+          target_tenant_id: TENANT,
           requested_by: ACTOR,
           requested_at: new Date(),
           purge_after: new Date('2026-09-02T00:00:00Z'),
@@ -163,7 +163,7 @@ describe('TenantDataService.executeDeletion', () => {
       .mockResolvedValueOnce([
         {
           id: 'solicitud-1',
-          tenant_id: TENANT,
+          target_tenant_id: TENANT,
           requested_by: ACTOR,
           requested_at: new Date('2026-06-01T00:00:00Z'),
           purge_after: new Date('2026-07-01T00:00:00Z'),

@@ -26,7 +26,13 @@ export class CreateTenantDeletions1724166000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE TABLE tenant_deletions (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id uuid NOT NULL,
+        -- Se llama target_tenant_id, NO tenant_id, a proposito: esta fila no
+        -- pertenece a una empresa, habla SOBRE una empresa. Es un registro de
+        -- plataforma que consulta el SUPERADMIN, que no tiene contexto de
+        -- tenant. Si la columna se llamara tenant_id, la invariante del
+        -- producto ("toda tabla con tenant_id lleva RLS") quedaria violada y
+        -- el test de aislamiento la marcaria — con razon.
+        target_tenant_id uuid NOT NULL,
         requested_by uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
         requested_at timestamptz NOT NULL DEFAULT now(),
         purge_after timestamptz NOT NULL,
@@ -44,7 +50,7 @@ export class CreateTenantDeletions1724166000000 implements MigrationInterface {
     `);
     await queryRunner.query(`
       CREATE UNIQUE INDEX tenant_deletions_one_scheduled_idx
-      ON tenant_deletions (tenant_id)
+      ON tenant_deletions (target_tenant_id)
       WHERE status = 'programado'
     `);
     await queryRunner.query(`

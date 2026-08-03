@@ -12,7 +12,7 @@ import { DataSource, type EntityManager, QueryFailedError } from 'typeorm';
 export const DEFAULT_RETENTION_DAYS = 30;
 
 /**
- * Tablas con columna tenant_id que son registro de PLATAFORMA, no datos del
+ * Registros de PLATAFORMA (no datos de una empresa) que el export debe omitir
  * tenant: la solicitud de borrado es la prueba juridica y debe sobrevivir al
  * purge, asi que no se exporta ni cuenta como fila huerfana.
  */
@@ -22,7 +22,7 @@ type DeletionStatus = 'programado' | 'cancelado' | 'ejecutado';
 
 interface DeletionRow {
   id: string;
-  tenant_id: string;
+  target_tenant_id: string;
   requested_by: string;
   requested_at: Date;
   purge_after: Date;
@@ -40,7 +40,7 @@ interface TenantListRow {
 }
 
 const DELETION_COLUMNS =
-  'id, tenant_id, requested_by, requested_at, purge_after, status, reason, executed_at';
+  'id, target_tenant_id, requested_by, requested_at, purge_after, status, reason, executed_at';
 
 @Injectable()
 export class TenantDataService {
@@ -104,7 +104,7 @@ export class TenantDataService {
       await this.requireTenant(manager, actorId, tenantId);
       try {
         const rows = await manager.query<DeletionRow[]>(
-          `INSERT INTO tenant_deletions (tenant_id, requested_by, reason, purge_after)
+          `INSERT INTO tenant_deletions (target_tenant_id, requested_by, reason, purge_after)
            VALUES ($1, $2, $3, now() + make_interval(days => $4))
            RETURNING ${DELETION_COLUMNS}`,
           [tenantId, actorId, reason, retentionDays],
@@ -126,7 +126,7 @@ export class TenantDataService {
       const rows = await manager.query<DeletionRow[]>(
         `UPDATE tenant_deletions
          SET status = 'cancelado'
-         WHERE tenant_id = $1 AND status = 'programado'
+         WHERE target_tenant_id = $1 AND status = 'programado'
          RETURNING ${DELETION_COLUMNS}`,
         [tenantId],
       );
@@ -164,7 +164,7 @@ export class TenantDataService {
       >(
         `SELECT id, purge_after, purge_after < now() AS expired
          FROM tenant_deletions
-         WHERE tenant_id = $1 AND status = 'programado'`,
+         WHERE target_tenant_id = $1 AND status = 'programado'`,
         [tenantId],
       );
       const request = requests[0];
@@ -256,7 +256,7 @@ export class TenantDataService {
   private toDeletion(row: DeletionRow) {
     return {
       id: row.id,
-      tenantId: row.tenant_id,
+      tenantId: row.target_tenant_id,
       requestedBy: row.requested_by,
       requestedAt: row.requested_at,
       purgeAfter: row.purge_after,
