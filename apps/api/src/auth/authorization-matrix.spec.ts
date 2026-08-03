@@ -116,6 +116,12 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   ),
   secured(
     PlatformController,
+    'mailQueueStatus',
+    ['platform:metrics:read'],
+    ['SUPERADMIN'],
+  ),
+  secured(
+    PlatformController,
     'updateStatus',
     ['platform:tenants:manage'],
     ['SUPERADMIN'],

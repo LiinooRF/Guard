@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
+import type { RedisOptions } from 'ioredis';
 
 import type { Env } from '../config/env';
 import { MAIL_PROVIDER, type MailProvider } from './mail-provider';
+import { MAIL_QUEUE_NAME } from './mail-queue.constants';
+import { MailQueueService } from './mail-queue.service';
+import { MailProcessor } from './mail.processor';
 import { MailpitProvider } from './mailpit.provider';
 import { SmtpProvider } from './smtp.provider';
 
@@ -42,7 +47,29 @@ export function createMailProvider(env: MailEnvironment): MailProvider {
   });
 }
 
+export function redisOptionsFromUrl(raw: string): RedisOptions {
+  const url = new URL(raw);
+  const db = url.pathname.length > 1 ? Number(url.pathname.slice(1)) : 0;
+  return {
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 6379,
+    ...(url.username ? { username: decodeURIComponent(url.username) } : {}),
+    ...(url.password ? { password: decodeURIComponent(url.password) } : {}),
+    ...(Number.isInteger(db) && db >= 0 ? { db } : {}),
+    ...(url.protocol === 'rediss:' ? { tls: {} } : {}),
+  };
+}
+
 @Module({
+  imports: [
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        connection: redisOptionsFromUrl(config.get('REDIS_URL', { infer: true })),
+      }),
+    }),
+    BullModule.registerQueue({ name: MAIL_QUEUE_NAME }),
+  ],
   providers: [
     {
       provide: MAIL_PROVIDER,
@@ -60,7 +87,9 @@ export function createMailProvider(env: MailEnvironment): MailProvider {
           SMTP_SECURE: config.get('SMTP_SECURE', { infer: true }),
         }),
     },
+    MailQueueService,
+    MailProcessor,
   ],
-  exports: [MAIL_PROVIDER],
+  exports: [MAIL_PROVIDER, MailQueueService],
 })
 export class MailModule {}

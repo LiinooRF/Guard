@@ -8,6 +8,7 @@ import { SkipTenantContext } from '../database/tenant-context/skip-tenant-contex
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from './dto/update-tenant-status.dto';
 import { PlatformService } from './platform.service';
+import { MailQueueService } from '../mail/mail-queue.service';
 
 class TenantIdParam {
   @IsUUID()
@@ -17,7 +18,10 @@ class TenantIdParam {
 @Controller('platform/tenants')
 @SkipTenantContext()
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly mailQueue: MailQueueService,
+  ) {}
 
   @Get()
   @Permissions('platform:tenants:manage')
@@ -38,6 +42,12 @@ export class PlatformController {
   @Permissions('platform:metrics:read')
   billing(@Req() request: Request & { user: AuthenticatedUser }) {
     return this.platform.currentBilling(request.user.sub);
+  }
+
+  @Get('mail-queue')
+  @Permissions('platform:metrics:read')
+  mailQueueStatus() {
+    return this.mailQueue.supportStatus();
   }
 
   @Patch(':tenantId/status')

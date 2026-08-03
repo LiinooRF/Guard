@@ -1,8 +1,8 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
-import { MAIL_PROVIDER, type MailProvider } from '../mail/mail-provider';
+import { MailQueueService } from '../mail/mail-queue.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
@@ -64,7 +64,7 @@ export class GuardService {
 
   constructor(
     private readonly tenantContext: TenantContextService,
-    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
+    private readonly mail: MailQueueService,
     private readonly rules: RulesService,
   ) {}
 
@@ -389,7 +389,7 @@ export class GuardService {
     // panico avisan directo a los admins. El reenvio idempotente NO re-avisa.
     let notified = false;
     if (!replay && (input.criticality === 'alta' || input.criticality === 'panico')) {
-      notified = await this.notificarEvento(patrol.site_id, guardId, input);
+      notified = await this.notificarEvento(eventId!, patrol.site_id, guardId, input);
     }
 
     return {
@@ -403,7 +403,12 @@ export class GuardService {
   }
 
   /** Un fallo de correo jamas rompe el registro del evento. */
-  private async notificarEvento(siteId: string, guardId: string, input: ReportEventDto) {
+  private async notificarEvento(
+    eventId: string,
+    siteId: string,
+    guardId: string,
+    input: ReportEventDto,
+  ) {
     try {
       const contexto = await this.tenantContext.manager.query<Array<{
         tenant_id: string;
@@ -419,8 +424,8 @@ export class GuardService {
       const info = contexto[0];
       if (!info) return false;
 
-      const admins = await this.tenantContext.manager.query<Array<{ email: string }>>(
-        `SELECT u.email
+      const admins = await this.tenantContext.manager.query<Array<{ id: string; email: string }>>(
+        `SELECT u.id, u.email
          FROM memberships m
          JOIN users u ON u.id = m.user_id
          WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
@@ -439,7 +444,10 @@ export class GuardService {
             : 'sin GPS',
       };
       for (const admin of admins) {
-        await this.mail.send(admin.email, plantilla, vars, info.tenant_id);
+        await this.mail.enqueue(
+          { to: admin.email, template: plantilla, variables: vars, tenantId: info.tenant_id },
+          { idempotencyKey: `field-event:${eventId}:${admin.id}` },
+        );
       }
       return true;
     } catch (error) {
@@ -482,8 +490,8 @@ export class GuardService {
       const info = contexto[0];
       if (!info) return;
 
-      const admins = await this.tenantContext.manager.query<Array<{ email: string }>>(
-        `SELECT u.email
+      const admins = await this.tenantContext.manager.query<Array<{ id: string; email: string }>>(
+        `SELECT u.id, u.email
          FROM memberships m
          JOIN users u ON u.id = m.user_id
          WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
@@ -506,7 +514,10 @@ export class GuardService {
         missed: compliance.missedCheckpointIds.length,
       };
       for (const admin of admins) {
-        await this.mail.send(admin.email, ALERTA_BAJO_UMBRAL, vars, info.tenant_id);
+        await this.mail.enqueue(
+          { to: admin.email, template: ALERTA_BAJO_UMBRAL, variables: vars, tenantId: info.tenant_id },
+          { idempotencyKey: `patrol-low-compliance:${patrolId}:${admin.id}` },
+        );
       }
     } catch (error) {
       this.logger.warn(
