@@ -16,6 +16,7 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
+import type { RegisterTagDto } from './dto/register-tag.dto';
 import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import type { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 
@@ -54,6 +55,16 @@ interface CheckpointRow {
   requires_photo: boolean | null;
   instructions: string | null;
   is_active: boolean;
+}
+
+interface TagRow {
+  id: string;
+  checkpoint_id: string;
+  tech: 'nfc' | 'qr';
+  uid: string;
+  is_active: boolean;
+  installed_at: string;
+  replaced_at: string | null;
 }
 
 @Injectable()
@@ -431,5 +442,117 @@ export class AdminService {
     );
     if (!result.length) throw new NotFoundException('Punto de control no encontrado');
     return { id: checkpointId, isActive };
+  }
+
+  private async ensureCheckpoint(checkpointId: string) {
+    const checkpoint = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT id FROM checkpoints WHERE id = $1`,
+      [checkpointId],
+    );
+    if (!checkpoint.length) throw new NotFoundException('Punto de control no encontrado');
+  }
+
+  async listTags(checkpointId: string) {
+    await this.ensureCheckpoint(checkpointId);
+    const rows = await this.tenantContext.manager.query<TagRow[]>(
+      `SELECT id, checkpoint_id, tech, uid, is_active, installed_at, replaced_at
+       FROM tags
+       WHERE checkpoint_id = $1
+       ORDER BY installed_at DESC`,
+      [checkpointId],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      checkpointId: row.checkpoint_id,
+      tech: row.tech,
+      uid: row.uid,
+      active: row.is_active,
+      installedAt: row.installed_at,
+      replacedAt: row.replaced_at,
+    }));
+  }
+
+  async registerTag(checkpointId: string, input: RegisterTagDto) {
+    await this.ensureCheckpoint(checkpointId);
+    const uid = input.uid.trim();
+    const tech = input.tech ?? 'nfc';
+
+    // Reemplazo con historial: si el punto ya tiene una etiqueta activa de esta
+    // tecnologia, queda desactivada con su fecha. Nunca se borra una fila.
+    const replaced = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE tags SET is_active = false, replaced_at = now()
+       WHERE checkpoint_id = $1 AND tech = $2 AND is_active
+       RETURNING id`,
+      [checkpointId, tech],
+    );
+
+    const tagId = randomUUID();
+    try {
+      await this.tenantContext.manager.query(
+        `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
+         VALUES ($1, app_tenant_id(), $2, $3, $4)`,
+        [tagId, checkpointId, tech, uid],
+      );
+    } catch (error) {
+      if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+        // Indice global tags_active_uid_uniq: el UID ya esta activo en algun
+        // punto — de este tenant o de otro. No se revela cual.
+        throw new ConflictException('Esa etiqueta ya está registrada en otro punto');
+      }
+      throw error;
+    }
+    return { id: tagId, checkpointId, tech, uid, replacedTagId: replaced[0]?.id ?? null };
+  }
+
+  async retireTag(tagId: string) {
+    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE tags SET is_active = false, replaced_at = now()
+       WHERE id = $1 AND is_active
+       RETURNING id`,
+      [tagId],
+    );
+    if (!result.length) throw new NotFoundException('Etiqueta activa no encontrada');
+    return { id: tagId, active: false };
+  }
+
+  async resolveTag(uid: string) {
+    // RLS limita al tenant de la sesion: la etiqueta de otra empresa
+    // simplemente no resuelve, que es el comportamiento del contrato.
+    const rows = await this.tenantContext.manager.query<Array<{
+      tag_id: string;
+      tech: 'nfc' | 'qr';
+      checkpoint_id: string;
+      checkpoint_name: string;
+      kind: 'normal' | 'acceso_critico';
+      requires_photo: boolean | null;
+      instructions: string | null;
+      site_id: string;
+      site_name: string;
+    }>>(
+      `SELECT tag.id AS tag_id, tag.tech,
+              checkpoint.id AS checkpoint_id, checkpoint.name AS checkpoint_name,
+              checkpoint.kind, checkpoint.requires_photo, checkpoint.instructions,
+              site.id AS site_id, site.name AS site_name
+       FROM tags tag
+       JOIN checkpoints checkpoint
+         ON checkpoint.id = tag.checkpoint_id AND checkpoint.is_active
+       JOIN sites site ON site.id = checkpoint.site_id AND site.is_active
+       WHERE tag.uid = $1 AND tag.is_active`,
+      [uid.trim()],
+    );
+    const [row] = rows;
+    if (!row) throw new NotFoundException('La etiqueta no resuelve a ningún punto');
+    return {
+      tagId: row.tag_id,
+      tech: row.tech,
+      checkpoint: {
+        id: row.checkpoint_id,
+        name: row.checkpoint_name,
+        kind: row.kind,
+        requiresPhoto: row.requires_photo,
+        instructions: row.instructions,
+      },
+      site: { id: row.site_id, name: row.site_name },
+    };
   }
 }

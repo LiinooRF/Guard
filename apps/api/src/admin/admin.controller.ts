@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { IsBoolean, IsUUID } from 'class-validator';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -9,6 +9,7 @@ import { CreateSiteDto } from './dto/create-site.dto';
 import { CreateTenantUserDto } from './dto/create-user.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
 import { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
+import { RegisterTagDto, ResolveTagQuery } from './dto/register-tag.dto';
 import { PhotoOverrideDto, UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 
 class UserParam {
@@ -29,6 +30,11 @@ class AssignmentParam extends UserParam {
 class CheckpointParam {
   @IsUUID()
   checkpointId!: string;
+}
+
+class TagParam {
+  @IsUUID()
+  tagId!: string;
 }
 
 class AssignmentDto {
@@ -138,5 +144,29 @@ export class AdminController {
   @Permissions('tenant:sites:manage')
   setCheckpointActive(@Param() params: CheckpointParam, @Body() input: UpdateActiveDto) {
     return this.admin.setCheckpointActive(params.checkpointId, input.isActive);
+  }
+
+  @Get('checkpoints/:checkpointId/tags')
+  @Permissions('tenant:sites:manage')
+  listTags(@Param() params: CheckpointParam) {
+    return this.admin.listTags(params.checkpointId);
+  }
+
+  @Post('checkpoints/:checkpointId/tags')
+  @Permissions('tenant:sites:manage')
+  registerTag(@Param() params: CheckpointParam, @Body() input: RegisterTagDto) {
+    return this.admin.registerTag(params.checkpointId, input);
+  }
+
+  @Delete('tags/:tagId')
+  @Permissions('tenant:sites:manage')
+  retireTag(@Param() params: TagParam) {
+    return this.admin.retireTag(params.tagId);
+  }
+
+  @Get('tags/resolve')
+  @Permissions('tenant:sites:manage')
+  resolveTag(@Query() query: ResolveTagQuery) {
+    return this.admin.resolveTag(query.uid);
   }
 }
