@@ -8,6 +8,7 @@ import { DatabaseModule } from './database/database.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { GuardModule } from './guard/guard.module';
 import { HealthController } from './health/health.controller';
+import { MailModule } from './mail/mail.module';
 import { PlatformModule } from './platform/platform.module';
 import { RulesController } from './rules/rules.controller';
 
@@ -24,6 +25,7 @@ import { RulesController } from './rules/rules.controller';
     DashboardModule,
     AuthModule,
     GuardModule,
+    MailModule,
     PlatformModule,
   ],
   controllers: [HealthController, RulesController],
