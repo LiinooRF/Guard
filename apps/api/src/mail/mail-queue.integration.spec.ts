@@ -10,6 +10,14 @@ import { MailProcessor } from './mail.processor';
 const redisUrl = process.env.REDIS_TEST_URL;
 const describeRedis = redisUrl ? describe : describe.skip;
 
+function isolatedMailRedisUrl(url: string): string {
+  const parsed = new URL(url);
+  // Auth limpia su DB para probar rate limits. BullMQ usa otra DB para que las
+  // suites paralelas no puedan borrar jobs que todavia estan reintentando.
+  parsed.pathname = '/15';
+  return parsed.toString();
+}
+
 describeRedis('MailQueueService (integracion Redis)', () => {
   const queueName = `mail-delivery-test-${randomUUID()}`;
   let queue: Queue<MailJobData>;
@@ -23,7 +31,7 @@ describeRedis('MailQueueService (integracion Redis)', () => {
   });
 
   it('reintenta al recuperarse el proveedor y no reenvia la misma operacion', async () => {
-    const connection = redisOptionsFromUrl(redisUrl!);
+    const connection = redisOptionsFromUrl(isolatedMailRedisUrl(redisUrl!));
     const send = jest
       .fn()
       .mockRejectedValueOnce(new Error('proveedor temporalmente caido'))

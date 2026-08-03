@@ -348,6 +348,8 @@ describeAuth('AuthService (integración)', () => {
     expect(mail.passwordReset).toHaveBeenCalledWith(
       'guardia@demo-andina.test',
       expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      'a0000000-0000-4000-8000-000000000001',
+      expect.stringMatching(/^password-reset:[a-f0-9]{64}$/),
     );
     await admin.query(
       `DELETE FROM auth_action_tokens
