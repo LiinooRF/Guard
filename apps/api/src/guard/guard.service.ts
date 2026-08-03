@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { computeCompliance, patrolRulesSchema, type ScanAnomaly } from '@voxia/shared';
+import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { MAIL_PROVIDER, type MailProvider } from '../mail/mail-provider';
+import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 
@@ -64,6 +65,7 @@ export class GuardService {
   constructor(
     private readonly tenantContext: TenantContextService,
     @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
+    private readonly rules: RulesService,
   ) {}
 
   async getHome(guardId: string) {
@@ -226,9 +228,9 @@ export class GuardService {
       throw new ConflictException('El punto escaneado no pertenece a esta ronda');
     }
 
-    // Por ahora las reglas por defecto del producto; la resolucion por tenant
-    // es el issue #16 y se enchufa aca cuando exista.
-    const rules = patrolRulesSchema.parse({});
+    // Reglas efectivas del tenant (#16): el umbral o el radio GPS que cambie
+    // el admin rigen la proxima ronda, sin deploy.
+    const rules = await this.rules.effective();
     const anomalies: ScanAnomaly[] = [];
     if (input.latitude === undefined || input.longitude === undefined) {
       if (rules.gpsSharingRequired) anomalies.push('sin_fix_gps');
