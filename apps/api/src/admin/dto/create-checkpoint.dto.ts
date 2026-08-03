@@ -1,0 +1,56 @@
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsLatitude,
+  IsLongitude,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+
+export class CreateCheckpointDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  description?: string;
+
+  /** `acceso_critico` hereda foto obligatoria de las reglas del tenant. */
+  @IsOptional()
+  @IsIn(['normal', 'acceso_critico'])
+  kind?: 'normal' | 'acceso_critico';
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  suggestedOrder?: number;
+
+  @IsOptional()
+  @IsLatitude()
+  latitude?: number;
+
+  @IsOptional()
+  @IsLongitude()
+  longitude?: number;
+
+  /**
+   * Sobreescribe la regla de foto SOLO para este punto. Si no viene, manda la
+   * regla del tenant (`isPhotoRequired()` en @voxia/shared).
+   */
+  @IsOptional()
+  @IsBoolean()
+  requiresPhoto?: boolean;
+
+  /** Que tiene que revisar el guardia en este punto. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  instructions?: string;
+}
