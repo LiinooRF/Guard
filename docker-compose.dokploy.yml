@@ -65,13 +65,18 @@ services:
     # y recien despues arranca la API. Con una sola replica esto es seguro; si
     # algun dia hay varias, las migraciones pasan a un paso de deploy aparte
     # para que no corran en paralelo.
+    # DEBUG TEMPORAL: captura el arranque en /tmp/boot.log; si algo falla, el
+    # contenedor queda vivo 10 min y el healthcheck expone la cola del log.
     command:
       - sh
       - -c
       - >-
-        node node_modules/typeorm/cli.js migration:run
+        ( node node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js
-        && exec node apps/api/dist/main.js
+        > /tmp/boot.log 2>&1
+        && echo MIGRACIONES_OK >> /tmp/boot.log
+        && exec node apps/api/dist/main.js >> /tmp/boot.log 2>&1 )
+        || ( tail -c 1200 /tmp/boot.log; sleep 600 )
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -98,7 +103,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      test: ["CMD-SHELL", "tail -c 900 /tmp/boot.log 2>/dev/null; wget -qO- http://127.0.0.1:3001/health >/dev/null"]
       interval: 15s
       timeout: 5s
       retries: 5
