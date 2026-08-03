@@ -10,6 +10,11 @@ COPY apps/web/package.json apps/web/package.json
 RUN --mount=type=cache,target=/root/.npm,sharing=locked npm ci
 
 FROM dependencies AS build
+# La URL de la API se hornea en el bundle del navegador en ESTE paso.
+# '/api' = mismo origen (rutas por path); un subdominio requiere ademas
+# DNS y CORS coherentes. Se decide por entorno via build-arg.
+ARG NEXT_PUBLIC_API_URL=/api
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY tsconfig.base.json ./
