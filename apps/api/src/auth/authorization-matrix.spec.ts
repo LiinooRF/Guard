@@ -10,7 +10,10 @@ import { AdminController } from '../admin/admin.controller';
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
+import { EvidenceController } from '../evidence/evidence.controller';
 import { PlatformController } from '../platform/platform.controller';
+import { TenantDataController } from '../platform-data/tenant-data.controller';
+import { ReportsController } from '../reports/reports.controller';
 import { RulesController } from '../rules/rules.controller';
 import { SupervisorController } from '../supervisor/supervisor.controller';
 import { AuthController } from './auth.controller';
@@ -127,6 +130,18 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
     ['SUPERADMIN'],
   ),
 
+  secured(ReportsController, 'patrolReport', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(ReportsController, 'siteSummary', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+
+  secured(EvidenceController, 'uploadPhoto', ['patrols:execute'], ['GUARDIA'], true),
+  secured(EvidenceController, 'listPatrolPhotos', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+
+  secured(TenantDataController, 'pendingDeletions', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(TenantDataController, 'exportTenant', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(TenantDataController, 'scheduleDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(TenantDataController, 'cancelDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(TenantDataController, 'executeDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
+
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
@@ -143,6 +158,9 @@ const CONTROLLERS = [
   HealthController,
   RulesController,
   SupervisorController,
+  ReportsController,
+  EvidenceController,
+  TenantDataController,
 ] as const;
 
 describe('matriz de autorización de endpoints', () => {

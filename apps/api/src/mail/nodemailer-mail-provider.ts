@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { SendMailOptions, SentMessageInfo, Transporter } from 'nodemailer';
 
 import type {
+  MailAttachment,
   MailDelivery,
   MailProvider,
   MailTemplate,
@@ -25,6 +26,7 @@ export abstract class NodemailerMailProvider implements MailProvider {
     template: MailTemplate,
     vars: MailTemplateVariables,
     tenantId: string | null,
+    attachments?: readonly MailAttachment[],
   ): Promise<MailDelivery> {
     if (to.trim().length === 0) {
       throw new Error('El destinatario de correo es obligatorio');
@@ -37,6 +39,15 @@ export abstract class NodemailerMailProvider implements MailProvider {
       subject: rendered.subject,
       text: rendered.text,
       ...(rendered.html === undefined ? {} : { html: rendered.html }),
+      ...(attachments === undefined || attachments.length === 0
+        ? {}
+        : {
+            attachments: attachments.map((attachment) => ({
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+              content: Buffer.from(attachment.contentBase64, 'base64'),
+            })),
+          }),
     };
     const result = (await this.transport.sendMail(options)) as SentMessageInfo;
 

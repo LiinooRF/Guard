@@ -24,6 +24,14 @@ export const patrolRulesSchema = z.object({
   /** En accesos, puertas y porterias la foto es obligatoria siempre. */
   photoRequiredOnCritical: z.boolean().default(true),
 
+  /**
+   * Recinto SIN horario definido en site_business_hours (#13): true = se
+   * considera en horario habil (solo los puntos criticos exigen foto); false =
+   * se considera fuera de horario (foto obligatoria en todo punto). El default
+   * evita exigir foto en todo al tenant que aun no configura sus horarios.
+   */
+  businessHoursDefaultOpen: z.boolean().default(true),
+
   /** Si es true y el guardia niega el permiso de ubicacion, no puede iniciar la ronda. */
   gpsSharingRequired: z.boolean().default(true),
 
@@ -55,6 +63,9 @@ export const patrolRulesSchema = z.object({
 
   /** Dias que se conserva la evidencia fotografica. */
   photoRetentionDays: z.number().int().min(30).max(3650).default(365),
+
+  /** Tamaño maximo de cada foto de evidencia, en megabytes (#13). */
+  photoMaxSizeMB: z.number().int().min(1).max(50).default(10),
 
   /** Intentos de login fallidos antes de bloquear temporalmente. */
   maxLoginAttempts: z.number().int().min(3).max(20).default(5),

@@ -15,6 +15,16 @@ export interface MailTemplate {
   readonly html?: string;
 }
 
+/**
+ * Adjunto binario (#17: el informe PDF de la ronda). El contenido viaja en
+ * base64 porque el job de BullMQ se serializa como JSON hacia Redis.
+ */
+export interface MailAttachment {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly contentBase64: string;
+}
+
 export interface MailDelivery {
   readonly messageId: string;
   readonly accepted: readonly string[];
@@ -27,5 +37,6 @@ export interface MailProvider {
     template: MailTemplate,
     vars: MailTemplateVariables,
     tenantId: string | null,
+    attachments?: readonly MailAttachment[],
   ): Promise<MailDelivery>;
 }

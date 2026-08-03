@@ -139,6 +139,8 @@ services:
       # CORS y proteccion CSRF validan contra este origen: debe ser el dominio
       # real del panel o el login desde el navegador se rechaza.
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      # Las fotos viven en un volumen persistente: sin esto un redeploy las pierde.
+      EVIDENCE_PATH: /data/evidence
       MAILPIT_HOST: ${MAILPIT_HOST:-localhost}
       MAILPIT_PORT: ${MAILPIT_PORT:-1025}
       # Cuentas demo al arrancar (solo staging; el seed se niega en production
@@ -163,6 +165,8 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_SECURE: ${SMTP_SECURE}
+    volumes:
+      - evidence_data:/data/evidence
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,6 +231,7 @@ networks:
   internal:
 
 volumes:
+  evidence_data:
   postgres_data:
   redis_data:
   backup_data:
