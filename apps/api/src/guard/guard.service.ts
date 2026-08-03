@@ -1,8 +1,24 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { computeCompliance, patrolRulesSchema, type ScanAnomaly } from '@voxia/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { MAIL_PROVIDER, type MailProvider } from '../mail/mail-provider';
 import type { CreateScanDto } from './dto/create-scan.dto';
+
+/**
+ * La regla que dio origen al producto: si el cumplimiento queda bajo el
+ * umbral, la alerta va DIRECTO al admin de la empresa. Ver issue #64.
+ */
+const ALERTA_BAJO_UMBRAL = {
+  subject: 'Cumplimiento bajo el umbral: {{route}} en {{site}} ({{pct}}%)',
+  text:
+    'La ronda "{{route}}" del recinto {{site}} cerró con {{pct}}% de cumplimiento, ' +
+    'bajo el umbral de {{threshold}}%.\n\n' +
+    'Guardia: {{guard}}\n' +
+    'Puntos escaneados: {{scanned}} de {{expected}}\n' +
+    'Puntos sin escanear: {{missed}}\n\n' +
+    'Revisa el detalle en el panel de VoxIA Control.',
+} as const;
 
 interface PatrolRow {
   id: string;
@@ -23,7 +39,12 @@ interface PatrolRow {
 
 @Injectable()
 export class GuardService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  private readonly logger = new Logger(GuardService.name);
+
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    @Inject(MAIL_PROVIDER) private readonly mail: MailProvider,
+  ) {}
 
   async getHome(guardId: string) {
     const rows = await this.tenantContext.manager.query<PatrolRow[]>(
@@ -239,7 +260,7 @@ export class GuardService {
     );
 
     // El escaneo del punto de cierre cierra la ronda, este o no completa: el
-    // porcentaje real queda registrado y la alerta bajo umbral es #64.
+    // porcentaje real queda registrado.
     let closed = false;
     if (target.is_closing_point && !replay) {
       await this.tenantContext.manager.query(
@@ -249,10 +270,15 @@ export class GuardService {
         [patrolId, compliance.pct],
       );
       closed = true;
+
+      if (compliance.belowThreshold) {
+        await this.alertarBajoUmbral(patrolId, compliance, rules.complianceThreshold);
+      }
     }
 
     return {
       replay,
+      alertSent: closed && compliance.belowThreshold,
       checkpoint: {
         id: target.checkpoint_id,
         name: target.checkpoint_name,
@@ -271,6 +297,72 @@ export class GuardService {
         compliancePct: closed ? compliance.pct : null,
       },
     };
+  }
+
+  /**
+   * Un fallo de correo JAMAS puede romper el escaneo: el guardia esta en
+   * terreno y su registro vale mas que la notificacion. Se avisa en el log y
+   * la ronda queda cerrada igual, con su porcentaje persistido.
+   */
+  private async alertarBajoUmbral(
+    patrolId: string,
+    compliance: { pct: number; scanned: number; expected: number; missedCheckpointIds: readonly string[] },
+    threshold: number,
+  ) {
+    try {
+      const contexto = await this.tenantContext.manager.query<Array<{
+        tenant_id: string;
+        site_name: string;
+        route_name: string;
+        guard_name: string;
+      }>>(
+        `SELECT p.tenant_id, s.name AS site_name, r.name AS route_name,
+                (u.given_name || ' ' || u.family_name) AS guard_name
+         FROM patrols p
+         JOIN sites s ON s.id = p.site_id
+         JOIN routes r ON r.id = p.route_id
+         JOIN users u ON u.id = p.guard_id
+         WHERE p.id = $1`,
+        [patrolId],
+      );
+      const info = contexto[0];
+      if (!info) return;
+
+      const admins = await this.tenantContext.manager.query<Array<{ email: string }>>(
+        `SELECT u.email
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
+      );
+      if (!admins.length) {
+        this.logger.warn(
+          JSON.stringify({ event: 'umbral_sin_destinatarios', patrol_id: patrolId }),
+        );
+        return;
+      }
+
+      const vars = {
+        site: info.site_name,
+        route: info.route_name,
+        guard: info.guard_name,
+        pct: compliance.pct,
+        threshold,
+        scanned: compliance.scanned,
+        expected: compliance.expected,
+        missed: compliance.missedCheckpointIds.length,
+      };
+      for (const admin of admins) {
+        await this.mail.send(admin.email, ALERTA_BAJO_UMBRAL, vars, info.tenant_id);
+      }
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'alerta_umbral_fallo',
+          patrol_id: patrolId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
   }
 }
 
