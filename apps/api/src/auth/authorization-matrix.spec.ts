@@ -12,6 +12,7 @@ import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
 import { PlatformController } from '../platform/platform.controller';
 import { RulesController } from '../rules/rules.controller';
+import { SupervisorController } from '../supervisor/supervisor.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC } from './decorators/public.decorator';
 import { REQUIRED_PERMISSIONS } from './decorators/permissions.decorator';
@@ -86,6 +87,13 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(GuardController, 'start', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'scan', ['patrols:execute'], ['GUARDIA'], true),
 
+  secured(SupervisorController, 'listRoutes', ['routes:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'createRoute', ['routes:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'updateRoute', ['routes:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'setRouteActive', ['routes:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'createPatrol', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'listPatrols', ['patrols:monitor'], ['SUPERVISOR'], true),
+
   secured(
     PlatformController,
     'list',
@@ -124,6 +132,7 @@ const CONTROLLERS = [
   PlatformController,
   HealthController,
   RulesController,
+  SupervisorController,
 ] as const;
 
 describe('matriz de autorización de endpoints', () => {

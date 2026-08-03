@@ -11,6 +11,7 @@ import { HealthController } from './health/health.controller';
 import { MailModule } from './mail/mail.module';
 import { PlatformModule } from './platform/platform.module';
 import { RulesController } from './rules/rules.controller';
+import { SupervisorModule } from './supervisor/supervisor.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { RulesController } from './rules/rules.controller';
     GuardModule,
     MailModule,
     PlatformModule,
+    SupervisorModule,
   ],
   controllers: [HealthController, RulesController],
 })
