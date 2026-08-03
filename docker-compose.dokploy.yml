@@ -77,7 +77,7 @@ services:
         -d apps/api/dist/database/data-source.js
         >> /tmp/boot.log 2>&1
         && echo MIGRACIONES_OK >> /tmp/boot.log
-        && exec node apps/api/dist/main.js >> /tmp/boot.log 2>&1 )
+        && exec node -e "process.on('uncaughtException',e=>{console.log('UNCAUGHT:',(e&&e.stack)||e);process.exit(1)});process.on('unhandledRejection',e=>{console.log('UNHANDLED:',(e&&e.stack)||e);process.exit(1)});require('/app/apps/api/dist/main.js')" >> /tmp/boot.log 2>&1 )
         || ( tail -c 1200 /tmp/boot.log; sleep 600 )
     environment:
       NODE_ENV: production
