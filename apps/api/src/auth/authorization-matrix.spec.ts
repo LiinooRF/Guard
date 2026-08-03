@@ -7,6 +7,7 @@ import {
 } from '@voxia/shared';
 
 import { AdminController } from '../admin/admin.controller';
+import { AuditController } from '../audit/audit.controller';
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
@@ -152,6 +153,11 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(TenantDataController, 'cancelDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(TenantDataController, 'executeDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
 
+  secured(AuditController, 'listAudit', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(AuditController, 'auditActions', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(AuditController, 'statsOverview', ['tenant:stats:read'], ['ADMIN'], true),
+  secured(AuditController, 'statsTrend', ['tenant:stats:read'], ['ADMIN'], true),
+
   secured(EscalationController, 'getPolicies', ['tenant:security:manage'], ['ADMIN'], true),
   secured(EscalationController, 'replacePolicies', ['tenant:security:manage'], ['ADMIN'], true),
   secured(EscalationController, 'acknowledge', ['patrols:monitor'], ['SUPERVISOR'], true),
@@ -185,6 +191,7 @@ const CONTROLLERS = [
   ReportsController,
   EvidenceController,
   TenantDataController,
+  AuditController,
   EscalationController,
   SyncController,
   GeoController,
