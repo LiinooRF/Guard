@@ -71,9 +71,11 @@ services:
       - sh
       - -c
       - >-
-        ( node node_modules/typeorm/cli.js migration:run
+        ( node -e "const{Client}=require('pg');const probar=(n,u)=>new Client({connectionString:u}).connect().then(()=>console.log(n,'CONECTA_OK')).catch(e=>console.log(n,'FALLA:',e.message));Promise.allSettled([probar('APP',process.env.DATABASE_URL),probar('MIGRA',process.env.MIGRATION_DATABASE_URL)]).then(()=>process.exit(0))"
+        > /tmp/boot.log 2>&1;
+        node node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js
-        > /tmp/boot.log 2>&1
+        >> /tmp/boot.log 2>&1
         && echo MIGRACIONES_OK >> /tmp/boot.log
         && exec node apps/api/dist/main.js >> /tmp/boot.log 2>&1 )
         || ( tail -c 1200 /tmp/boot.log; sleep 600 )
