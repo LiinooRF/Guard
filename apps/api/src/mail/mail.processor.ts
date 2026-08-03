@@ -15,12 +15,22 @@ export class MailProcessor extends WorkerHost {
   }
 
   process(job: Job<MailJobData>) {
-    return this.provider.send(
-      job.data.to,
-      job.data.template,
-      job.data.variables,
-      job.data.tenantId,
-    );
+    // El argumento de adjuntos solo se pasa cuando existe: los correos sin
+    // adjunto conservan la firma original de MailProvider.send.
+    return job.data.attachments === undefined
+      ? this.provider.send(
+          job.data.to,
+          job.data.template,
+          job.data.variables,
+          job.data.tenantId,
+        )
+      : this.provider.send(
+          job.data.to,
+          job.data.template,
+          job.data.variables,
+          job.data.tenantId,
+          job.data.attachments,
+        );
   }
 
   @OnWorkerEvent('failed')

@@ -22,6 +22,11 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
 
+  // Evidencia fotografica (#13): raiz donde se guardan las fotos de escaneo,
+  // organizadas como EVIDENCE_PATH/<tenant>/<ronda>/. En Dokploy debe ser un
+  // volumen persistente; sin el, un redeploy pierde la evidencia.
+  EVIDENCE_PATH: z.string().min(1).default('./storage/evidence'),
+
   // El proveedor de correo aun NO esta decidido (issue #9). El codigo va contra
   // la interfaz MailProvider, asi que elegir despues no cuesta nada.
   //

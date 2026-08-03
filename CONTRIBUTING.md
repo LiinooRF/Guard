@@ -132,6 +132,26 @@ No crees el rol a mano en otro lado —un workflow de CI, un script de setup— 
 rápido. Una segunda definición sin esa comprobación deja los tests de aislamiento pasando en verde
 mientras el rol real se salta las políticas, que es el peor error posible: el que no se nota.
 
+## Si tocas dependencias (leelo, nos costo dos CI rojas)
+
+Cuando agregues o quites un paquete, **verifica el lockfile con el mismo comando que
+usa la CI** antes de subir:
+
+```bash
+rm -rf node_modules
+npm ci
+```
+
+Por que: `npm install` corriendo en Windows o macOS **poda del lockfile entradas que solo
+aplican a Linux** (subarboles nativos como `@emnapi/*`) o las mueve de lugar. En tu maquina
+todo sigue funcionando porque `node_modules` ya existe; en la CI y en la imagen Docker,
+`npm ci` se niega con `Missing: ... from lock file` y falla el build entero.
+
+`npm ci` borra `node_modules` y instala EXACTAMENTE lo que dice el lockfile: si pasa en tu
+maquina, pasa en la CI. Regenerar el lockfile desde cero **no** alcanza — produce un arbol
+distinto al que ya estaba verde. Si `npm ci` se queja, compara tu lockfile con el de
+`staging` y restaura las entradas que npm haya movido o borrado.
+
 ## Commits
 
 Formato corto, en imperativo, con el issue al final:
