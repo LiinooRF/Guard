@@ -7,8 +7,14 @@ import {
 import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { RulesService } from '../rules/rules.service';
 import type { CreatePatrolDto } from './dto/create-patrol.dto';
-import type { CreateRouteDto, RouteCheckpointDto, UpdateRouteDto } from './dto/create-route.dto';
+import type {
+  CreateRouteDto,
+  RouteCheckpointDto,
+  RouteOrderMode,
+  UpdateRouteDto,
+} from './dto/create-route.dto';
 
 interface RouteRow {
   id: string;
@@ -18,17 +24,28 @@ interface RouteRow {
   tolerance_min: number;
   version: number;
   is_active: boolean;
+  order_mode: RouteOrderMode;
   checkpoints: Array<{
     id: string;
     name: string;
     position: number;
     isClosingPoint: boolean;
+    isAnchor: boolean;
   }>;
+}
+
+interface PuntoSnapshot {
+  checkpoint_id: string;
+  is_closing_point: boolean;
+  is_anchor: boolean;
 }
 
 @Injectable()
 export class SupervisorService {
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly rules: RulesService,
+  ) {}
 
   /**
    * El SUPERVISOR esta limitado a SUS recintos asignados, no a todo el tenant.
@@ -45,13 +62,15 @@ export class SupervisorService {
     }
   }
 
-  private async routeSite(routeId: string): Promise<{ siteId: string; version: number }> {
+  private async routeSite(
+    routeId: string,
+  ): Promise<{ siteId: string; version: number; orderMode: RouteOrderMode }> {
     const rows = await this.tenantContext.manager.query<
-      Array<{ site_id: string; version: number }>
-    >(`SELECT site_id, version FROM routes WHERE id = $1`, [routeId]);
+      Array<{ site_id: string; version: number; order_mode: RouteOrderMode }>
+    >(`SELECT site_id, version, order_mode FROM routes WHERE id = $1`, [routeId]);
     const route = rows[0];
     if (!route) throw new NotFoundException('La ruta no existe');
-    return { siteId: route.site_id, version: route.version };
+    return { siteId: route.site_id, version: route.version, orderMode: route.order_mode ?? 'fijo' };
   }
 
   /** Normaliza la secuencia: exactamente un punto de cierre (default: el ultimo). */
@@ -68,6 +87,7 @@ export class SupervisorService {
       checkpointId: c.checkpointId,
       position: i + 1,
       isClosingPoint: marked.length ? Boolean(c.isClosingPoint) : i === checkpoints.length - 1,
+      isAnchor: Boolean(c.isAnchor),
     }));
   }
 
@@ -78,12 +98,12 @@ export class SupervisorService {
   ) {
     for (const punto of seq) {
       const inserted = await this.tenantContext.manager.query<Array<{ checkpoint_id: string }>>(
-        `INSERT INTO route_checkpoints (tenant_id, route_id, checkpoint_id, position, is_closing_point)
-         SELECT app_tenant_id(), $1, c.id, $3, $4
+        `INSERT INTO route_checkpoints (tenant_id, route_id, checkpoint_id, position, is_closing_point, is_anchor)
+         SELECT app_tenant_id(), $1, c.id, $3, $4, $6
          FROM checkpoints c
          WHERE c.id = $2 AND c.site_id = $5 AND c.is_active
          RETURNING checkpoint_id`,
-        [routeId, punto.checkpointId, punto.position, punto.isClosingPoint, siteId],
+        [routeId, punto.checkpointId, punto.position, punto.isClosingPoint, siteId, punto.isAnchor],
       );
       if (!inserted.length) {
         // Punto inexistente, inactivo o de OTRO recinto: la transaccion del
@@ -95,14 +115,54 @@ export class SupervisorService {
     }
   }
 
+  /** Fisher-Yates in place. Los indices son validos por construccion. */
+  private barajar<T>(arr: T[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = arr[i]!;
+      arr[i] = arr[j]!;
+      arr[j] = tmp;
+    }
+  }
+
+  /**
+   * Sortea el orden del snapshot segun el modo. El punto de cierre SIEMPRE va
+   * al final: es lo que cierra la ronda y dispara el informe. En
+   * 'aleatorio_con_anclas' las anclas conservan su indice y solo se barajan
+   * los puntos libres.
+   */
+  private sortearOrden(puntos: PuntoSnapshot[], modo: RouteOrderMode): string[] {
+    if (modo === 'fijo') return puntos.map((p) => p.checkpoint_id);
+
+    const cierre = puntos.filter((p) => p.is_closing_point);
+    const resto = puntos.filter((p) => !p.is_closing_point);
+
+    if (modo === 'aleatorio') {
+      this.barajar(resto);
+      return [...resto, ...cierre].map((p) => p.checkpoint_id);
+    }
+
+    // aleatorio_con_anclas
+    const indicesLibres = resto
+      .map((p, i) => (p.is_anchor ? -1 : i))
+      .filter((i) => i >= 0);
+    const libres = indicesLibres.map((i) => resto[i]!);
+    this.barajar(libres);
+    const resultado = [...resto];
+    indicesLibres.forEach((idx, j) => {
+      resultado[idx] = libres[j]!;
+    });
+    return [...resultado, ...cierre].map((p) => p.checkpoint_id);
+  }
+
   async listRoutes(siteId: string, supervisorId: string) {
     await this.ensureAssignedSite(siteId, supervisorId);
     const rows = await this.tenantContext.manager.query<RouteRow[]>(
       `SELECT r.id, r.site_id, r.name, r.estimated_duration_min, r.tolerance_min,
-              r.version, r.is_active,
+              r.version, r.is_active, r.order_mode,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'id', c.id, 'name', c.name, 'position', rc.position,
-                'isClosingPoint', rc.is_closing_point
+                'isClosingPoint', rc.is_closing_point, 'isAnchor', rc.is_anchor
               ) ORDER BY rc.position) FILTER (WHERE c.id IS NOT NULL), '[]'::jsonb) AS checkpoints
        FROM routes r
        LEFT JOIN route_checkpoints rc ON rc.route_id = r.id
@@ -120,6 +180,7 @@ export class SupervisorService {
       toleranceMin: r.tolerance_min,
       version: r.version,
       isActive: r.is_active,
+      orderMode: r.order_mode,
       checkpoints: r.checkpoints,
     }));
   }
@@ -129,9 +190,16 @@ export class SupervisorService {
     const seq = this.normalizeSequence(input.checkpoints);
     const routeId = randomUUID();
     await this.tenantContext.manager.query(
-      `INSERT INTO routes (id, tenant_id, site_id, name, estimated_duration_min, tolerance_min)
-       VALUES ($1, app_tenant_id(), $2, $3, $4, $5)`,
-      [routeId, siteId, input.name, input.estimatedDurationMin, input.toleranceMin ?? 15],
+      `INSERT INTO routes (id, tenant_id, site_id, name, estimated_duration_min, tolerance_min, order_mode)
+       VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6)`,
+      [
+        routeId,
+        siteId,
+        input.name,
+        input.estimatedDurationMin,
+        input.toleranceMin ?? 15,
+        input.orderMode ?? 'fijo',
+      ],
     );
     await this.insertSequence(routeId, siteId, seq);
     return { id: routeId, version: 1 };
@@ -152,6 +220,7 @@ export class SupervisorService {
       agrega('estimated_duration_min', input.estimatedDurationMin);
     }
     if (input.toleranceMin !== undefined) agrega('tolerance_min', input.toleranceMin);
+    if (input.orderMode !== undefined) agrega('order_mode', input.orderMode);
 
     let nuevaVersion = version;
     if (input.checkpoints) {
@@ -187,9 +256,14 @@ export class SupervisorService {
   /**
    * Asignacion manual de una ronda. Congela el snapshot de puntos ESPERADOS al
    * momento de asignar: si la ruta cambia despues, esta ronda no se entera.
+   *
+   * Anti-predictibilidad (#65): el orden se SORTEA aca, al generar la ronda, y
+   * queda congelado en el snapshot. Dos rondas del mismo turno en dias
+   * distintos llevan ordenes distintos, y el informe muestra exactamente el
+   * orden que correspondia.
    */
   async createPatrol(routeId: string, supervisorId: string, input: CreatePatrolDto) {
-    const { siteId } = await this.routeSite(routeId);
+    const { siteId, orderMode } = await this.routeSite(routeId);
     await this.ensureAssignedSite(siteId, supervisorId);
 
     const inicio = new Date(input.scheduledStartAt);
@@ -207,14 +281,22 @@ export class SupervisorService {
       throw new NotFoundException('El guardia no existe en esta empresa');
     }
 
-    const puntos = await this.tenantContext.manager.query<Array<{ checkpoint_id: string }>>(
-      `SELECT checkpoint_id FROM route_checkpoints
+    const puntos = await this.tenantContext.manager.query<PuntoSnapshot[]>(
+      `SELECT checkpoint_id, is_closing_point, is_anchor FROM route_checkpoints
        WHERE route_id = $1 ORDER BY position`,
       [routeId],
     );
     if (puntos.length < 2) {
       throw new BadRequestException('La ruta no tiene una secuencia valida de puntos');
     }
+
+    // La regla del tenant FUERZA el sorteo sobre rutas 'fijo'; el modo de la
+    // ruta refina (una ruta con anclas conserva sus anclas).
+    const reglas = await this.rules.effective();
+    let modo: RouteOrderMode = orderMode;
+    if (modo === 'fijo' && reglas.randomizeRouteOrder) modo = 'aleatorio';
+
+    const orden = this.sortearOrden(puntos, modo);
 
     const patrolId = randomUUID();
     await this.tenantContext.manager.query(
@@ -229,10 +311,15 @@ export class SupervisorService {
         input.guardId,
         input.scheduledStartAt,
         input.scheduledEndAt,
-        JSON.stringify(puntos.map((p) => p.checkpoint_id)),
+        JSON.stringify(orden),
       ],
     );
-    return { id: patrolId, status: 'pendiente', expectedCheckpoints: puntos.length };
+    return {
+      id: patrolId,
+      status: 'pendiente',
+      expectedCheckpoints: orden.length,
+      orderMode: modo,
+    };
   }
 
   /** La bandeja: novedades y panico juntos, misma consulta, misma auditoria. */
