@@ -130,6 +130,9 @@ services:
     profiles: ["staging"]
     environment:
       MP_WEBROOT: /correo
+      # Con el sitio publico, la bandeja de pruebas no puede quedar abierta a
+      # internet: usuario:clave (formato user:pass). Vacio = sin candado (local).
+      MP_UI_AUTH: ${MAILPIT_UI_AUTH:-}
     networks:
       - internal
       - dokploy-network
