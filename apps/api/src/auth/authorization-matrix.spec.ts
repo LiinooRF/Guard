@@ -15,6 +15,7 @@ import { EscalationController } from '../escalation/escalation.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { GeoController } from '../geo/geo.controller';
 import { PlatformController } from '../platform/platform.controller';
+import { SupportAccessController } from '../platform-data/support-access.controller';
 import { TenantDataController } from '../platform-data/tenant-data.controller';
 import { ReportsController } from '../reports/reports.controller';
 import { RulesController } from '../rules/rules.controller';
@@ -153,6 +154,10 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(TenantDataController, 'cancelDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(TenantDataController, 'executeDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
 
+  secured(SupportAccessController, 'active', ['platform:support:access'], ['SUPERADMIN']),
+  secured(SupportAccessController, 'open', ['platform:support:access'], ['SUPERADMIN']),
+  secured(SupportAccessController, 'close', ['platform:support:access'], ['SUPERADMIN']),
+
   secured(AuditController, 'listAudit', ['tenant:audit:read'], ['ADMIN'], true),
   secured(AuditController, 'auditActions', ['tenant:audit:read'], ['ADMIN'], true),
   secured(AuditController, 'statsOverview', ['tenant:stats:read'], ['ADMIN'], true),
@@ -191,6 +196,7 @@ const CONTROLLERS = [
   ReportsController,
   EvidenceController,
   TenantDataController,
+  SupportAccessController,
   AuditController,
   EscalationController,
   SyncController,
