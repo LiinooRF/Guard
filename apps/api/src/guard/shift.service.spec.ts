@@ -1,5 +1,6 @@
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { EscalationService } from '../escalation/escalation.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
 import type { RulesService } from '../rules/rules.service';
 import { patrolRulesSchema } from '@voxia/shared';
@@ -9,12 +10,11 @@ const sinCorreo = () =>
 const sinReglas = () =>
   ({ effective: jest.fn().mockResolvedValue(patrolRulesSchema.parse({})) }) as unknown as RulesService;
 
+const sinEscalamiento = (notificados = 0) =>
+  ({ notify: jest.fn().mockResolvedValue(notificados) }) as unknown as EscalationService;
+
 function servicio(query: jest.Mock) {
-  return new GuardService(
-    { manager: { query } } as unknown as TenantContextService,
-    sinCorreo(),
-    sinReglas(),
-  );
+  return new GuardService({ manager: { query } } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 }
 
 describe('GuardService — jornada (#131)', () => {

@@ -2,6 +2,7 @@ import { patrolRulesSchema } from '@voxia/shared';
 
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { EscalationService } from '../escalation/escalation.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
 import type { RulesService } from '../rules/rules.service';
 
@@ -14,14 +15,13 @@ const sinReglas = () =>
   ({ effective: jest.fn().mockResolvedValue(patrolRulesSchema.parse({})) }) as
     unknown as RulesService;
 
+const sinEscalamiento = (notificados = 0) =>
+  ({ notify: jest.fn().mockResolvedValue(notificados) }) as unknown as EscalationService;
+
 describe('GuardService', () => {
   it('indica claramente cuando el guardia no tiene turno', async () => {
     const manager = { query: jest.fn().mockResolvedValue([]) };
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.getHome('guard-id')).resolves.toMatchObject({
       hasAssignment: false,
@@ -47,11 +47,7 @@ describe('GuardService', () => {
         },
       ]),
     };
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.getHome('guard-id')).resolves.toMatchObject({
       hasAssignment: true,
@@ -72,11 +68,7 @@ describe('GuardService', () => {
         { id: 'patrol-id', status: 'en_curso', started_at: new Date() },
       ]),
     };
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.startPatrol('patrol-id', 'guard-id')).resolves.toMatchObject({
       status: 'en_curso',
@@ -119,11 +111,7 @@ describe('GuardService.registerScan', () => {
         { checkpoint_id: 'cp-2', anomalies: [] },
       ]) // todos los escaneos de la ronda
       .mockResolvedValueOnce([]); // cierre
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
       replay: false,
@@ -147,11 +135,7 @@ describe('GuardService.registerScan', () => {
       }])
       .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
       replay: true,
@@ -170,11 +154,7 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-x', checkpoint_id: 'cp-de-otro-recinto', checkpoint_name: 'Bodega ajena',
         kind: 'normal', latitude: null, longitude: null, is_closing_point: null,
       }]);
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).rejects.toThrow(
       'El punto escaneado no pertenece a esta ronda',
@@ -199,11 +179,7 @@ describe('GuardService.registerScan', () => {
       }]) // contexto de la alerta
       .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]); // admins
     const correo = sinCorreo();
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      correo,
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo, sinReglas(), sinEscalamiento());
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
@@ -239,31 +215,27 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]);
     const correo = { enqueue: jest.fn().mockRejectedValue(new Error('redis caido')) } as
       unknown as MailQueueService;
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      correo,
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo, sinReglas(), sinEscalamiento());
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
     ).resolves.toMatchObject({ patrol: { status: 'completada' } });
   });
 
-  it('el boton de panico registra sin texto y avisa a los admins (#123)', async () => {
+  it('el boton de panico registra sin texto y delega el escalamiento (#123, #126)', async () => {
     const manager = { query: jest.fn() };
     manager.query
       .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }]) // ultima ronda
-      .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]) // insert
-      .mockResolvedValueOnce([{
-        tenant_id: 'tenant-1', site_name: 'Planta Norte', guard_name: 'Juan Soto',
-      }])
-      .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]);
+      .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]); // insert
+    // Resolver destinatarios y armar el correo ya NO es tarea del guardia:
+    // vive en EscalationService, que decide la cadena segun la regla del tenant.
+    const escalamiento = sinEscalamiento(1);
     const correo = sinCorreo();
     const service = new GuardService(
       { manager } as unknown as TenantContextService,
       correo,
       sinReglas(),
+      escalamiento,
     );
 
     await expect(
@@ -273,15 +245,13 @@ describe('GuardService.registerScan', () => {
         latitude: -33.45, longitude: -70.66,
       }),
     ).resolves.toMatchObject({ replay: false, notified: true, criticality: 'panico' });
-    expect(correo.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: 'admin@empresa.test',
-        tenantId: 'tenant-1',
-        template: expect.objectContaining({ subject: expect.stringContaining('PÁNICO') }),
-        variables: expect.objectContaining({ site: 'Planta Norte', guard: 'Juan Soto' }),
-      }),
-      { idempotencyKey: expect.stringContaining('field-event:evento-id:admin-1') },
+    expect(escalamiento.notify).toHaveBeenCalledWith(
+      'evento-id',
+      'panico',
+      expect.objectContaining({ siteId: 'site-id', guardId: 'guard-id' }),
     );
+    // El correo lo encola la cadena, no el flujo del guardia.
+    expect(correo.enqueue).not.toHaveBeenCalled();
   });
 
   it('reenviar el mismo evento no duplica la fila NI re-avisa (#123)', async () => {
@@ -291,11 +261,7 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([]) // ON CONFLICT: ya existia
       .mockResolvedValueOnce([{ id: 'evento-id' }]); // busqueda del original
     const correo = sinCorreo();
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      correo,
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo, sinReglas(), sinEscalamiento());
 
     await expect(
       service.reportEvent('guard-id', {
@@ -312,11 +278,7 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }])
       .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]);
     const correo = sinCorreo();
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      correo,
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo, sinReglas(), sinEscalamiento());
 
     await expect(
       service.reportEvent('guard-id', {
@@ -339,11 +301,7 @@ describe('GuardService.registerScan', () => {
       }])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: ['sin_fix_gps'] }]);
-    const service = new GuardService(
-      { manager } as unknown as TenantContextService,
-      sinCorreo(),
-      sinReglas(),
-    );
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),

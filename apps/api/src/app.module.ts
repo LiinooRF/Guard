@@ -9,12 +9,15 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { GuardModule } from './guard/guard.module';
 import { HealthController } from './health/health.controller';
 import { MailModule } from './mail/mail.module';
+import { EscalationModule } from './escalation/escalation.module';
 import { EvidenceModule } from './evidence/evidence.module';
+import { GeoModule } from './geo/geo.module';
 import { PlatformModule } from './platform/platform.module';
 import { TenantDataModule } from './platform-data/tenant-data.module';
 import { ReportsModule } from './reports/reports.module';
 import { RulesModule } from './rules/rules.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -30,12 +33,15 @@ import { SupervisorModule } from './supervisor/supervisor.module';
     AuthModule,
     GuardModule,
     MailModule,
+    EscalationModule,
     EvidenceModule,
+    GeoModule,
     PlatformModule,
     TenantDataModule,
     ReportsModule,
     RulesModule,
     SupervisorModule,
+    SyncModule,
   ],
   controllers: [HealthController],
 })

@@ -10,12 +10,15 @@ import { AdminController } from '../admin/admin.controller';
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
+import { EscalationController } from '../escalation/escalation.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
+import { GeoController } from '../geo/geo.controller';
 import { PlatformController } from '../platform/platform.controller';
 import { TenantDataController } from '../platform-data/tenant-data.controller';
 import { ReportsController } from '../reports/reports.controller';
 import { RulesController } from '../rules/rules.controller';
 import { SupervisorController } from '../supervisor/supervisor.controller';
+import { SyncController } from '../sync/sync.controller';
 import { AuthController } from './auth.controller';
 import { IS_PUBLIC } from './decorators/public.decorator';
 import { REQUIRED_PERMISSIONS } from './decorators/permissions.decorator';
@@ -149,6 +152,20 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(TenantDataController, 'cancelDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(TenantDataController, 'executeDeletion', ['platform:tenants:manage'], ['SUPERADMIN']),
 
+  secured(EscalationController, 'getPolicies', ['tenant:security:manage'], ['ADMIN'], true),
+  secured(EscalationController, 'replacePolicies', ['tenant:security:manage'], ['ADMIN'], true),
+  secured(EscalationController, 'acknowledge', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(EscalationController, 'falseAlarm', ['patrols:execute'], ['GUARDIA'], true),
+
+  secured(SyncController, 'push', ['patrols:execute'], ['GUARDIA'], true),
+  secured(SyncController, 'status', ['patrols:execute'], ['GUARDIA'], true),
+
+  secured(GeoController, 'appendTrack', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GeoController, 'patrolTrack', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(GeoController, 'grantConsent', ['account:sessions:manage'], ALL_ROLES),
+  secured(GeoController, 'revokeConsent', ['account:sessions:manage'], ALL_ROLES),
+  secured(GeoController, 'consentStatus', ['account:sessions:manage'], ALL_ROLES),
+
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
@@ -168,6 +185,9 @@ const CONTROLLERS = [
   ReportsController,
   EvidenceController,
   TenantDataController,
+  EscalationController,
+  SyncController,
+  GeoController,
 ] as const;
 
 describe('matriz de autorización de endpoints', () => {
