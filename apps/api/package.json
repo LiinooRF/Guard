@@ -3,25 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "description": "API de VoxIA Control (NestJS)",
-  "_comment": "Solo dependencias que el scaffolding usa de verdad. Los drivers de PostgreSQL, Redis y BullMQ los agrega Dev A en los issues #6 y #7, cuando haya algo que conectar.",
+  "_comment": "Dependencias de runtime usadas por la API. PostgreSQL y TypeORM respaldan el esquema multi-tenant desde el issue #28.",
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "jest --passWithNoTests"
+    "test": "jest --passWithNoTests",
+    "db:migrate": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:run",
+    "db:revert": "typeorm-ts-node-commonjs -d src/database/data-source.ts migration:revert",
+    "seed": "ts-node src/database/seeds/development.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/typeorm": "^11.0.3",
     "@voxia/shared": "*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "helmet": "^8.0.0",
+    "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "typeorm": "^1.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -31,8 +37,30 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.9.0",
+    "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.1",
     "jest": "^29.7.0",
+    "supertest": "^7.2.2",
     "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.0"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/../tsconfig.json"
+        }
+      ]
+    },
+    "testEnvironment": "node"
   }
 }
