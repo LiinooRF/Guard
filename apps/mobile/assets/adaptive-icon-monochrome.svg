@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoxIA Control">
+  <title>VoxIA Control — capa monocroma (iconos tematicos de Android 13+)</title>
+  <!--
+    Android 13+ recolorea esta capa con el tema del sistema. Solo lee la FORMA:
+    todo lo que no sea transparente se pinta del color del tema, asi que aca no
+    hay medias tintas ni rellenos con opacidad — un fill-opacity 0.12 se vuelve
+    un bloque solido y el escudo se convierte en una mancha.
+
+    Sin esta capa el icono queda como un cuadrado plano entre los demas ya
+    adaptados: se nota, y se nota justo en el cajon de apps del cliente.
+  -->
+  <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
+    <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M512 240 L760 320 L760 520 C760 660 656 744 512 792 C368 744 264 660 264 520 L264 320 Z"
+            stroke-width="40"/>
+      <path d="M455 451.4 A70 70 0 0 1 455 572.6" stroke-width="40"/>
+      <path d="M480 408.1 A120 120 0 0 1 480 615.9" stroke-width="40"/>
+      <path d="M505 364.8 A170 170 0 0 1 505 659.2" stroke-width="40"/>
+    </g>
+    <circle cx="410" cy="512" r="30" fill="#000000"/>
+  </g>
+</svg>

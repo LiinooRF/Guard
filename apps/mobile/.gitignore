@@ -1,0 +1,20 @@
+# Proyectos nativos generados por `expo prebuild`. El flujo es CNG: la fuente de
+# verdad es app.config.ts, no el proyecto Gradle. Commitear android/ significa
+# que un cambio de permiso en app.config.ts deja de tener efecto y nadie se
+# entera hasta que Play rechaza el AAB.
+/android/
+/ios/
+
+# Artefactos de Expo y de builds locales
+.expo/
+*.apk
+*.aab
+
+# Credenciales de Google Play (cuenta de servicio para `eas submit`).
+# NUNCA se commitea: es acceso de publicacion a la ficha.
+/secrets/
+
+# Keystores. El de produccion lo administra EAS; una copia local es solo para
+# el respaldo fuera de linea y no vive en el repositorio.
+*.jks
+*.keystore

@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { BrandingModule } from './branding/branding.module';
+import { ChecklistsModule } from './checklists/checklists.module';
+import { EventsStreamModule } from './events-stream/events-stream.module';
 import { validateEnv } from './config/env';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
@@ -36,6 +38,8 @@ import { SyncModule } from './sync/sync.module';
     AdminModule,
     AuditModule,
     BrandingModule,
+    ChecklistsModule,
+    EventsStreamModule,
     DashboardModule,
     AuthModule,
     GuardModule,

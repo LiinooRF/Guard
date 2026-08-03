@@ -9,6 +9,8 @@ import {
 import { AdminController } from '../admin/admin.controller';
 import { AuditController } from '../audit/audit.controller';
 import { BrandingController } from '../branding/branding.controller';
+import { ChecklistsController } from '../checklists/checklists.controller';
+import { EventsStreamController } from '../events-stream/events-stream.controller';
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
@@ -56,6 +58,8 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   publicEndpoint(AuthController, 'requestPasswordReset'),
   publicEndpoint(AuthController, 'completePasswordReset'),
   publicEndpoint(AuthController, 'completeInvitation'),
+  secured(AuthController, 'issueHandoff', ['account:sessions:manage'], ALL_ROLES),
+  publicEndpoint(AuthController, 'redeemHandoff'),
   secured(AuthController, 'session', ['account:sessions:manage'], ALL_ROLES),
   secured(AuthController, 'sessions', ['account:sessions:manage'], ALL_ROLES),
   secured(AuthController, 'revokeSession', ['account:sessions:manage'], ALL_ROLES),
@@ -195,6 +199,16 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(PlatformOpsController, 'provision', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(PlatformOpsController, 'platformMetrics', ['platform:metrics:read'], ['SUPERADMIN']),
 
+  secured(EventsStreamController, 'stream', ['patrols:monitor'], ['SUPERVISOR'], true),
+
+  secured(ChecklistsController, 'listTemplates', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ChecklistsController, 'getTemplate', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ChecklistsController, 'createTemplate', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ChecklistsController, 'updateTemplate', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ChecklistsController, 'setTemplateActive', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ChecklistsController, 'templateForPatrol', ['patrols:execute'], ['GUARDIA'], true),
+  secured(ChecklistsController, 'submitResponses', ['patrols:execute'], ['GUARDIA'], true),
+
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
@@ -217,6 +231,8 @@ const CONTROLLERS = [
   SupportAccessController,
   AuditController,
   BrandingController,
+  ChecklistsController,
+  EventsStreamController,
   SchedulingController,
   QrController,
   PlatformOpsController,

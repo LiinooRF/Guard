@@ -8,6 +8,7 @@ import { MailModule } from '../mail/mail.module';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { HandoffService } from './handoff.service';
 import { MailService } from './mail.service';
 import { AUTH_REDIS, authRedisProvider } from './redis.provider';
 
@@ -29,6 +30,7 @@ import { AUTH_REDIS, authRedisProvider } from './redis.provider';
   controllers: [AuthController],
   providers: [
     AuthService,
+    HandoffService,
     MailService,
     authRedisProvider,
     {
