@@ -10,7 +10,7 @@ import { GuardModule } from './guard/guard.module';
 import { HealthController } from './health/health.controller';
 import { MailModule } from './mail/mail.module';
 import { PlatformModule } from './platform/platform.module';
-import { RulesController } from './rules/rules.controller';
+import { RulesModule } from './rules/rules.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
 
 @Module({
@@ -28,8 +28,9 @@ import { SupervisorModule } from './supervisor/supervisor.module';
     GuardModule,
     MailModule,
     PlatformModule,
+    RulesModule,
     SupervisorModule,
   ],
-  controllers: [HealthController, RulesController],
+  controllers: [HealthController],
 })
 export class AppModule {}
