@@ -31,6 +31,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      MIGRATION_DATABASE_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_TEST_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_APP_TEST_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
       REDIS_URL: redis://localhost:6379
