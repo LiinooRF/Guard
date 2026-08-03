@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 
+import { MailModule } from '../mail/mail.module';
+
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
@@ -11,6 +13,7 @@ import { AUTH_REDIS, authRedisProvider } from './redis.provider';
 
 @Module({
   imports: [
+    MailModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

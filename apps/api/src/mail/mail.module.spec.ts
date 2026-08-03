@@ -1,5 +1,5 @@
 import { MailpitProvider } from './mailpit.provider';
-import { createMailProvider } from './mail.module';
+import { createMailProvider, redisOptionsFromUrl } from './mail.module';
 import { SmtpProvider } from './smtp.provider';
 
 const baseEnvironment = {
@@ -24,5 +24,18 @@ describe('createMailProvider', () => {
     expect(
       createMailProvider({ ...baseEnvironment, MAIL_DRIVER: 'smtp' }),
     ).toBeInstanceOf(SmtpProvider);
+  });
+});
+
+describe('redisOptionsFromUrl', () => {
+  it('preserva autenticacion, base y TLS para BullMQ', () => {
+    expect(redisOptionsFromUrl('rediss://queue-user:secret@redis.example.test:6380/4')).toEqual({
+      host: 'redis.example.test',
+      port: 6380,
+      username: 'queue-user',
+      password: 'secret',
+      db: 4,
+      tls: {},
+    });
   });
 });

@@ -219,7 +219,17 @@ export class AdminService {
         [userId, invitation.tokenHash, invitation.expiresAt],
       );
       try {
-        await this.mail.invitation(input.email.toLowerCase(), invitation.token);
+        const tenantRows = await this.tenantContext.manager.query<Array<{ tenant_id: string }>>(
+          `SELECT app_tenant_id() AS tenant_id`,
+        );
+        const tenantId = tenantRows[0]?.tenant_id;
+        if (!tenantId) throw new Error('No existe tenant en el contexto actual');
+        await this.mail.invitation(
+          input.email.toLowerCase(),
+          invitation.token,
+          tenantId,
+          `invitation:${invitation.tokenHash}`,
+        );
       } catch {
         throw new ServiceUnavailableException(
           'No fue posible enviar la invitación. Inténtalo nuevamente.',

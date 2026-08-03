@@ -24,7 +24,7 @@ export abstract class NodemailerMailProvider implements MailProvider {
     to: string,
     template: MailTemplate,
     vars: MailTemplateVariables,
-    tenantId: string,
+    tenantId: string | null,
   ): Promise<MailDelivery> {
     if (to.trim().length === 0) {
       throw new Error('El destinatario de correo es obligatorio');

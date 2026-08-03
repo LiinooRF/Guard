@@ -1,10 +1,10 @@
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
-import type { MailProvider } from '../mail/mail-provider';
+import type { MailQueueService } from '../mail/mail-queue.service';
 
 const sinCorreo = () =>
-  ({ send: jest.fn().mockResolvedValue({ messageId: 'x', accepted: [], rejected: [] }) }) as
-    unknown as MailProvider;
+  ({ enqueue: jest.fn().mockResolvedValue({ jobId: 'mail-job' }) }) as
+    unknown as MailQueueService;
 
 describe('GuardService', () => {
   it('indica claramente cuando el guardia no tiene turno', async () => {
@@ -165,7 +165,7 @@ describe('GuardService.registerScan', () => {
         tenant_id: 'tenant-1', site_name: 'Planta Norte',
         route_name: 'Nocturna', guard_name: 'Juan Soto',
       }]) // contexto de la alerta
-      .mockResolvedValueOnce([{ email: 'admin@empresa.test' }]); // admins
+      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]); // admins
     const correo = sinCorreo();
     const service = new GuardService({ manager } as unknown as TenantContextService, correo);
 
@@ -175,11 +175,14 @@ describe('GuardService.registerScan', () => {
       alertSent: true,
       patrol: { status: 'completada', compliancePct: 50 },
     });
-    expect(correo.send).toHaveBeenCalledWith(
-      'admin@empresa.test',
-      expect.objectContaining({ subject: expect.stringContaining('umbral') }),
-      expect.objectContaining({ pct: 50, threshold: 70, site: 'Planta Norte' }),
-      'tenant-1',
+    expect(correo.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'admin@empresa.test',
+        tenantId: 'tenant-1',
+        template: expect.objectContaining({ subject: expect.stringContaining('umbral') }),
+        variables: expect.objectContaining({ pct: 50, threshold: 70, site: 'Planta Norte' }),
+      }),
+      { idempotencyKey: 'patrol-low-compliance:patrol-id:admin-id' },
     );
   });
 
@@ -197,9 +200,9 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{
         tenant_id: 'tenant-1', site_name: 'Planta', route_name: 'Ruta', guard_name: 'Ana',
       }])
-      .mockResolvedValueOnce([{ email: 'admin@empresa.test' }]);
-    const correo = { send: jest.fn().mockRejectedValue(new Error('smtp caido')) } as
-      unknown as MailProvider;
+      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]);
+    const correo = { enqueue: jest.fn().mockRejectedValue(new Error('redis caido')) } as
+      unknown as MailQueueService;
     const service = new GuardService({ manager } as unknown as TenantContextService, correo);
 
     await expect(
@@ -215,7 +218,7 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{
         tenant_id: 'tenant-1', site_name: 'Planta Norte', guard_name: 'Juan Soto',
       }])
-      .mockResolvedValueOnce([{ email: 'admin@empresa.test' }]);
+      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]);
     const correo = sinCorreo();
     const service = new GuardService({ manager } as unknown as TenantContextService, correo);
 
@@ -226,11 +229,14 @@ describe('GuardService.registerScan', () => {
         latitude: -33.45, longitude: -70.66,
       }),
     ).resolves.toMatchObject({ replay: false, notified: true, criticality: 'panico' });
-    expect(correo.send).toHaveBeenCalledWith(
-      'admin@empresa.test',
-      expect.objectContaining({ subject: expect.stringContaining('PÁNICO') }),
-      expect.objectContaining({ site: 'Planta Norte', guard: 'Juan Soto' }),
-      'tenant-1',
+    expect(correo.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'admin@empresa.test',
+        tenantId: 'tenant-1',
+        template: expect.objectContaining({ subject: expect.stringContaining('PÁNICO') }),
+        variables: expect.objectContaining({ site: 'Planta Norte', guard: 'Juan Soto' }),
+      }),
+      { idempotencyKey: 'field-event:evento-id:admin-id' },
     );
   });
 
@@ -249,7 +255,7 @@ describe('GuardService.registerScan', () => {
         clientEventId: '9a0c8f7e-1111-4222-8333-444455556666',
       }),
     ).resolves.toMatchObject({ replay: true, notified: false, id: 'evento-id' });
-    expect(correo.send).not.toHaveBeenCalled();
+    expect(correo.enqueue).not.toHaveBeenCalled();
   });
 
   it('una novedad informativa no molesta a nadie por correo', async () => {
@@ -267,7 +273,7 @@ describe('GuardService.registerScan', () => {
         clientEventId: '9a0c8f7e-1111-4222-8333-444455556666',
       }),
     ).resolves.toMatchObject({ replay: false, notified: false });
-    expect(correo.send).not.toHaveBeenCalled();
+    expect(correo.enqueue).not.toHaveBeenCalled();
   });
 
   it('marca sin_fix_gps cuando no vienen coordenadas, pero registra igual', async () => {

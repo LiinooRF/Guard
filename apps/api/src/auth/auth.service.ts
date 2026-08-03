@@ -114,7 +114,12 @@ export class AuthService {
         `SELECT issue_auth_action_token($1, $2, 'password_reset', $3, $4)`,
         [identity.user_id, identity.tenant_id, action.tokenHash, action.expiresAt],
       );
-      await this.mail.passwordReset(identity.email, action.token);
+      await this.mail.passwordReset(
+        identity.email,
+        action.token,
+        identity.tenant_id,
+        `password-reset:${action.tokenHash}`,
+      );
     } catch {
       this.logger.error(JSON.stringify({ event: 'password_reset_delivery_failed' }));
     }

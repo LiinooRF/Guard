@@ -26,6 +26,6 @@ export interface MailProvider {
     to: string,
     template: MailTemplate,
     vars: MailTemplateVariables,
-    tenantId: string,
+    tenantId: string | null,
   ): Promise<MailDelivery>;
 }
