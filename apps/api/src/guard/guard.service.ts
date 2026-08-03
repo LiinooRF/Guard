@@ -1,11 +1,13 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
+import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { MailQueueService } from '../mail/mail-queue.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
+import type { ShiftMarkDto } from './dto/shift-mark.dto';
 
 /**
  * La regla que dio origen al producto: si el cumplimiento queda bajo el
@@ -318,6 +320,114 @@ export class GuardService {
         status: closed ? 'completada' : 'en_curso',
         compliancePct: closed ? compliance.pct : null,
       },
+    };
+  }
+
+  // ------------------------------------------------- jornada (#131) y #133
+
+  /**
+   * Marcaje de ENTRADA. Operativo, no registro legal de asistencia.
+   * El traspaso de turno admite solape: el entrante marca entrada aunque el
+   * saliente todavia no haya marcado salida.
+   */
+  async startShift(guardId: string, input: ShiftMarkDto) {
+    const filas = await this.tenantContext.manager.query<
+      Array<{ id: string; status: string; shift_name: string }>
+    >(
+      `SELECT a.id, a.status, s.name AS shift_name
+       FROM shift_assignments a
+       JOIN shifts s ON s.id = a.shift_id
+       WHERE a.guard_id = $1
+         AND a.service_date BETWEEN current_date - 1 AND current_date + 1
+         AND a.status = 'asignado'
+       ORDER BY a.service_date DESC
+       LIMIT 1`,
+      [guardId],
+    );
+    const asignacion = filas[0];
+    if (!asignacion) {
+      throw new NotFoundException('No tienes un turno asignado para marcar entrada');
+    }
+    await this.tenantContext.manager.query(
+      `UPDATE shift_assignments
+       SET status = 'en_curso', started_at = now(),
+           start_latitude = $2, start_longitude = $3
+       WHERE id = $1`,
+      [asignacion.id, input.latitude ?? null, input.longitude ?? null],
+    );
+    return {
+      assignmentId: asignacion.id,
+      shiftName: asignacion.shift_name,
+      status: 'en_curso',
+      onDuty: true,
+    };
+  }
+
+  /** Marcaje de SALIDA de la jornada abierta. */
+  async endShift(guardId: string, input: ShiftMarkDto) {
+    const filas = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE shift_assignments
+       SET status = 'cerrado', ended_at = now(),
+           end_latitude = $2, end_longitude = $3
+       WHERE id = (
+         SELECT a.id FROM shift_assignments a
+         WHERE a.guard_id = $1 AND a.status = 'en_curso'
+         ORDER BY a.started_at DESC LIMIT 1
+       )
+       RETURNING id`,
+      [guardId, input.latitude ?? null, input.longitude ?? null],
+    );
+    const cerrada = filas[0];
+    if (!cerrada) throw new ConflictException('No tienes una jornada abierta');
+    return { assignmentId: cerrada.id, status: 'cerrado', onDuty: false };
+  }
+
+  /**
+   * Ronda VOLUNTARIA (#133): fuera de programacion. Se registra igual y queda
+   * marcada; no cuenta contra el cumplimiento programado, suma como cobertura.
+   */
+  async startVoluntaryPatrol(guardId: string, routeId: string) {
+    const rutas = await this.tenantContext.manager.query<
+      Array<{ id: string; site_id: string }>
+    >(`SELECT id, site_id FROM routes WHERE id = $1 AND is_active`, [routeId]);
+    const ruta = rutas[0];
+    if (!ruta) throw new NotFoundException('La ruta no existe o esta inactiva');
+
+    const puntos = await this.tenantContext.manager.query<Array<{ checkpoint_id: string }>>(
+      `SELECT checkpoint_id FROM route_checkpoints WHERE route_id = $1 ORDER BY position`,
+      [routeId],
+    );
+    if (puntos.length < 2) throw new ConflictException('La ruta no tiene una secuencia valida');
+
+    const jornada = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT id FROM shift_assignments
+       WHERE guard_id = $1 AND status = 'en_curso'
+       ORDER BY started_at DESC LIMIT 1`,
+      [guardId],
+    );
+
+    const patrolId = randomUUID();
+    await this.tenantContext.manager.query(
+      `INSERT INTO patrols (
+        id, tenant_id, site_id, route_id, guard_id, status, started_at,
+        scheduled_start_at, scheduled_end_at, expected_checkpoint_ids,
+        shift_assignment_id, is_voluntary
+      ) VALUES ($1, app_tenant_id(), $2, $3, $4, 'en_curso', now(),
+                now(), now() + interval '12 hours', $5::jsonb, $6, true)`,
+      [
+        patrolId,
+        ruta.site_id,
+        routeId,
+        guardId,
+        JSON.stringify(puntos.map((p) => p.checkpoint_id)),
+        jornada[0]?.id ?? null,
+      ],
+    );
+    return {
+      id: patrolId,
+      status: 'en_curso',
+      isVoluntary: true,
+      expectedCheckpoints: puntos.length,
     };
   }
 

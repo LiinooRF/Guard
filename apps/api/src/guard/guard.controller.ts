@@ -6,6 +6,7 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { CreateScanDto } from './dto/create-scan.dto';
 import { ReportEventDto } from './dto/report-event.dto';
+import { ShiftMarkDto } from './dto/shift-mark.dto';
 import { GuardService } from './guard.service';
 
 @Controller('guard')
@@ -36,6 +37,27 @@ export class GuardController {
     @Req() request: Request & { user: AuthenticatedUser },
   ) {
     return this.guardService.registerScan(patrolId, request.user.sub, input);
+  }
+
+  @Post('shift/start')
+  @Permissions('patrols:execute')
+  startShift(@Body() input: ShiftMarkDto, @Req() request: Request & { user: AuthenticatedUser }) {
+    return this.guardService.startShift(request.user.sub, input);
+  }
+
+  @Post('shift/end')
+  @Permissions('patrols:execute')
+  endShift(@Body() input: ShiftMarkDto, @Req() request: Request & { user: AuthenticatedUser }) {
+    return this.guardService.endShift(request.user.sub, input);
+  }
+
+  @Post('routes/:routeId/voluntary-patrol')
+  @Permissions('patrols:execute')
+  startVoluntaryPatrol(
+    @Param('routeId') routeId: string,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.guardService.startVoluntaryPatrol(request.user.sub, routeId);
   }
 
   @Post('events')
