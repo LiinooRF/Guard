@@ -132,6 +132,23 @@ No crees el rol a mano en otro lado —un workflow de CI, un script de setup— 
 rápido. Una segunda definición sin esa comprobación deja los tests de aislamiento pasando en verde
 mientras el rol real se salta las políticas, que es el peor error posible: el que no se nota.
 
+## Si tocas dependencias (leelo, nos costo dos CI rojas)
+
+Cuando agregues o quites un paquete, **regenera el lockfile desde cero**:
+
+```bash
+rm package-lock.json
+npm install --package-lock-only
+```
+
+Por que: `npm install` normal, corriendo en Windows o macOS, **poda del lockfile las
+dependencias opcionales que solo aplican a Linux** (subarboles nativos como `@emnapi/*`).
+En tu maquina todo pasa; en la CI y en la imagen Docker, `npm ci` se niega con
+`Missing: ... from lock file` y falla el build entero.
+
+`--package-lock-only` resuelve el arbol completo para todas las plataformas sin instalar
+nada. Confirma que el lockfile quedo bien antes de commitear.
+
 ## Commits
 
 Formato corto, en imperativo, con el issue al final:
