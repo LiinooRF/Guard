@@ -235,6 +235,44 @@ export class SupervisorService {
     return { id: patrolId, status: 'pendiente', expectedCheckpoints: puntos.length };
   }
 
+  /** La bandeja: novedades y panico juntos, misma consulta, misma auditoria. */
+  async listEvents(siteId: string, supervisorId: string) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      criticality: string;
+      text: string | null;
+      guard_name: string;
+      patrol_id: string | null;
+      corrects_event_id: string | null;
+      latitude: string | null;
+      longitude: string | null;
+      reported_at_server: Date;
+    }>>(
+      `SELECT e.id, e.criticality, e.text,
+              (u.given_name || ' ' || u.family_name) AS guard_name,
+              e.patrol_id, e.corrects_event_id, e.latitude, e.longitude,
+              e.reported_at_server
+       FROM field_events e
+       JOIN users u ON u.id = e.guard_id
+       WHERE e.site_id = $1
+       ORDER BY e.reported_at_server DESC
+       LIMIT 100`,
+      [siteId],
+    );
+    return rows.map((e) => ({
+      id: e.id,
+      criticality: e.criticality,
+      text: e.text,
+      guardName: e.guard_name,
+      patrolId: e.patrol_id,
+      correctsEventId: e.corrects_event_id,
+      latitude: e.latitude === null ? null : Number(e.latitude),
+      longitude: e.longitude === null ? null : Number(e.longitude),
+      reportedAt: e.reported_at_server,
+    }));
+  }
+
   async listPatrols(siteId: string, supervisorId: string) {
     await this.ensureAssignedSite(siteId, supervisorId);
     const rows = await this.tenantContext.manager.query<Array<{

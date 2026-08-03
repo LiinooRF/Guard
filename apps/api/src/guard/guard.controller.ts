@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { CreateScanDto } from './dto/create-scan.dto';
+import { ReportEventDto } from './dto/report-event.dto';
 import { GuardService } from './guard.service';
 
 @Controller('guard')
@@ -35,5 +36,14 @@ export class GuardController {
     @Req() request: Request & { user: AuthenticatedUser },
   ) {
     return this.guardService.registerScan(patrolId, request.user.sub, input);
+  }
+
+  @Post('events')
+  @Permissions('patrols:execute')
+  reportEvent(
+    @Body() input: ReportEventDto,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.guardService.reportEvent(request.user.sub, input);
   }
 }

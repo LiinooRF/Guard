@@ -4,11 +4,31 @@ import { computeCompliance, patrolRulesSchema, type ScanAnomaly } from '@voxia/s
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { MAIL_PROVIDER, type MailProvider } from '../mail/mail-provider';
 import type { CreateScanDto } from './dto/create-scan.dto';
+import type { ReportEventDto } from './dto/report-event.dto';
 
 /**
  * La regla que dio origen al producto: si el cumplimiento queda bajo el
  * umbral, la alerta va DIRECTO al admin de la empresa. Ver issue #64.
  */
+const ALERTA_PANICO = {
+  subject: 'PÁNICO: {{guard}} en {{site}}',
+  text:
+    '{{guard}} activó el botón de pánico en {{site}}.\n\n' +
+    'Hora (servidor): {{at}}\n' +
+    'Ubicación: {{location}}\n\n' +
+    'Contacta al guardia y revisa el panel de VoxIA Control AHORA.',
+} as const;
+
+const ALERTA_EVENTO = {
+  subject: 'Novedad de criticidad alta en {{site}}',
+  text:
+    '{{guard}} reportó una novedad de criticidad alta en {{site}}:\n\n' +
+    '"{{text}}"\n\n' +
+    'Hora (servidor): {{at}}\n' +
+    'Ubicación: {{location}}\n\n' +
+    'Revisa el detalle en el panel de VoxIA Control.',
+} as const;
+
 const ALERTA_BAJO_UMBRAL = {
   subject: 'Cumplimiento bajo el umbral: {{route}} en {{site}} ({{pct}}%)',
   text:
@@ -297,6 +317,138 @@ export class GuardService {
         compliancePct: closed ? compliance.pct : null,
       },
     };
+  }
+
+  /**
+   * Novedades y panico en un solo modelo (#123): el panico es la criticidad
+   * maxima, no otra tabla. El registro es append-only a nivel de PostgreSQL
+   * (#124): esta API ni siquiera tiene permiso de UPDATE o DELETE sobre
+   * field_events, asi que no existe el camino para reescribir la historia.
+   */
+  async reportEvent(guardId: string, input: ReportEventDto) {
+    let patrol: { id: string; site_id: string } | undefined;
+    if (input.patrolId) {
+      const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
+        `SELECT id, site_id FROM patrols WHERE id = $1 AND guard_id = $2`,
+        [input.patrolId, guardId],
+      );
+      patrol = rows[0];
+      if (!patrol) throw new NotFoundException('La ronda indicada no existe');
+    } else {
+      const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
+        `SELECT id, site_id FROM patrols
+         WHERE guard_id = $1
+         ORDER BY scheduled_start_at DESC
+         LIMIT 1`,
+        [guardId],
+      );
+      patrol = rows[0];
+      if (!patrol) {
+        throw new ConflictException('No hay una ronda que asocie el evento a un recinto');
+      }
+    }
+
+    const inserted = await this.tenantContext.manager.query<
+      Array<{ id: string; reported_at_server: Date }>
+    >(
+      `INSERT INTO field_events (
+        tenant_id, site_id, patrol_id, guard_id, criticality, text,
+        corrects_event_id, client_event_id, latitude, longitude, accuracy_m,
+        reported_at_device
+      ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (tenant_id, guard_id, client_event_id) DO NOTHING
+      RETURNING id, reported_at_server`,
+      [
+        patrol.site_id,
+        patrol.id,
+        guardId,
+        input.criticality,
+        input.text ?? null,
+        input.correctsEventId ?? null,
+        input.clientEventId,
+        input.latitude ?? null,
+        input.longitude ?? null,
+        input.accuracyM ?? null,
+        input.reportedAt ?? null,
+      ],
+    );
+
+    const replay = !inserted.length;
+    let eventId = inserted[0]?.id;
+    if (replay) {
+      const existing = await this.tenantContext.manager.query<Array<{ id: string }>>(
+        `SELECT id FROM field_events WHERE guard_id = $1 AND client_event_id = $2`,
+        [guardId, input.clientEventId],
+      );
+      eventId = existing[0]?.id;
+    }
+
+    // El escalamiento configurable por tenant es #126; por ahora, alta y
+    // panico avisan directo a los admins. El reenvio idempotente NO re-avisa.
+    let notified = false;
+    if (!replay && (input.criticality === 'alta' || input.criticality === 'panico')) {
+      notified = await this.notificarEvento(patrol.site_id, guardId, input);
+    }
+
+    return {
+      id: eventId,
+      replay,
+      criticality: input.criticality,
+      siteId: patrol.site_id,
+      patrolId: patrol.id,
+      notified,
+    };
+  }
+
+  /** Un fallo de correo jamas rompe el registro del evento. */
+  private async notificarEvento(siteId: string, guardId: string, input: ReportEventDto) {
+    try {
+      const contexto = await this.tenantContext.manager.query<Array<{
+        tenant_id: string;
+        site_name: string;
+        guard_name: string;
+      }>>(
+        `SELECT s.tenant_id, s.name AS site_name,
+                (u.given_name || ' ' || u.family_name) AS guard_name
+         FROM sites s, users u
+         WHERE s.id = $1 AND u.id = $2`,
+        [siteId, guardId],
+      );
+      const info = contexto[0];
+      if (!info) return false;
+
+      const admins = await this.tenantContext.manager.query<Array<{ email: string }>>(
+        `SELECT u.email
+         FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
+      );
+      if (!admins.length) return false;
+
+      const plantilla = input.criticality === 'panico' ? ALERTA_PANICO : ALERTA_EVENTO;
+      const vars = {
+        site: info.site_name,
+        guard: info.guard_name,
+        text: input.text ?? '(sin texto)',
+        at: new Date().toISOString(),
+        location:
+          input.latitude !== undefined && input.longitude !== undefined
+            ? `${input.latitude}, ${input.longitude}`
+            : 'sin GPS',
+      };
+      for (const admin of admins) {
+        await this.mail.send(admin.email, plantilla, vars, info.tenant_id);
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'alerta_evento_fallo',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return false;
+    }
   }
 
   /**

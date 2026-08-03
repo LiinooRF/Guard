@@ -78,4 +78,10 @@ export class SupervisorController {
   listPatrols(@Param() params: SiteParam, @Req() request: Autenticado) {
     return this.supervisor.listPatrols(params.siteId, request.user.sub);
   }
+
+  @Get('sites/:siteId/events')
+  @Permissions('patrols:monitor')
+  listEvents(@Param() params: SiteParam, @Req() request: Autenticado) {
+    return this.supervisor.listEvents(params.siteId, request.user.sub);
+  }
 }
