@@ -53,7 +53,8 @@ export class SupervisorService {
    * El SUPERVISOR esta limitado a SUS recintos asignados, no a todo el tenant.
    * Eso se verifica aparte del permiso (ver roles.ts) — aca, en cada consulta.
    */
-  private async ensureAssignedSite(siteId: string, supervisorId: string) {
+  /** Publico: SchedulingService lo reusa. Duplicarlo seria duplicar un control de acceso. */
+  async ensureAssignedSite(siteId: string, supervisorId: string) {
     const rows = await this.tenantContext.manager.query<Array<{ present: boolean }>>(
       `SELECT true AS present FROM supervisor_sites
        WHERE site_id = $1 AND supervisor_id = $2`,
@@ -133,7 +134,8 @@ export class SupervisorService {
    * 'aleatorio_con_anclas' las anclas conservan su indice y solo se barajan
    * los puntos libres.
    */
-  private sortearOrden(puntos: PuntoSnapshot[], modo: RouteOrderMode): string[] {
+  /** Publico: el generador de rondas sortea con la misma logica. */
+  sortearOrden(puntos: PuntoSnapshot[], modo: RouteOrderMode): string[] {
     if (modo === 'fijo') return puntos.map((p) => p.checkpoint_id);
 
     const cierre = puntos.filter((p) => p.is_closing_point);

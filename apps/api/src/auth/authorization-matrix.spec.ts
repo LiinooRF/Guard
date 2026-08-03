@@ -19,6 +19,9 @@ import { SupportAccessController } from '../platform-data/support-access.control
 import { TenantDataController } from '../platform-data/tenant-data.controller';
 import { ReportsController } from '../reports/reports.controller';
 import { RulesController } from '../rules/rules.controller';
+import { PlatformOpsController } from '../platform-ops/platform-ops.controller';
+import { QrController } from '../qr/qr.controller';
+import { SchedulingController } from '../scheduling/scheduling.controller';
 import { SupervisorController } from '../supervisor/supervisor.controller';
 import { SyncController } from '../sync/sync.controller';
 import { AuthController } from './auth.controller';
@@ -177,6 +180,17 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(GeoController, 'revokeConsent', ['account:sessions:manage'], ALL_ROLES),
   secured(GeoController, 'consentStatus', ['account:sessions:manage'], ALL_ROLES),
 
+  secured(SchedulingController, 'preview', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SchedulingController, 'generate', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SchedulingController, 'listPatterns', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SchedulingController, 'replacePatterns', ['shifts:manage'], ['SUPERVISOR'], true),
+
+  secured(QrController, 'issueCheckpointQr', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(QrController, 'siteSheet', ['tenant:sites:manage'], ['ADMIN'], true),
+
+  secured(PlatformOpsController, 'provision', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(PlatformOpsController, 'platformMetrics', ['platform:metrics:read'], ['SUPERADMIN']),
+
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
@@ -198,6 +212,9 @@ const CONTROLLERS = [
   TenantDataController,
   SupportAccessController,
   AuditController,
+  SchedulingController,
+  QrController,
+  PlatformOpsController,
   EscalationController,
   SyncController,
   GeoController,
