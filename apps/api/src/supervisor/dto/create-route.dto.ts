@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +14,9 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+export const ROUTE_ORDER_MODES = ['fijo', 'aleatorio', 'aleatorio_con_anclas'] as const;
+export type RouteOrderMode = (typeof ROUTE_ORDER_MODES)[number];
+
 export class RouteCheckpointDto {
   @IsUUID()
   checkpointId!: string;
@@ -21,6 +25,11 @@ export class RouteCheckpointDto {
   @IsOptional()
   @IsBoolean()
   isClosingPoint?: boolean;
+
+  /** En modo 'aleatorio_con_anclas', este punto conserva su posicion en el sorteo. */
+  @IsOptional()
+  @IsBoolean()
+  isAnchor?: boolean;
 }
 
 export class CreateRouteDto {
@@ -37,6 +46,14 @@ export class CreateRouteDto {
   @IsInt()
   @Min(0)
   toleranceMin?: number;
+
+  /**
+   * Anti-predictibilidad (#65). El sorteo ocurre al generar cada ronda, nunca
+   * al vuelo: el snapshot de la ronda es el orden auditable. Default: 'fijo'.
+   */
+  @IsOptional()
+  @IsIn(ROUTE_ORDER_MODES)
+  orderMode?: RouteOrderMode;
 
   /** Secuencia ordenada: la posicion es el indice en este arreglo. */
   @IsArray()
@@ -62,6 +79,10 @@ export class UpdateRouteDto {
   @IsInt()
   @Min(0)
   toleranceMin?: number;
+
+  @IsOptional()
+  @IsIn(ROUTE_ORDER_MODES)
+  orderMode?: RouteOrderMode;
 
   /**
    * Si viene, reemplaza la secuencia completa y SUBE LA VERSION de la ruta.

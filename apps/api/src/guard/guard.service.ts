@@ -1,8 +1,9 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { computeCompliance, patrolRulesSchema, type ScanAnomaly } from '@voxia/shared';
+import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { MailQueueService } from '../mail/mail-queue.service';
+import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 
@@ -64,6 +65,7 @@ export class GuardService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly mail: MailQueueService,
+    private readonly rules: RulesService,
   ) {}
 
   async getHome(guardId: string) {
@@ -226,9 +228,9 @@ export class GuardService {
       throw new ConflictException('El punto escaneado no pertenece a esta ronda');
     }
 
-    // Por ahora las reglas por defecto del producto; la resolucion por tenant
-    // es el issue #16 y se enchufa aca cuando exista.
-    const rules = patrolRulesSchema.parse({});
+    // Reglas efectivas del tenant (#16): el umbral o el radio GPS que cambie
+    // el admin rigen la proxima ronda, sin deploy.
+    const rules = await this.rules.effective();
     const anomalies: ScanAnomaly[] = [];
     if (input.latitude === undefined || input.longitude === undefined) {
       if (rules.gpsSharingRequired) anomalies.push('sin_fix_gps');
@@ -386,8 +388,8 @@ export class GuardService {
     // El escalamiento configurable por tenant es #126; por ahora, alta y
     // panico avisan directo a los admins. El reenvio idempotente NO re-avisa.
     let notified = false;
-    if (eventId && !replay && (input.criticality === 'alta' || input.criticality === 'panico')) {
-      notified = await this.notificarEvento(eventId, patrol.site_id, guardId, input);
+    if (!replay && (input.criticality === 'alta' || input.criticality === 'panico')) {
+      notified = await this.notificarEvento(eventId!, patrol.site_id, guardId, input);
     }
 
     return {
@@ -443,12 +445,7 @@ export class GuardService {
       };
       for (const admin of admins) {
         await this.mail.enqueue(
-          {
-            to: admin.email,
-            template: plantilla,
-            variables: vars,
-            tenantId: info.tenant_id,
-          },
+          { to: admin.email, template: plantilla, variables: vars, tenantId: info.tenant_id },
           { idempotencyKey: `field-event:${eventId}:${admin.id}` },
         );
       }
@@ -518,12 +515,7 @@ export class GuardService {
       };
       for (const admin of admins) {
         await this.mail.enqueue(
-          {
-            to: admin.email,
-            template: ALERTA_BAJO_UMBRAL,
-            variables: vars,
-            tenantId: info.tenant_id,
-          },
+          { to: admin.email, template: ALERTA_BAJO_UMBRAL, variables: vars, tenantId: info.tenant_id },
           { idempotencyKey: `patrol-low-compliance:${patrolId}:${admin.id}` },
         );
       }

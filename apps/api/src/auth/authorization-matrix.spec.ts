@@ -130,6 +130,8 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
+  secured(RulesController, 'tenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(RulesController, 'updateTenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
 ] as const;
 
 const CONTROLLERS = [

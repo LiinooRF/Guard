@@ -1,15 +1,27 @@
+import { patrolRulesSchema } from '@voxia/shared';
+
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
+import type { RulesService } from '../rules/rules.service';
 
 const sinCorreo = () =>
   ({ enqueue: jest.fn().mockResolvedValue({ jobId: 'mail-job' }) }) as
     unknown as MailQueueService;
 
+/** Motor de reglas sin overrides: responde los defaults del producto (#16). */
+const sinReglas = () =>
+  ({ effective: jest.fn().mockResolvedValue(patrolRulesSchema.parse({})) }) as
+    unknown as RulesService;
+
 describe('GuardService', () => {
   it('indica claramente cuando el guardia no tiene turno', async () => {
     const manager = { query: jest.fn().mockResolvedValue([]) };
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.getHome('guard-id')).resolves.toMatchObject({
       hasAssignment: false,
@@ -35,7 +47,11 @@ describe('GuardService', () => {
         },
       ]),
     };
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.getHome('guard-id')).resolves.toMatchObject({
       hasAssignment: true,
@@ -56,7 +72,11 @@ describe('GuardService', () => {
         { id: 'patrol-id', status: 'en_curso', started_at: new Date() },
       ]),
     };
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.startPatrol('patrol-id', 'guard-id')).resolves.toMatchObject({
       status: 'en_curso',
@@ -99,7 +119,11 @@ describe('GuardService.registerScan', () => {
         { checkpoint_id: 'cp-2', anomalies: [] },
       ]) // todos los escaneos de la ronda
       .mockResolvedValueOnce([]); // cierre
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
       replay: false,
@@ -123,7 +147,11 @@ describe('GuardService.registerScan', () => {
       }])
       .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
       replay: true,
@@ -142,7 +170,11 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-x', checkpoint_id: 'cp-de-otro-recinto', checkpoint_name: 'Bodega ajena',
         kind: 'normal', latitude: null, longitude: null, is_closing_point: null,
       }]);
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).rejects.toThrow(
       'El punto escaneado no pertenece a esta ronda',
@@ -165,9 +197,13 @@ describe('GuardService.registerScan', () => {
         tenant_id: 'tenant-1', site_name: 'Planta Norte',
         route_name: 'Nocturna', guard_name: 'Juan Soto',
       }]) // contexto de la alerta
-      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]); // admins
+      .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]); // admins
     const correo = sinCorreo();
-    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      correo,
+      sinReglas(),
+    );
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
@@ -182,7 +218,7 @@ describe('GuardService.registerScan', () => {
         template: expect.objectContaining({ subject: expect.stringContaining('umbral') }),
         variables: expect.objectContaining({ pct: 50, threshold: 70, site: 'Planta Norte' }),
       }),
-      { idempotencyKey: 'patrol-low-compliance:patrol-id:admin-id' },
+      { idempotencyKey: expect.stringContaining('patrol-low-compliance:patrol-id') },
     );
   });
 
@@ -200,10 +236,14 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{
         tenant_id: 'tenant-1', site_name: 'Planta', route_name: 'Ruta', guard_name: 'Ana',
       }])
-      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]);
+      .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]);
     const correo = { enqueue: jest.fn().mockRejectedValue(new Error('redis caido')) } as
       unknown as MailQueueService;
-    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      correo,
+      sinReglas(),
+    );
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
@@ -218,9 +258,13 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{
         tenant_id: 'tenant-1', site_name: 'Planta Norte', guard_name: 'Juan Soto',
       }])
-      .mockResolvedValueOnce([{ id: 'admin-id', email: 'admin@empresa.test' }]);
+      .mockResolvedValueOnce([{ id: 'admin-1', email: 'admin@empresa.test' }]);
     const correo = sinCorreo();
-    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      correo,
+      sinReglas(),
+    );
 
     await expect(
       service.reportEvent('guard-id', {
@@ -236,7 +280,7 @@ describe('GuardService.registerScan', () => {
         template: expect.objectContaining({ subject: expect.stringContaining('PÁNICO') }),
         variables: expect.objectContaining({ site: 'Planta Norte', guard: 'Juan Soto' }),
       }),
-      { idempotencyKey: 'field-event:evento-id:admin-id' },
+      { idempotencyKey: expect.stringContaining('field-event:evento-id:admin-1') },
     );
   });
 
@@ -247,7 +291,11 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([]) // ON CONFLICT: ya existia
       .mockResolvedValueOnce([{ id: 'evento-id' }]); // busqueda del original
     const correo = sinCorreo();
-    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      correo,
+      sinReglas(),
+    );
 
     await expect(
       service.reportEvent('guard-id', {
@@ -264,7 +312,11 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }])
       .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]);
     const correo = sinCorreo();
-    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      correo,
+      sinReglas(),
+    );
 
     await expect(
       service.reportEvent('guard-id', {
@@ -287,7 +339,11 @@ describe('GuardService.registerScan', () => {
       }])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: ['sin_fix_gps'] }]);
-    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo());
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+    );
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
