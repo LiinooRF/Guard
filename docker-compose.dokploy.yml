@@ -146,6 +146,12 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # El middleware valida la sesion contra la API por la red interna de
+      # Docker (no pasa por el proxy ni por internet). Sin esto, el middleware
+      # no puede resolver el rol y rebota al login aunque las credenciales
+      # sean correctas.
+      API_INTERNAL_URL: http://api:3001/api
+      WEB_ORIGIN: ${WEB_PUBLIC_URL:-http://localhost:3000}
     depends_on:
       api:
         condition: service_healthy
