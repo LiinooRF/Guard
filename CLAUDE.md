@@ -347,6 +347,13 @@ Si tocas `packages/shared`, pide revisión de **dos** personas.
 
 ---
 
+## Si trabajas en el panel web
+
+`apps/web/` tiene su propia guía: **[`docs/frontend-web.md`](docs/frontend-web.md)**. Contiene el
+inventario completo de endpoints que la API ya expone, cómo se autentica el navegador (cookies
+HttpOnly, nunca localStorage), las convenciones del proyecto y las trampas del carril. Léela antes de
+tocar un componente.
+
 ## Cómo verificar tu trabajo
 
 Antes de abrir el PR:
