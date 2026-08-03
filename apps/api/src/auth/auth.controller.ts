@@ -11,21 +11,21 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { IsUUID } from 'class-validator';
 import type { Request, Response } from 'express';
 
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
 import type { AuthenticatedUser } from './auth.guard';
 import { AuthService } from './auth.service';
-import type { AuthenticatedSession } from './auth.types';
+import { HandoffService, type HandoffTicket } from './handoff.service';
 import { CompleteAuthActionDto } from './dto/complete-auth-action.dto';
+import { HandoffTokenParams } from './dto/handoff-token.dto';
 import { Public } from './decorators/public.decorator';
 import { Permissions } from './decorators/permissions.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
-
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+import { clearSessionCookies, setSessionCookies } from './session-cookies';
 
 class SessionParam {
   @IsUUID()
@@ -35,7 +35,11 @@ class SessionParam {
 @Controller('auth')
 @SkipTenantContext()
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly handoff: HandoffService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -52,7 +56,7 @@ export class AuthController {
     );
     if ('requiresTenantSelection' in result) return result;
 
-    this.setSessionCookies(response, result);
+    setSessionCookies(response, result);
     return {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
@@ -68,8 +72,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     await this.auth.logout(request.cookies?.voxia_refresh);
-    response.clearCookie('voxia_access', { path: '/' });
-    response.clearCookie('voxia_refresh', { path: '/' });
+    clearSessionCookies(response);
   }
 
   @Post('refresh')
@@ -80,12 +83,52 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.auth.refresh(request.cookies?.voxia_refresh);
-    this.setSessionCookies(response, result);
+    setSessionCookies(response, result);
     return {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
     };
+  }
+
+  /**
+   * Traspaso de sesion del shell Expo al WebView (#37). Lo pide el shell con su
+   * Bearer; no concede nada que el llamante no tenga ya, por eso alcanza con el
+   * permiso que poseen los cuatro roles.
+   */
+  @Post('handoff')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('account:sessions:manage')
+  issueHandoff(@Req() request: Request & { user: AuthenticatedUser }): Promise<HandoffTicket> {
+    return this.handoff.issue({
+      userId: request.user.sub,
+      tenantId: request.user.tenant_id,
+      role: request.user.role,
+      familyId: request.user.sid,
+    });
+  }
+
+  /**
+   * Publico por necesidad: el WebView todavia no tiene cookies, y es justamente
+   * lo que viene a buscar. Lo sostiene que el token sea de un solo uso, dure 60
+   * segundos y quede atado a la sesion que lo pidio.
+   */
+  @Get('handoff/:token')
+  @Public()
+  async redeemHandoff(
+    @Param() params: HandoffTokenParams,
+    @Res() response: Response,
+  ): Promise<void> {
+    const session = await this.handoff.redeem(params.token);
+    setSessionCookies(response, session);
+    response.setHeader('Cache-Control', 'no-store');
+    // El destino sale del entorno, nunca de la peticion: aceptar un ?next=
+    // convertiria el canje en un redirector abierto con cookies recien puestas.
+    // 303 deja la URL con el token fuera del flujo de navegacion siguiente.
+    response.redirect(
+      HttpStatus.SEE_OTHER,
+      new URL('/app', this.config.getOrThrow<string>('WEB_PUBLIC_URL')).toString(),
+    );
   }
 
   @Post('password-reset/request')
@@ -145,7 +188,7 @@ export class AuthController {
   ): Promise<void> {
     const revoked = await this.auth.revokeSession(request.user.sub, params.sessionId);
     if (!revoked) throw new NotFoundException('Sesión no encontrada');
-    if (params.sessionId === request.user.sid) this.clearSessionCookies(response);
+    if (params.sessionId === request.user.sid) clearSessionCookies(response);
   }
 
   @Delete('sessions')
@@ -156,30 +199,6 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     await this.auth.revokeAllSessions(request.user.sub);
-    this.clearSessionCookies(response);
-  }
-
-  private setSessionCookies(response: Response, session: AuthenticatedSession): void {
-    const secure = process.env.NODE_ENV === 'production';
-    const common = {
-      httpOnly: true,
-      sameSite: 'lax' as const,
-      secure,
-      path: '/',
-    };
-
-    response.cookie('voxia_access', session.accessToken, {
-      ...common,
-      maxAge: FIFTEEN_MINUTES_MS,
-    });
-    response.cookie('voxia_refresh', session.refreshToken, {
-      ...common,
-      maxAge: THIRTY_DAYS_MS,
-    });
-  }
-
-  private clearSessionCookies(response: Response): void {
-    response.clearCookie('voxia_access', { path: '/' });
-    response.clearCookie('voxia_refresh', { path: '/' });
+    clearSessionCookies(response);
   }
 }

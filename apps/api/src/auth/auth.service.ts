@@ -356,6 +356,44 @@ export class AuthService {
     return this.rotateSession(stored, session);
   }
 
+  /**
+   * Reemite credenciales para una sesión que YA existe, sin volver a pedir la
+   * contraseña. Lo usa el traspaso al WebView (#37): entra a la misma familia
+   * que el shell, así el teléfono sigue siendo un solo dispositivo en la lista
+   * de sesiones y cerrar sesión o revocarla mata a los dos a la vez.
+   *
+   * Falla cerrado si la sesión ya no está en Redis o si las credenciales
+   * presentadas no coinciden exactamente con lo que el servidor guardó: eso es
+   * lo que ata el traspaso al usuario que lo pidió.
+   */
+  async issueForExistingSession(claims: {
+    userId: string;
+    tenantId: string | null;
+    role: Role;
+    familyId: string;
+  }): Promise<AuthenticatedSession> {
+    const session = await this.getStoredSession(claims.familyId);
+    if (
+      !session ||
+      session.userId !== claims.userId ||
+      session.tenantId !== claims.tenantId ||
+      session.role !== claims.role ||
+      !ROLES.includes(session.role)
+    ) {
+      throw new UnauthorizedException('Sesión inválida o expirada');
+    }
+
+    return this.issueSession(
+      {
+        sub: claims.userId,
+        tenant_id: claims.tenantId,
+        role: claims.role,
+        sid: claims.familyId,
+      },
+      { ...session, lastUsedAt: new Date().toISOString() },
+    );
+  }
+
   private async lookupIdentity(identity: string): Promise<AuthIdentityRow[]> {
     const rows = await this.dataSource.query<AuthIdentityRow[]>(
       `SELECT * FROM authenticate_identity($1)`,

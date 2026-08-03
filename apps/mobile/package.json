@@ -6,17 +6,29 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "build:development": "npx eas-cli build --platform android --profile development",
+    "prebuild": "expo prebuild --platform android --clean",
     "config": "expo config --type public",
-    "typecheck": "tsc --noEmit"
+    "doctor": "npx expo-doctor",
+    "typecheck": "tsc --noEmit",
+    "build:development": "npx eas-cli build --platform android --profile development",
+    "build:preview": "npx eas-cli build --platform android --profile preview",
+    "build:production": "npx eas-cli build --platform android --profile production",
+    "submit:production": "npx eas-cli submit --platform android --profile production",
+    "credentials": "npx eas-cli credentials --platform android"
   },
   "dependencies": {
     "expo": "~57.0.9",
     "expo-build-properties": "~57.0.8",
+    "expo-camera": "~57.0.0",
     "expo-dev-client": "~57.0.10",
+    "expo-location": "~57.0.0",
+    "expo-network": "~57.0.0",
+    "expo-splash-screen": "~57.0.0",
     "expo-status-bar": "~57.0.1",
+    "expo-task-manager": "~57.0.0",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-nfc-manager": "^3.16.0",
     "react-native-webview": "13.16.1"
   },
   "devDependencies": {

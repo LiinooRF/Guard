@@ -93,6 +93,12 @@ export const patrolRulesSchema = z.object({
    * Minutos que espera la cadena antes de subir al nivel siguiente cuando la
    * politica de ese nivel no define un delay propio.
    */
+  /**
+   * Un item de checklist marcado como falla avisa por correo al supervisor
+   * del recinto (#129). El aviso en vivo de la bandeja no depende de esto.
+   */
+  checklistFailureNotify: z.boolean().default(true),
+
   escalationDefaultDelayMin: z.number().int().min(0).max(1440).default(10),
 
   /** Minutos tras los cuales una ronda sin cerrar se marca como vencida. */

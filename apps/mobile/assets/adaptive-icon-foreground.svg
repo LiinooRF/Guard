@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoxIA Control">
+  <title>VoxIA Control — capa frontal del icono adaptativo</title>
+  <!--
+    FONDO TRANSPARENTE A PROPOSITO: el color va en `adaptiveIcon.backgroundColor`
+    (app.config.ts). Si esta capa trae fondo propio, el launcher recorta un
+    cuadrado en vez de la forma del sistema.
+
+    ZONA SEGURA: de los 1024 px, solo el circulo central de ~626 px de diametro
+    esta garantizado. El resto se lo puede comer la mascara del fabricante
+    (circulo, gota, cuadrado redondeado). Por eso el escudo va escalado a 0.82:
+    a tamaño completo, las esquinas superiores se cortan en Samsung y en Xiaomi
+    y el escudo se ve mordido.
+  -->
+  <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
+    <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M512 240 L760 320 L760 520 C760 660 656 744 512 792 C368 744 264 660 264 520 L264 320 Z"
+            fill="#ffffff" fill-opacity="0.12" stroke-width="32"/>
+      <path d="M455 451.4 A70 70 0 0 1 455 572.6" stroke-width="36"/>
+      <path d="M480 408.1 A120 120 0 0 1 480 615.9" stroke-width="36"/>
+      <path d="M505 364.8 A170 170 0 0 1 505 659.2" stroke-width="36"/>
+    </g>
+    <circle cx="410" cy="512" r="29" fill="#ffffff"/>
+  </g>
+</svg>
