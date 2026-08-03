@@ -62,3 +62,107 @@ describe('GuardService', () => {
     ]);
   });
 });
+
+describe('GuardService.registerScan', () => {
+  const PATROL = {
+    id: 'patrol-id',
+    status: 'en_curso',
+    route_id: 'route-id',
+    expected_checkpoint_ids: ['cp-1', 'cp-2'],
+  };
+  const dto = (extra = {}) => ({
+    uid: 'ABCD1234',
+    method: 'nfc' as const,
+    clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+    latitude: -33.45,
+    longitude: -70.66,
+    ...extra,
+  });
+
+  it('cierra la ronda sola al escanear el punto de cierre, con su cumplimiento', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL]) // la ronda del guardia
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-2', checkpoint_name: 'Porteria',
+        kind: 'acceso_critico', latitude: '-33.45', longitude: '-70.66',
+        is_closing_point: true,
+      }]) // resolucion de la etiqueta
+      .mockResolvedValueOnce([{ id: 'scan-id' }]) // insert
+      .mockResolvedValueOnce([
+        { checkpoint_id: 'cp-1', anomalies: [] },
+        { checkpoint_id: 'cp-2', anomalies: [] },
+      ]) // todos los escaneos de la ronda
+      .mockResolvedValueOnce([]); // cierre
+    const service = new GuardService({ manager } as unknown as TenantContextService);
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
+      replay: false,
+      patrol: { status: 'completada', compliancePct: 100 },
+      progress: { scanned: 2, expected: 2, pct: 100 },
+    });
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining("status = 'completada'"),
+      ['patrol-id', 100],
+    );
+  });
+
+  it('el reenvio offline es idempotente: mismo clientScanId no duplica ni re-cierra', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: null, longitude: null,
+        is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
+    const service = new GuardService({ manager } as unknown as TenantContextService);
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
+      replay: true,
+      patrol: { status: 'en_curso' },
+      progress: { scanned: 1, expected: 2, pct: 50 },
+    });
+    // 4 queries: nunca intenta cerrar ni insertar de nuevo
+    expect(manager.query).toHaveBeenCalledTimes(4);
+  });
+
+  it('rechaza la etiqueta de un punto que no pertenece a la ronda', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-x', checkpoint_id: 'cp-de-otro-recinto', checkpoint_name: 'Bodega ajena',
+        kind: 'normal', latitude: null, longitude: null, is_closing_point: null,
+      }]);
+    const service = new GuardService({ manager } as unknown as TenantContextService);
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).rejects.toThrow(
+      'El punto escaneado no pertenece a esta ronda',
+    );
+  });
+
+  it('marca sin_fix_gps cuando no vienen coordenadas, pero registra igual', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: '-33.45', longitude: '-70.66',
+        is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([{ id: 'scan-id' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: ['sin_fix_gps'] }]);
+    const service = new GuardService({ manager } as unknown as TenantContextService);
+
+    await expect(
+      service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
+    ).resolves.toMatchObject({
+      replay: false,
+      anomalies: ['sin_fix_gps'],
+      patrol: { status: 'en_curso' },
+    });
+  });
+});

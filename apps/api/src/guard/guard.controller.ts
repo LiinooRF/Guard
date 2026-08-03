@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
+import { CreateScanDto } from './dto/create-scan.dto';
 import { GuardService } from './guard.service';
 
 @Controller('guard')
@@ -24,5 +25,15 @@ export class GuardController {
     @Req() request: Request & { user: AuthenticatedUser },
   ) {
     return this.guardService.startPatrol(patrolId, request.user.sub);
+  }
+
+  @Post('patrols/:patrolId/scans')
+  @Permissions('patrols:execute')
+  scan(
+    @Param('patrolId') patrolId: string,
+    @Body() input: CreateScanDto,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.guardService.registerScan(patrolId, request.user.sub, input);
   }
 }
