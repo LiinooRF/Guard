@@ -65,23 +65,23 @@ services:
     # y recien despues arranca la API. Con una sola replica esto es seguro; si
     # algun dia hay varias, las migraciones pasan a un paso de deploy aparte
     # para que no corran en paralelo.
-    # DEBUG TEMPORAL: captura el arranque en /tmp/boot.log; si algo falla, el
-    # contenedor queda vivo 10 min y el healthcheck expone la cola del log.
     command:
       - sh
       - -c
       - >-
-        ( node -e "const{Client}=require('pg');const probar=(n,u)=>new Client({connectionString:u}).connect().then(()=>console.log(n,'CONECTA_OK')).catch(e=>console.log(n,'FALLA:',e.message));Promise.allSettled([probar('APP',process.env.DATABASE_URL),probar('MIGRA',process.env.MIGRATION_DATABASE_URL)]).then(()=>process.exit(0))"
-        > /tmp/boot.log 2>&1;
         node node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js
-        >> /tmp/boot.log 2>&1
-        && echo MIGRACIONES_OK >> /tmp/boot.log
-        && exec node -e "const{NestFactory}=require('@nestjs/core');const{AppModule}=require('/app/apps/api/dist/app.module.js');NestFactory.create(AppModule,{abortOnError:false}).then(()=>{console.log('INIT_OK');process.exit(0)}).catch(e=>{console.log('CAUSA:',(e&&e.stack)||String(e));process.exit(1)})" >> /tmp/boot.log 2>&1 )
-        || ( tail -c 1200 /tmp/boot.log; sleep 600 )
+        && exec node apps/api/dist/main.js
     environment:
-      NODE_ENV: production
+      # staging valida distinto que production (permite mailpit, exige igual
+      # secretos reales). Cada proyecto de Dokploy fija el suyo.
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: 3001
+      # CORS y proteccion CSRF validan contra este origen: debe ser el dominio
+      # real del panel o el login desde el navegador se rechaza.
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      MAILPIT_HOST: ${MAILPIT_HOST:-localhost}
+      MAILPIT_PORT: ${MAILPIT_PORT:-1025}
       # La aplicacion en runtime: sin permiso para crear ni alterar tablas.
       DATABASE_URL: ${DATABASE_URL}
       # Las migraciones usan al dueño del esquema, no al rol de la app.
@@ -105,11 +105,24 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "tail -c 900 /tmp/boot.log 2>/dev/null; wget -qO- http://127.0.0.1:3001/health >/dev/null"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 40s
+    networks:
+      - internal
+      - dokploy-network
+
+  # Bandeja de correo de PRUEBAS: captura todo, nada sale a internet.
+  # Solo existe con COMPOSE_PROFILES=staging; produccion usa SMTP real.
+  # UI en el dominio de staging bajo /correo.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    profiles: ["staging"]
+    environment:
+      MP_WEBROOT: /correo
     networks:
       - internal
       - dokploy-network
