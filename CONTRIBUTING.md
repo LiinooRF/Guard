@@ -24,6 +24,13 @@ git switch -c feature/11-escaneo-nfc-nativo
 
 Nunca trabajes directo sobre `staging` ni `main`.
 
+## Antes de empezar: asígnate el issue
+
+**Si un issue no tiene a nadie asignado, está libre. Si lo vas a tomar, asígnatelo primero.** Es lo
+único que impide que dos personas hagan el mismo trabajo, y toma cinco segundos.
+
+Somos 4 sobre 137 issues: nadie puede saber qué estás haciendo si no lo dices en el issue.
+
 ## Pull requests
 
 - **Un PR por issue.** Si toca tres áreas sin relación, son tres PR.
@@ -31,6 +38,25 @@ Nunca trabajes directo sobre `staging` ni `main`.
 - Cierra el issue con `Closes #11` en la descripción.
 - La CI tiene que estar verde: `typecheck`, `build` y `test`.
 - Si tocas `packages/shared`, pide revisión a **dos** personas: ese paquete rompe a los otros tres.
+- **Revisa los PR de los demás.** Un PR sin revisar bloquea a quien lo escribió y a todo lo que venga
+  detrás. Es tan parte del trabajo como escribir código.
+
+### Si tu trabajo va encadenado
+
+A veces un issue depende del anterior y no puedes esperar. Se puede, pero **apunta cada PR a la rama
+anterior, no a `staging`**:
+
+```
+feature/28-esquema    ──► staging
+feature/29-rls        ──► feature/28-esquema     ← no a staging
+feature/30-contexto   ──► feature/29-rls
+```
+
+Así GitHub muestra en cada PR **solo lo tuyo** en vez de repetir todo lo anterior, y al mergear el
+primero re-apunta el siguiente solo.
+
+Si los apuntas todos a `staging`, quien revise el último termina leyendo cuatro veces el mismo código
+y hay que mergear en un orden exacto que nadie escribió en ninguna parte.
 
 ## Los 4 carriles del mes 1
 
@@ -79,6 +105,32 @@ npm run infra:reset    # BORRA los datos y vuelve a correr los scripts de init
 El usuario de aplicación (`voxia_app`) **no tiene `BYPASSRLS`** a propósito: si lo tuviera,
 PostgreSQL ignoraría las políticas de aislamiento y un `WHERE` olvidado filtraría datos de una
 empresa a otra. El script de init falla el arranque si detecta lo contrario.
+
+### Dos roles distintos: uno migra, otro atiende
+
+| Rol | Para qué | Puede crear tablas |
+|---|---|---|
+| dueño del esquema | correr migraciones | **sí** |
+| `voxia_app` | la API en runtime | **no** |
+
+La API no necesita poder alterar el esquema, y no debería poder: si alguien la compromete, la
+diferencia entre leer datos y poder borrar tablas es esta línea.
+
+Consecuencia práctica: **las migraciones no se conectan con `DATABASE_URL`.** Si `data-source.ts` usa
+la misma URL que la app, el primer `CREATE TABLE` se cae con `permission denied for schema public`.
+
+Y ojo con lo contrario: **si la CI corre las migraciones con superusuario y tú en local con el rol
+restringido, la CI queda verde y el error aparece en tu máquina.** La CI tiene que usar la misma
+separación de roles que usa un desarrollador; si no, prueba una configuración que nadie corre.
+
+### El rol se define en un solo lugar
+
+`docker/postgres/init/01-app-role.sh` es la **única** definición de `voxia_app`, y ahí vive la
+comprobación que aborta el arranque si el rol quedó con `BYPASSRLS`.
+
+No crees el rol a mano en otro lado —un workflow de CI, un script de setup— aunque parezca más
+rápido. Una segunda definición sin esa comprobación deja los tests de aislamiento pasando en verde
+mientras el rol real se salta las políticas, que es el peor error posible: el que no se nota.
 
 ## Commits
 
