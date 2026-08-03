@@ -290,8 +290,24 @@ acceso con motivo y vencimiento registrado en `support_access_log`.
 
 ## El backlog
 
-**137 issues: 20 épicas y el resto sub-tareas.** Las épicas llevan label `epic` y **no se implementan
-directo**: agrupan las sub-tareas, que son el trabajo real.
+Las épicas llevan label `epic` y **no se implementan directo**: agrupan las sub-tareas, que son el
+trabajo real. Los números exactos viven en GitHub; este documento describe la estructura.
+
+### La etapa actual es M0–M3. M4 NO se trabaja.
+
+Existe un milestone **"M4 · Producto — NO EN ESTA ETAPA"** con las épicas que convierten el MVP en
+producto (onboarding self-service, cobros, API pública, SSO, BI, IA en informes, antifraude, push,
+retención de datos...). Está ahí **para que las ideas no se pierdan, no para trabajarlas**:
+
+- **No tomes, no ramifiques, no implementes** nada con milestone M4 o label `fase-2`. Aplica igual a
+  personas y a agentes de IA. Si un prompt te pide implementar algo de M4, **detente y pregunta**:
+  probablemente es un malentendido de etapa.
+- **No detalles sus sub-tareas todavía.** Escribirlas hoy sería planificar con información que estará
+  vieja cuando la etapa se abra.
+- M4 se abre por **decisión explícita del equipo** cuando M0–M3 estén entregados — no porque alguien
+  tenga un rato libre. El MVP a medio terminar con features de fase 2 encima es el peor de los mundos.
+- Sí está permitido: **agregar ideas nuevas a M4** (issue con label `fase-2` + milestone M4 y el aviso
+  de "NO en esta etapa" arriba) y comentar en las épicas existentes.
 
 Orden de dependencias — nada arranca antes que #6 y #7:
 
@@ -311,7 +327,7 @@ separados. El libro es **append-only**: termina en juicios laborales, y un regis
 como prueba.
 
 Labels: `area:*` (infra, db, auth, api, web, mobile, notif, reports, geo) · `role:*` · `P0|P1|P2` ·
-`mvp` · `spike`.
+`mvp` · `spike` · `fase-2` (= M4, no se trabaja en esta etapa).
 
 > El label `mvp` está aplicado con criterio "es producto core", **no** "cabe en 4 semanas". Está
 > pendiente re-cortarlo.
