@@ -15,6 +15,8 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  SCAN_SYNC_QUEUE_NAME: z.string().min(1).default('scan-sync'),
+  SCAN_SYNC_LAG_ALERT_SECONDS: z.coerce.number().int().positive().default(300),
 
   JWT_SECRET: z.string().min(32, 'JWT_SECRET debe tener al menos 32 caracteres'),
   JWT_ACCESS_TTL: z.string().default('15m'),
@@ -67,9 +69,20 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error('MAIL_DRIVER=smtp requiere SMTP_HOST');
   }
 
+  if (env.NODE_ENV === 'production' && env.MAIL_DRIVER !== 'smtp') {
+    throw new Error('en produccion MAIL_DRIVER debe ser smtp');
+  }
+
   // En produccion no se envia correo real por un canal sin cifrar.
   if (env.NODE_ENV === 'production' && env.MAIL_DRIVER === 'smtp' && !env.SMTP_SECURE) {
     throw new Error('en produccion MAIL_DRIVER=smtp requiere SMTP_SECURE=true');
+  }
+
+  if (
+    ['staging', 'production'].includes(env.NODE_ENV) &&
+    /cambiar|change-?me|example|demo/i.test(env.JWT_SECRET)
+  ) {
+    throw new Error(`${env.NODE_ENV} no permite credenciales de ejemplo en JWT_SECRET`);
   }
 
   return env;

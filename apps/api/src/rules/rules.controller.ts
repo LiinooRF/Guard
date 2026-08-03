@@ -7,6 +7,7 @@ import {
 } from '@voxia/shared';
 
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 /**
  * Endpoint de humo del scaffolding: prueba que `@voxia/shared` se resuelve
@@ -16,6 +17,7 @@ import { SkipTenantContext } from '../database/tenant-context/skip-tenant-contex
  */
 @Controller('rules')
 @SkipTenantContext()
+@Public()
 export class RulesController {
   @Get('defaults')
   defaults() {

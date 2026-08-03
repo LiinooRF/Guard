@@ -2,18 +2,23 @@ import 'reflect-metadata';
 
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { requestLogging } from './observability/request-logging.middleware';
+import { StructuredLogger } from './observability/structured-logger';
+import { csrfOriginProtection } from './security/csrf-origin.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    // Logs estructurados: cada linea tiene que poder correlacionarse con un
-    // request y un tenant. Ver issue #6.
-    logger: ['error', 'warn', 'log'],
+    logger: new StructuredLogger(),
   });
 
+  app.use(requestLogging);
   app.use(helmet());
+  app.use(cookieParser());
+  app.use(csrfOriginProtection(process.env.WEB_PUBLIC_URL ?? 'http://localhost:3000'));
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );

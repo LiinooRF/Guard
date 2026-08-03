@@ -1,43 +1,49 @@
 'use client';
 
 import type { Role } from '@voxia/shared';
-import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
 
-const DEMO_ROLES: Array<{ role: Role; label: string; description: string; href: string }> = [
-  {
-    role: 'GUARDIA',
-    label: 'Guardia',
-    description: 'Turno, ronda activa y escaneo de puntos',
-    href: '/demo/guardia',
-  },
-  {
-    role: 'SUPERVISOR',
-    label: 'Supervisor',
-    description: 'Monitoreo operativo de recintos y alertas',
-    href: '/demo/supervisor',
-  },
-  {
-    role: 'ADMIN',
-    label: 'Administrador',
-    description: 'Personas, recintos, reglas e informes',
-    href: '/demo/admin',
-  },
-  {
-    role: 'SUPERADMIN',
-    label: 'Superadmin',
-    description: 'Empresas, planes y salud de la plataforma',
-    href: '/demo/superadmin',
-  },
-];
-
 export function LoginScreen() {
+  const router = useRouter();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
   const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error' | 'offline'>('idle');
+  const [confirmation, setConfirmation] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [mode, setMode] = useState<'login' | 'recovery' | 'action'>('login');
+  const [action, setAction] = useState<{ purpose: 'invite' | 'reset'; token: string } | null>(
+    null,
+  );
+  const [status, setStatus] = useState<
+    'idle' | 'loading' | 'error' | 'offline' | 'success'
+  >('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [tenantId, setTenantId] = useState('');
+  const [tenantChoices, setTenantChoices] = useState<
+    Array<{ tenantId: string; tenantName: string; role: Role }>
+  >([]);
+
+  useEffect(() => {
+    function readActionLink() {
+      const parameters = new URLSearchParams(window.location.hash.slice(1));
+      const invitation = parameters.get('invite');
+      const reset = parameters.get('reset');
+      if (invitation) {
+        setAction({ purpose: 'invite', token: invitation });
+        setMode('action');
+      } else if (reset) {
+        setAction({ purpose: 'reset', token: reset });
+        setMode('action');
+      }
+    }
+    readActionLink();
+    window.addEventListener('hashchange', readActionLink);
+    return () => window.removeEventListener('hashchange', readActionLink);
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,9 +57,114 @@ export function LoginScreen() {
     }
 
     setStatus('loading');
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    // El endpoint real pertenece a #47. El mensaje no confirma si la identidad existe.
-    setStatus('error');
+    setErrorMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/auth/login`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity,
+            password,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        requiresTenantSelection?: boolean;
+        tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
+        user?: { role: Role };
+        code?: string;
+        message?: string | string[];
+      };
+
+      if (result.requiresTenantSelection && result.tenants) {
+        setTenantChoices(result.tenants);
+        setStatus('idle');
+        return;
+      }
+      if (!response.ok || !result.user) {
+        setErrorMessage(
+          result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
+            ? result.message
+            : 'No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.',
+        );
+        setStatus('error');
+        return;
+      }
+
+      if (
+        result.user.role === 'GUARDIA' &&
+        !navigator.userAgent.includes('VoxIAAndroid/')
+      ) {
+        await fetch(`${apiUrl}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        setErrorMessage('El acceso de guardia está disponible únicamente en la app Android.');
+        setStatus('error');
+        return;
+      }
+
+      router.push(`/app/${result.user.role.toLowerCase()}`);
+      router.refresh();
+    } catch {
+      setStatus(navigator.onLine ? 'error' : 'offline');
+    }
+  }
+
+  async function requestRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail.trim())) {
+      setErrorMessage('Ingresa un correo válido.');
+      return setStatus('error');
+    }
+    if (!navigator.onLine) return setStatus('offline');
+    setStatus('loading');
+    try {
+      await fetch(`${apiUrl}/auth/password-reset/request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoveryEmail }),
+      });
+      setStatus('success');
+    } catch {
+      setStatus(navigator.onLine ? 'error' : 'offline');
+    }
+  }
+
+  async function completeAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!action || password.length < 12 || password !== confirmation) {
+      setErrorMessage('La contraseña debe tener 12 caracteres y ambas entradas deben coincidir.');
+      return setStatus('error');
+    }
+    if (!navigator.onLine) return setStatus('offline');
+    setStatus('loading');
+    try {
+      const endpoint =
+        action.purpose === 'invite' ? 'invitations/complete' : 'password-reset/complete';
+      const response = await fetch(`${apiUrl}/auth/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: action.token, password }),
+      });
+      if (!response.ok) {
+        setErrorMessage('Este enlace no es válido o ya venció. Solicita uno nuevo.');
+        return setStatus('error');
+      }
+      window.history.replaceState(null, '', window.location.pathname);
+      setAction(null);
+      setPassword('');
+      setConfirmation('');
+      setMode('login');
+      setStatus('success');
+    } catch {
+      setStatus(navigator.onLine ? 'error' : 'offline');
+    }
   }
 
   return (
@@ -78,11 +189,27 @@ export function LoginScreen() {
       <section className="login-panel">
         <div className="login-card">
           <div className="mobile-brand"><Brand /></div>
-          <span className="eyebrow">Portal de operaciones</span>
-          <h2>Bienvenido de vuelta</h2>
-          <p className="login-intro">Ingresa con las credenciales entregadas por tu organización.</p>
+          <span className="eyebrow">
+            {mode === 'login' ? 'Portal de operaciones' : 'Acceso seguro'}
+          </span>
+          <h2>
+            {mode === 'login'
+              ? 'Bienvenido de vuelta'
+              : mode === 'recovery'
+                ? 'Recupera tu acceso'
+                : action?.purpose === 'invite'
+                  ? 'Activa tu cuenta'
+                  : 'Nueva contraseña'}
+          </h2>
+          <p className="login-intro">
+            {mode === 'login'
+              ? 'Ingresa con las credenciales entregadas por tu organización.'
+              : mode === 'recovery'
+                ? 'Te enviaremos un enlace si el correo está registrado.'
+                : 'Define una contraseña segura para continuar.'}
+          </p>
 
-          <form className="login-form" noValidate onSubmit={submit}>
+          {mode === 'login' ? <form className="login-form" noValidate onSubmit={submit}>
             <label>
               Usuario o correo
               <input
@@ -91,6 +218,7 @@ export function LoginScreen() {
                 onChange={(event) => {
                   setIdentity(event.target.value);
                   setStatus('idle');
+                  setErrorMessage('');
                 }}
                 placeholder="tu.usuario"
                 required
@@ -106,6 +234,7 @@ export function LoginScreen() {
                   onChange={(event) => {
                     setPassword(event.target.value);
                     setStatus('idle');
+                    setErrorMessage('');
                   }}
                   placeholder="••••••••"
                   required
@@ -122,15 +251,26 @@ export function LoginScreen() {
                 </button>
               </span>
             </label>
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" /> Mantener sesión
+            {tenantChoices.length > 1 ? (
+              <label>
+                Empresa
+                <select
+                  onChange={(event) => setTenantId(event.target.value)}
+                  required
+                  value={tenantId}
+                >
+                  <option value="">Selecciona dónde ingresar</option>
+                  {tenantChoices.map((tenant) => (
+                    <option key={tenant.tenantId} value={tenant.tenantId}>
+                      {tenant.tenantName} · {tenant.role}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <button className="text-button" type="button">¿Olvidaste tu contraseña?</button>
-            </div>
+            ) : null}
             {status === 'error' ? (
               <p className="form-message error" role="alert">
-                No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.
+                {errorMessage || 'Completa todos los campos para continuar.'}
               </p>
             ) : null}
             {status === 'offline' ? (
@@ -138,38 +278,119 @@ export function LoginScreen() {
                 Estás sin conexión. Comprueba tu red para iniciar sesión.
               </p>
             ) : null}
+            {status === 'success' ? (
+              <p className="form-message success" role="status">
+                Contraseña definida correctamente. Ya puedes iniciar sesión.
+              </p>
+            ) : null}
             <button className="primary-button" disabled={status === 'loading'} type="submit">
               {status === 'loading' ? 'Verificando…' : 'Ingresar'}
               <span aria-hidden="true">{status === 'loading' ? '···' : '→'}</span>
             </button>
-            <p className="form-note">
-              El acceso real se habilitará al integrar el endpoint de autenticación. Por ahora
-              puedes recorrer los paneles demostrativos.
-            </p>
-          </form>
+            <button
+              className="text-button recovery-link"
+              onClick={() => {
+                setMode('recovery');
+                setStatus('idle');
+              }}
+              type="button"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </form> : null}
 
-          <div className="demo-area">
-            <div className="demo-heading">
-              <span>Vista previa por rol</span>
-              <small>Datos demostrativos</small>
-            </div>
-            <div className="role-grid">
-              {DEMO_ROLES.map((item) => (
-                <Link className="role-link" href={item.href} key={item.role}>
-                  <span className={`role-icon role-${item.role.toLowerCase()}`}>
-                    {item.label.charAt(0)}
-                  </span>
-                  <span>
-                    <strong>{item.label}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                  <b aria-hidden="true">›</b>
-                </Link>
-              ))}
-            </div>
-          </div>
+          {mode === 'recovery' ? (
+            <form className="login-form" noValidate onSubmit={requestRecovery}>
+              <label>
+                Correo
+                <input
+                  autoComplete="email"
+                  inputMode="email"
+                  onChange={(event) => {
+                    setRecoveryEmail(event.target.value);
+                    setStatus('idle');
+                  }}
+                  required
+                  type="email"
+                  value={recoveryEmail}
+                />
+              </label>
+              {status === 'success' ? (
+                <p className="form-message success" role="status">
+                  Si el correo está registrado, recibirás instrucciones en unos minutos.
+                </p>
+              ) : null}
+              {status === 'offline' ? (
+                <p className="form-message offline" role="alert">
+                  Estás sin conexión. Comprueba tu red para continuar.
+                </p>
+              ) : null}
+              {status === 'error' ? (
+                <p className="form-message error" role="alert">
+                  {errorMessage || 'No pudimos procesar la solicitud. Inténtalo nuevamente.'}
+                </p>
+              ) : null}
+              <button className="primary-button" disabled={status === 'loading'} type="submit">
+                {status === 'loading' ? 'Enviando…' : 'Enviar instrucciones'}
+              </button>
+              <button
+                className="text-button recovery-link"
+                onClick={() => {
+                  setMode('login');
+                  setStatus('idle');
+                }}
+                type="button"
+              >
+                Volver al inicio de sesión
+              </button>
+            </form>
+          ) : null}
+
+          {mode === 'action' ? (
+            <form className="login-form" noValidate onSubmit={completeAction}>
+              <label>
+                Nueva contraseña
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setStatus('idle');
+                  }}
+                  required
+                  type="password"
+                  value={password}
+                />
+              </label>
+              <label>
+                Repite la contraseña
+                <input
+                  autoComplete="new-password"
+                  minLength={12}
+                  onChange={(event) => {
+                    setConfirmation(event.target.value);
+                    setStatus('idle');
+                  }}
+                  required
+                  type="password"
+                  value={confirmation}
+                />
+              </label>
+              {status === 'error' ? (
+                <p className="form-message error" role="alert">{errorMessage}</p>
+              ) : null}
+              {status === 'offline' ? (
+                <p className="form-message offline" role="alert">
+                  Estás sin conexión. Comprueba tu red para continuar.
+                </p>
+              ) : null}
+              <button className="primary-button" disabled={status === 'loading'} type="submit">
+                {status === 'loading' ? 'Guardando…' : 'Definir contraseña'}
+              </button>
+            </form>
+          ) : null}
         </div>
-        <footer>VoxIA Control · Entorno de desarrollo · v0.2</footer>
+        <footer>VoxIA Control · Acceso seguro</footer>
       </section>
     </main>
   );

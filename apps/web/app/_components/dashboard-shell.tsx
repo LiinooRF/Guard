@@ -1,44 +1,74 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { Brand } from './brand';
+import { LogoutButton } from './logout-button';
+
+const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label: string }>> = {
+  SUPERADMIN: [
+    { href: '#resumen', icon: '⌂', label: 'Resumen' },
+    { href: '#empresas', icon: '▦', label: 'Empresas' },
+    { href: '#licencias', icon: '$', label: 'Licencias' },
+    { href: '#alta', icon: '+', label: 'Nueva empresa' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
+  ],
+  ADMIN: [
+    { href: '#resumen', icon: '⌂', label: 'Resumen' },
+    { href: '#rondas', icon: '◎', label: 'Rondas' },
+    { href: '#usuarios', icon: '♙', label: 'Usuarios' },
+    { href: '#recintos', icon: '▦', label: 'Recintos' },
+    { href: '#seguridad', icon: '◇', label: 'Seguridad' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
+  ],
+  SUPERVISOR: [
+    { href: '#resumen', icon: '⌂', label: 'Resumen' },
+    { href: '#rondas', icon: '◎', label: 'Rondas asignadas' },
+    { href: '#sesiones', icon: '◉', label: 'Sesiones' },
+  ],
+};
 
 export function DashboardShell({
   role,
   title,
   subtitle,
   children,
+  streamlined = false,
 }: {
   role: string;
   title: string;
   subtitle: string;
   children: ReactNode;
+  streamlined?: boolean;
 }) {
   return (
     <main className="dashboard-shell">
       <aside className="sidebar">
         <Brand compact />
-        <nav aria-label="Navegación principal">
-          <a className="nav-item active" href="#resumen"><span>⌂</span> Resumen</a>
-          <a className="nav-item" href="#operacion"><span>◎</span> Operación</a>
-          <a className="nav-item" href="#alertas"><span>△</span> Alertas</a>
-          <a className="nav-item" href="#informes"><span>▤</span> Informes</a>
-        </nav>
+        {streamlined ? (
+          <div className="guard-nav-note">Solo verás la tarea que debes realizar ahora.</div>
+        ) : (
+          <nav aria-label="Navegación principal">
+            {(ROLE_NAVIGATION[role] ?? []).map((item, index) => (
+              <a className={`nav-item${index === 0 ? ' active' : ''}`} href={item.href} key={item.href}>
+                <span aria-hidden="true">{item.icon}</span> {item.label}
+              </a>
+            ))}
+          </nav>
+        )}
         <div className="sidebar-footer">
-          <span className="avatar">MC</span>
-          <span><strong>Matías Castro</strong><small>{role}</small></span>
+          <span className="avatar">{role.slice(0, 2)}</span>
+          <span><strong>Sesión activa</strong><small>{role}</small></span>
         </div>
       </aside>
       <section className="dashboard-content">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{role} · Vista demostrativa</span>
+            <span className="eyebrow">{role}{streamlined ? ' · Operación' : ' · Panel'}</span>
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
           <div className="topbar-actions">
             <span className="live-badge">● En línea</span>
-            <Link className="secondary-button" href="/">Cambiar rol</Link>
+            <LogoutButton />
           </div>
         </header>
         {children}
