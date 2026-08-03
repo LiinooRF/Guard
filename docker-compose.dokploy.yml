@@ -71,6 +71,8 @@ services:
       - >-
         node node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js
+        && { [ "$$RUN_DEMO_SEED" != "true" ]
+        || node apps/api/dist/database/seeds/development.js; }
         && exec node apps/api/dist/main.js
     environment:
       # staging valida distinto que production (permite mailpit, exige igual
@@ -82,6 +84,11 @@ services:
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:3000}
       MAILPIT_HOST: ${MAILPIT_HOST:-localhost}
       MAILPIT_PORT: ${MAILPIT_PORT:-1025}
+      # Cuentas demo al arrancar (solo staging; el seed se niega en production
+      # y es idempotente: re-arrancar no duplica nada)
+      RUN_DEMO_SEED: ${RUN_DEMO_SEED:-false}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      DATABASE_ADMIN_URL: ${MIGRATION_DATABASE_URL}
       # La aplicacion en runtime: sin permiso para crear ni alterar tablas.
       DATABASE_URL: ${DATABASE_URL}
       # Las migraciones usan al dueño del esquema, no al rol de la app.
