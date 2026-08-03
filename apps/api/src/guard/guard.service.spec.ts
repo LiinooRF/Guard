@@ -207,6 +207,69 @@ describe('GuardService.registerScan', () => {
     ).resolves.toMatchObject({ patrol: { status: 'completada' } });
   });
 
+  it('el boton de panico registra sin texto y avisa a los admins (#123)', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }]) // ultima ronda
+      .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]) // insert
+      .mockResolvedValueOnce([{
+        tenant_id: 'tenant-1', site_name: 'Planta Norte', guard_name: 'Juan Soto',
+      }])
+      .mockResolvedValueOnce([{ email: 'admin@empresa.test' }]);
+    const correo = sinCorreo();
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+
+    await expect(
+      service.reportEvent('guard-id', {
+        criticality: 'panico',
+        clientEventId: '9a0c8f7e-1111-4222-8333-444455556666',
+        latitude: -33.45, longitude: -70.66,
+      }),
+    ).resolves.toMatchObject({ replay: false, notified: true, criticality: 'panico' });
+    expect(correo.send).toHaveBeenCalledWith(
+      'admin@empresa.test',
+      expect.objectContaining({ subject: expect.stringContaining('PÁNICO') }),
+      expect.objectContaining({ site: 'Planta Norte', guard: 'Juan Soto' }),
+      'tenant-1',
+    );
+  });
+
+  it('reenviar el mismo evento no duplica la fila NI re-avisa (#123)', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }])
+      .mockResolvedValueOnce([]) // ON CONFLICT: ya existia
+      .mockResolvedValueOnce([{ id: 'evento-id' }]); // busqueda del original
+    const correo = sinCorreo();
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+
+    await expect(
+      service.reportEvent('guard-id', {
+        criticality: 'panico',
+        clientEventId: '9a0c8f7e-1111-4222-8333-444455556666',
+      }),
+    ).resolves.toMatchObject({ replay: true, notified: false, id: 'evento-id' });
+    expect(correo.send).not.toHaveBeenCalled();
+  });
+
+  it('una novedad informativa no molesta a nadie por correo', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{ id: 'patrol-id', site_id: 'site-id' }])
+      .mockResolvedValueOnce([{ id: 'evento-id', reported_at_server: new Date() }]);
+    const correo = sinCorreo();
+    const service = new GuardService({ manager } as unknown as TenantContextService, correo);
+
+    await expect(
+      service.reportEvent('guard-id', {
+        criticality: 'info',
+        text: 'Porton norte quedo con la luz quemada',
+        clientEventId: '9a0c8f7e-1111-4222-8333-444455556666',
+      }),
+    ).resolves.toMatchObject({ replay: false, notified: false });
+    expect(correo.send).not.toHaveBeenCalled();
+  });
+
   it('marca sin_fix_gps cuando no vienen coordenadas, pero registra igual', async () => {
     const manager = { query: jest.fn() };
     manager.query
