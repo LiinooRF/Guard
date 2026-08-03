@@ -9,5 +9,6 @@ import { SupervisorService } from './supervisor.service';
   imports: [DatabaseModule, RulesModule],
   controllers: [SupervisorController],
   providers: [SupervisorService],
+  exports: [SupervisorService],
 })
 export class SupervisorModule {}

@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = [
   'punto.modificado',
   'etiqueta.registrada',
   'etiqueta.retirada',
+  'rondas.generadas',
   'ruta.creada',
   'ruta.modificada',
   'reglas.modificadas',
