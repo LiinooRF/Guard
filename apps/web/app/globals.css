@@ -760,7 +760,6 @@ a.stats-boton { display: inline-flex; align-items: center; }
 .live-patrol p { margin: 0; font-size: .72rem; font-weight: 700; }.live-progress { height: .55rem; overflow: hidden; border-radius: 99px; background: #e8ebf2; }.live-progress span { display: block; height: 100%; border-radius: inherit; background: #4263eb; transition: width .25s ease; }.live-progress-label { display: flex; justify-content: space-between; color: var(--muted); font-size: .63rem; }
 .live-refreshed { margin: .8rem 0 0; color: var(--muted); font-size: .62rem; text-align: right; }
 @media (max-width: 700px) { .live-grid { grid-template-columns: 1fr; }.live-map { height: 17rem; }.live-patrol { min-height: 11rem; padding: 1rem; }.live-patrol header strong { font-size: .95rem; }.live-patrol p { font-size: .85rem; }.live-patrol small, .live-progress-label { font-size: .72rem; } }
-}
 
 /* Editor de rutas (#95): dos columnas en desktop, controles utilizables sin drag. */
 .route-editor { margin-top: 1.5rem; }
