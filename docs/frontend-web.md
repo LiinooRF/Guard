@@ -176,7 +176,16 @@ PATCH /supervisor/routes/:routeId/active {isActive}
 POST  /supervisor/routes/:routeId/patrols  {guardId, scheduledStartAt, scheduledEndAt}   shifts:manage
 GET   /supervisor/sites/:siteId/patrols                patrols:monitor
 GET   /supervisor/sites/:siteId/events                 patrols:monitor  ← novedades y pánico
+GET   /supervisor/live                                 patrols:monitor
+      → rondas pendientes/en curso de los recintos asignados, progreso, último escaneo y
+        posición más reciente solo cuando la regla GPS efectiva está activa
 ```
+
+El tablero consulta `/supervisor/live` cada 5 segundos (también al volver a una pestaña visible),
+por debajo del límite de 10 segundos del producto. `pollAfterMs` viene en la respuesta para dejar
+explícito el contrato. El mapa recibe `MAP_TILE_URL` y `MAP_ATTRIBUTION` desde el servidor; en los
+compose productivos el proveedor es obligatorio y nunca cae silenciosamente en los tiles públicos
+de OpenStreetMap.
 
 ### SUPERADMIN — `/platform/tenants` (sin contexto de empresa)
 ```

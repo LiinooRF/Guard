@@ -52,6 +52,16 @@ export class SupervisorController {
    * mirar es lo primero que hace cualquier pantalla del supervisor, no una
    * operacion de edicion de rutas.
    */
+  /**
+   * Tablero en vivo (#97): donde esta cada guardia con ronda en curso.
+   * Va antes de las rutas con :siteId — Nest resuelve por orden de declaracion.
+   */
+  @Get('live')
+  @Permissions('patrols:monitor')
+  liveBoard(@Req() request: Autenticado) {
+    return this.supervisor.liveBoard(request.user.sub);
+  }
+
   @Get('sites')
   @Permissions('patrols:monitor')
   listSites(@Req() request: Autenticado) {

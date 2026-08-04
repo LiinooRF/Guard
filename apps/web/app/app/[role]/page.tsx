@@ -8,6 +8,7 @@ import {
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
+import { LivePatrolBoard } from '../../_components/live-patrol-board';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import { StatsCharts } from '../../_components/stats-charts';
 import { SupervisorSchedule } from '../../_components/supervisor-schedule';
@@ -158,6 +159,13 @@ export default async function RoleDashboard({
         )}
       </section>
       {isSupervisor && <SupervisorSchedule apiUrl={publicApiUrl()} />}
+      {isSupervisor && (
+        <LivePatrolBoard
+          apiUrl={publicApiUrl()}
+          tileUrl={process.env.MAP_TILE_URL ?? null}
+          attribution={process.env.MAP_ATTRIBUTION ?? ''}
+        />
+      )}
       <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (

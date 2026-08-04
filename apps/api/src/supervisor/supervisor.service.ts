@@ -65,6 +65,109 @@ export class SupervisorService {
     }
   }
 
+  async liveBoard(supervisorId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      site_id: string;
+      site_name: string;
+      route_name: string;
+      guard_id: string;
+      guard_name: string;
+      status: string;
+      scheduled_start_at: Date;
+      scheduled_end_at: Date;
+      started_at: Date | null;
+      expected_count: number;
+      scanned_count: number;
+      last_checkpoint_name: string | null;
+      last_scan_at: Date | null;
+      latitude: string | null;
+      longitude: string | null;
+      position_at: Date | null;
+      accuracy_m: string | null;
+    }>>(
+      `SELECT p.id, p.site_id, si.name AS site_name, r.name AS route_name,
+              p.guard_id, trim(u.given_name || ' ' || u.family_name) AS guard_name,
+              p.status, p.scheduled_start_at, p.scheduled_end_at, p.started_at,
+              jsonb_array_length(p.expected_checkpoint_ids)::int AS expected_count,
+              COALESCE(progress.scanned_count, 0)::int AS scanned_count,
+              ultimo.checkpoint_name AS last_checkpoint_name,
+              ultimo.scanned_at_server AS last_scan_at,
+              posicion.latitude, posicion.longitude,
+              posicion.recorded_at_device AS position_at, posicion.accuracy_m
+       FROM patrols p
+       JOIN supervisor_sites scope
+         ON scope.site_id = p.site_id AND scope.supervisor_id = $1
+       JOIN sites si ON si.id = p.site_id
+       JOIN routes r ON r.id = p.route_id
+       JOIN users u ON u.id = p.guard_id
+       LEFT JOIN LATERAL (
+         SELECT count(DISTINCT s.checkpoint_id)::int AS scanned_count
+         FROM scans s WHERE s.patrol_id = p.id
+       ) progress ON true
+       LEFT JOIN LATERAL (
+         SELECT c.name AS checkpoint_name, s.scanned_at_server
+         FROM scans s JOIN checkpoints c ON c.id = s.checkpoint_id
+         WHERE s.patrol_id = p.id ORDER BY s.scanned_at_server DESC LIMIT 1
+       ) ultimo ON true
+       LEFT JOIN LATERAL (
+         SELECT pt.latitude, pt.longitude, pt.recorded_at_device, pt.accuracy_m
+         FROM patrol_tracks pt WHERE pt.patrol_id = p.id
+         ORDER BY pt.recorded_at_device DESC LIMIT 1
+       ) posicion ON true
+       WHERE p.status IN ('pendiente', 'en_curso')
+         AND p.scheduled_end_at >= now() - interval '12 hours'
+       ORDER BY CASE p.status WHEN 'en_curso' THEN 0 ELSE 1 END, p.scheduled_start_at
+       LIMIT 100`,
+      [supervisorId],
+    );
+
+    const rulesBySite = new Map<string, Awaited<ReturnType<RulesService['effective']>>>();
+    for (const siteId of new Set(rows.map((row) => row.site_id))) {
+      rulesBySite.set(siteId, await this.rules.effective({ siteId }));
+    }
+
+    return {
+      refreshedAt: new Date().toISOString(),
+      pollAfterMs: 5_000,
+      patrols: rows.map((row) => {
+        // gpsTrackingEnabled y NO gpsSharingRequired: el segundo decide
+        // obligatorio vs OPCIONAL, no encendido vs apagado. Leerlo mal
+        // aca esconde en el tablero a guardias que SI estan compartiendo
+        // ubicacion, que es justo lo que el monitoreo en vivo debe mostrar.
+        const gpsEnabled = rulesBySite.get(row.site_id)?.gpsTrackingEnabled ?? false;
+        return {
+          id: row.id,
+          siteId: row.site_id,
+          siteName: row.site_name,
+          routeName: row.route_name,
+          guardId: row.guard_id,
+          guardName: row.guard_name,
+          status: row.status,
+          scheduledStartAt: row.scheduled_start_at,
+          scheduledEndAt: row.scheduled_end_at,
+          startedAt: row.started_at,
+          expectedCheckpoints: row.expected_count,
+          scannedCheckpoints: row.scanned_count,
+          progressPct: row.expected_count
+            ? Math.min(100, Math.round((row.scanned_count / row.expected_count) * 100))
+            : 0,
+          lastCheckpointName: row.last_checkpoint_name,
+          lastScanAt: row.last_scan_at,
+          gpsEnabled,
+          position: gpsEnabled && row.latitude !== null && row.longitude !== null
+            ? {
+                latitude: Number(row.latitude),
+                longitude: Number(row.longitude),
+                recordedAt: row.position_at,
+                accuracyM: row.accuracy_m === null ? null : Number(row.accuracy_m),
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
   /**
    * Los recintos que el supervisor tiene asignados.
    *
