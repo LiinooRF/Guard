@@ -1,3 +1,4 @@
+import type { GpsPolicyService } from '../geo/gps-policy.service';
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EscalationService } from '../escalation/escalation.service';
@@ -10,11 +11,19 @@ const sinCorreo = () =>
 const sinReglas = () =>
   ({ effective: jest.fn().mockResolvedValue(patrolRulesSchema.parse({})) }) as unknown as RulesService;
 
+/**
+ * La puerta de GPS (#77) se prueba entera en gps-policy.service.spec.ts. Aca
+ * solo tiene que dejar pasar: si estos tests dependieran de su veredicto,
+ * probarian dos cosas a la vez y fallarian por el motivo equivocado.
+ */
+const sinPuertaGps = () =>
+  ({ assertPatrolStartAllowed: jest.fn().mockResolvedValue(undefined) }) as unknown as GpsPolicyService;
+
 const sinEscalamiento = (notificados = 0) =>
   ({ notify: jest.fn().mockResolvedValue(notificados) }) as unknown as EscalationService;
 
 function servicio(query: jest.Mock) {
-  return new GuardService({ manager: { query } } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento());
+  return new GuardService({ manager: { query } } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps());
 }
 
 describe('GuardService — jornada (#131)', () => {

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
-import { GuardConnectionBar } from './guard-connection-bar';
+import { PanicoPanel } from './panico-panel';
+import { SyncEstado } from './sync-estado';
 import { GuardEventForm } from './guard-event-form';
 import {
   enviarEscaneo,
@@ -88,7 +89,7 @@ function SinAsignacion({ apiUrl, mensaje }: { apiUrl: string; mensaje?: string }
   const puente = useGuardBridge(apiUrl);
   return (
     <>
-      <GuardConnectionBar apiUrl={apiUrl} conexion={puente.conexion} />
+      <SyncEstado apiUrl={apiUrl} conexion={puente.conexion} />
       <section className="empty-assignment">
         <span className="empty-icon" aria-hidden="true">
           ✓
@@ -326,7 +327,7 @@ function Ronda({
 
   return (
     <>
-      <GuardConnectionBar apiUrl={apiUrl} conexion={puente.conexion} />
+      <SyncEstado apiUrl={apiUrl} conexion={puente.conexion} />
 
       <section className="guardia-cabecera">
         <p className="guardia-eyebrow">{patrol.siteName}</p>
@@ -375,9 +376,12 @@ function Ronda({
 
       {vista === 'novedad' ? (
         <>
+          <PanicoPanel
+            apiUrl={apiUrl}
+            {...(patrol?.id ? { patrolId: patrol.id } : {})}
+          />
           <GuardEventForm
             enviando={enviandoNovedad}
-            onPanico={() => void reportar({ criticidad: 'panico' })}
             onReportar={(entrada) => void reportar(entrada)}
             {...(mensajeNovedad ? { mensaje: mensajeNovedad } : {})}
           />

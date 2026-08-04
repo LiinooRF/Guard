@@ -64,4 +64,21 @@ export class PushBatchDto {
   @ValidateNested({ each: true })
   @Type(() => SyncOperationDto)
   operations!: SyncOperationDto[];
+
+  /**
+   * Hora del telefono AL ENVIAR este lote (#73). No confundir con queuedAt, que
+   * es la hora de cada operacion al encolarse.
+   *
+   * La diferencia entre las dos es el punto entero de este campo: contra la
+   * hora del servidor, queuedAt mide el tiempo SIN SEÑAL y deviceTime mide el
+   * DESFASE DEL RELOJ. Usar queuedAt para medir el reloj es lo que hacia que
+   * toda ronda hecha en un subterraneo apareciera con el reloj desfasado.
+   *
+   * Opcional: una app publicada antes de este cambio sigue sincronizando igual,
+   * solo que sin medicion de reloj. Los usuarios de Play Store tardan semanas
+   * en actualizar y no se les puede romper la sincronizacion por esto.
+   */
+  @IsOptional()
+  @IsISO8601()
+  deviceTime?: string;
 }

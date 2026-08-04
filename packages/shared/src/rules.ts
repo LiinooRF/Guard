@@ -122,6 +122,35 @@ export const patrolRulesSchema = z.object({
   photoMaxSizeMB: z.number().int().min(1).max(50).default(10),
 
   /** Intentos de login fallidos antes de bloquear temporalmente. */
+  /**
+   * Interruptor general del seguimiento de recorrido (#77). Apagado, no se
+   * guarda ni un punto para NADIE, aunque haya consentido.
+   *
+   * Es distinto de gpsSharingRequired, que decide obligatorio vs OPCIONAL:
+   * opcional NO es apagado. A quien acepta se le registra el recorrido y a
+   * quien no, no, y ninguno queda impedido de trabajar.
+   */
+  gpsTrackingEnabled: z.boolean().default(true),
+  /** Minutos con cosas sin sincronizar antes de avisarle al guardia (#74). */
+  syncPendingWarnMin: z.number().int().min(1).max(240).default(15),
+  /** Si marcar salida con trabajo sin sincronizar exige confirmar dos veces (#74). */
+  syncConfirmShiftEndWithPending: z.boolean().default(true),
+  /** Desfase de reloj del telefono que se tolera sin marcar el escaneo (#73). */
+  clockSkewToleranceMin: z.number().int().min(1).max(120).default(5),
+  /** Minutos tras el cierre en que una marca atrasada aun se acepta (#73). */
+  lateScanGraceMin: z.number().int().min(0).max(1440).default(120),
+  /** Margen fuera de turno que NO cuenta como rastreo indebido (#78). */
+  consentOffShiftToleranceMin: z.number().int().min(0).max(60).default(5),
+  /** Si una politica de privacidad nueva obliga a aceptar de nuevo (#78). */
+  consentReacceptOnNewPolicy: z.boolean().default(true),
+  /** Si el informe de ronda incluye el mapa del recorrido (#79). */
+  reportIncludeMap: z.boolean().default(true),
+  /** Precision peor que esta descarta el punto del trazo del mapa (#79). */
+  mapTrackMaxAccuracyM: z.number().int().min(5).max(500).default(100),
+  /** Tope de puntos del trazo: un mapa con miles de puntos no se lee (#79). */
+  mapMaxTrackPoints: z.number().int().min(50).max(5000).default(500),
+  /** Tope del PDF adjunto al correo; sobre esto se manda enlace (#86). */
+  reportMailMaxAttachmentMB: z.number().int().min(1).max(25).default(8),
   maxLoginAttempts: z.number().int().min(3).max(20).default(5),
 });
 
@@ -538,6 +567,139 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     default: DEFAULT_PATROL_RULES.photoMaxSizeMB,
     scopes: SOLO_EMPRESA,
     group: 'evidencia',
+  },
+  gpsTrackingEnabled: {
+    key: 'gpsTrackingEnabled',
+    label: 'Registrar el recorrido',
+    description:
+      'Apagado, no se guarda ninguna ubicacion de nadie. Distinto de exigir GPS: en modo opcional se registra a quien acepto y a quien no, no.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.gpsTrackingEnabled,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  syncPendingWarnMin: {
+    key: 'syncPendingWarnMin',
+    label: 'Aviso por trabajo sin sincronizar',
+    description:
+      'Cuanto puede quedar algo sin subir antes de avisarle al guardia. Un perimetro sin cobertura tolera media hora; una porteria con wifi, no.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 1,
+    max: 240,
+    default: DEFAULT_PATROL_RULES.syncPendingWarnMin,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  syncConfirmShiftEndWithPending: {
+    key: 'syncConfirmShiftEndWithPending',
+    label: 'Confirmar la salida si queda algo sin subir',
+    description:
+      'Pide confirmar dos veces antes de marcar la salida cuando todavia hay escaneos o fotos sin sincronizar.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.syncConfirmShiftEndWithPending,
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
+  },
+  clockSkewToleranceMin: {
+    key: 'clockSkewToleranceMin',
+    label: 'Desfase de reloj tolerado',
+    description:
+      'Cuanto puede estar desajustado el reloj del telefono sin que el escaneo quede marcado para revision.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 1,
+    max: 120,
+    default: DEFAULT_PATROL_RULES.clockSkewToleranceMin,
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
+  },
+  lateScanGraceMin: {
+    key: 'lateScanGraceMin',
+    label: 'Margen para marcas atrasadas',
+    description:
+      'Cuanto despues del cierre de la ronda se sigue aceptando un escaneo que llego tarde por falta de senal.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 0,
+    max: 1440,
+    default: DEFAULT_PATROL_RULES.lateScanGraceMin,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  consentOffShiftToleranceMin: {
+    key: 'consentOffShiftToleranceMin',
+    label: 'Margen de ubicacion fuera de turno',
+    description:
+      'Minutos alrededor del turno en que recibir ubicacion no se considera rastreo fuera de horario.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 0,
+    max: 60,
+    default: DEFAULT_PATROL_RULES.consentOffShiftToleranceMin,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  consentReacceptOnNewPolicy: {
+    key: 'consentReacceptOnNewPolicy',
+    label: 'Volver a pedir consentimiento al cambiar la politica',
+    description:
+      'Si al publicar una politica de privacidad nueva cada trabajador debe aceptarla otra vez.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.consentReacceptOnNewPolicy,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  reportIncludeMap: {
+    key: 'reportIncludeMap',
+    label: 'Incluir el mapa del recorrido en el informe',
+    description: 'Agrega al PDF el trazo del recorrido con los puntos escaneados.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.reportIncludeMap,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  mapTrackMaxAccuracyM: {
+    key: 'mapTrackMaxAccuracyM',
+    label: 'Precision minima del trazo',
+    description:
+      'Los puntos con precision peor que esta no se dibujan: ensucian el mapa sin aportar.',
+    type: 'integer',
+    unit: 'meters',
+    min: 5,
+    max: 500,
+    default: DEFAULT_PATROL_RULES.mapTrackMaxAccuracyM,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  mapMaxTrackPoints: {
+    key: 'mapMaxTrackPoints',
+    label: 'Puntos maximos del trazo',
+    description: 'Tope de puntos dibujados en el mapa del informe. Un trazo de miles no se lee.',
+    type: 'integer',
+    unit: null,
+    min: 50,
+    max: 5000,
+    default: DEFAULT_PATROL_RULES.mapMaxTrackPoints,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  reportMailMaxAttachmentMB: {
+    key: 'reportMailMaxAttachmentMB',
+    label: 'Tamano maximo del informe adjunto',
+    description:
+      'Sobre este tamano el correo lleva un enlace en vez del PDF: los servidores rebotan adjuntos grandes.',
+    type: 'integer',
+    unit: 'megabytes',
+    min: 1,
+    max: 25,
+    default: DEFAULT_PATROL_RULES.reportMailMaxAttachmentMB,
+    scopes: SOLO_EMPRESA,
+    group: 'avisos',
   },
   maxLoginAttempts: {
     key: 'maxLoginAttempts',

@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** Claves HMAC del shell nativo. El secreto se cifra en la API antes de persistir. */
-export class CreateDeviceSigningKeys1725462000000 implements MigrationInterface {
+export class CreateDeviceSigningKeys1725559200000 implements MigrationInterface {
   async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE device_signing_keys (

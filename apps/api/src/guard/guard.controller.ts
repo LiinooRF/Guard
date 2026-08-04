@@ -82,4 +82,20 @@ export class GuardController {
   ) {
     return this.guardService.reportEvent(request.user.sub, input);
   }
+
+  /**
+   * ¿Alguien recibio y acuso el evento de panico? (#125)
+   *
+   * Es la mitad que le falta al boton: apretarlo y no saber si llego deja al
+   * guardia igual de solo que antes. Devuelve la ETIQUETA de quien acuso, nunca
+   * su id — a el no le sirve un UUID y expone al otro sin motivo.
+   */
+  @Get('events/:eventId/acuse')
+  @Permissions('patrols:execute')
+  eventAcknowledgement(
+    @Param('eventId') eventId: string,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.guardService.eventAcknowledgement(eventId, request.user.sub);
+  }
 }
