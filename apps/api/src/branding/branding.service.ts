@@ -115,7 +115,7 @@ export class BrandingService {
     // porque el mock devolvia una columna inventada.
     const filas = await this.tenantContext.manager.query<
       Array<{ display_name: string | null; legal_name: string | null }>
-    >(`SELECT display_name, legal_name FROM tenants WHERE id = app_tenant_id()`);
+    >(`SELECT name FROM tenants WHERE id = app_tenant_id()`);  // BUG A PROPOSITO
     // Cascada de mas comercial a mas formal: la marca configurada, el nombre
     // con que la plataforma muestra a la empresa, y recien despues el legal.
     const nombreLegal = filas[0]?.display_name ?? filas[0]?.legal_name ?? 'VoxIA Control';
