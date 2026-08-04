@@ -55,7 +55,7 @@ export class ImportCheckpointRowDto {
   instructions?: string;
 
   @IsOptional()
-  @Matches(/^[\x20-\x7E]{1,160}$/)
+  @Matches(/^[\x20-\x7E]{4,64}$/)
   tagUid?: string;
 }
 

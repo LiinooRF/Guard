@@ -62,6 +62,8 @@ describe('EvidenceService.isWithinBusinessHours', () => {
     const sql = String(manager.query.mock.calls[0]?.[0]);
     expect(sql).toContain('site_holidays');
     expect(sql).toContain('holiday_date = m.local_ts::date');
+    expect(sql).toMatch(/site_business_hours[\s\S]+OR EXISTS \([\s\S]+site_holidays/);
+    expect(sql).not.toContain(')) AS within');
     // Con horario definido, las reglas del tenant no se consultan.
     expect(rules.effective).not.toHaveBeenCalled();
   });
@@ -86,6 +88,14 @@ describe('EvidenceService.isWithinBusinessHours', () => {
       servicio(sinHorario(), reglas({ businessHoursDefaultOpen: false }))
         .isWithinBusinessHours('site-id'),
     ).resolves.toBe(false);
+  });
+
+  it('un feriado cuenta como configuracion aunque el recinto no tenga horario semanal', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([{ has_hours: true, within: false }]) };
+    const rules = reglas({ businessHoursDefaultOpen: true });
+
+    await expect(servicio(manager, rules).isWithinBusinessHours('site-id')).resolves.toBe(false);
+    expect(rules.effective).not.toHaveBeenCalled();
   });
 
   it('recinto inexistente: 404, no un false silencioso', async () => {

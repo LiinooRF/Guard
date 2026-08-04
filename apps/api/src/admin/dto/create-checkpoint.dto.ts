@@ -57,6 +57,7 @@ export class CreateCheckpointDto {
   /** UID leido durante la instalacion; se vincula en la misma transaccion. */
   @IsOptional()
   @IsString()
-  @MaxLength(160)
+  @MinLength(4)
+  @MaxLength(64)
   tagUid?: string;
 }
