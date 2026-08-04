@@ -173,6 +173,155 @@ describe('SupervisorService', () => {
       }),
     ).rejects.toThrow('La ventana termina antes de empezar');
   });
+
+  it('avisa un solapamiento antes de guardar la asignacion', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id' }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([
+        { assignment_id: 'assignment-id', shift_name: 'Noche', service_date: '2026-08-03', visible_to_supervisor: true },
+      ]);
+
+    await expect(
+      servicio(query).assignShift('shift-id', SUPERVISOR, {
+        guardId: 'guard-id',
+        serviceDate: '2026-08-03',
+      }),
+    ).rejects.toThrow('las ventanas se solapan');
+    expect(query.mock.calls.some(([sql]) => sql.includes('INSERT INTO shift_assignments'))).toBe(
+      false,
+    );
+  });
+
+  it('serializa por guardia y fecha y permite ventanas contiguas', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id' }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([]) // no hay solapamiento
+      .mockResolvedValueOnce([{ id: 'assignment-id' }]);
+
+    await expect(
+      servicio(query).assignShift('shift-id', SUPERVISOR, {
+        guardId: 'guard-id',
+        serviceDate: '2026-08-03',
+      }),
+    ).resolves.toMatchObject({ id: 'assignment-id' });
+    expect(query.mock.calls[3]?.[0]).toContain('pg_advisory_xact_lock');
+    expect(query.mock.calls[4]?.[0]).toContain("tstzrange(solicitada.inicio, solicitada.fin, '[)')");
+    expect(query.mock.calls[4]?.[1]).toEqual([
+      'shift-id', '2026-08-03', 'guard-id', null, SUPERVISOR,
+    ]);
+  });
+});
+
+describe('SupervisorService — calendario semanal (#96)', () => {
+  it('lista solo los recintos activos asignados al supervisor', async () => {
+    // El mock devuelve las columnas que la consulta pide DE VERDAD, incluidas
+    // las coordenadas, que llegan como texto desde el driver (numeric) y salen
+    // como numeros porque el mapa las necesita asi.
+    const query = jest.fn().mockResolvedValueOnce([
+      {
+        id: 'site-1',
+        name: 'Planta',
+        branch_name: 'Norte',
+        address: 'Ruta 5 km 12',
+        timezone: 'America/Santiago',
+        latitude: '-33.450000',
+        longitude: '-70.660000',
+      },
+    ]);
+    await expect(servicio(query).listAssignedSites(SUPERVISOR)).resolves.toEqual([
+      {
+        id: 'site-1',
+        name: 'Planta',
+        branchName: 'Norte',
+        address: 'Ruta 5 km 12',
+        timezone: 'America/Santiago',
+        latitude: -33.45,
+        longitude: -70.66,
+      },
+    ]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('supervisor_sites'), [SUPERVISOR]);
+    expect(query.mock.calls[0]?.[0]).toContain('s.is_active');
+    // El JOIN cruza tambien tenant_id: el aislamiento no queda solo en RLS.
+    expect(query.mock.calls[0]?.[0]).toContain('s.tenant_id = ss.tenant_id');
+  });
+
+  it('el calendario queda limitado al recinto asignado y a siete fechas', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ id: 'a-1', shift_id: 's-1', shift_name: 'Noche',
+        starts_at: '22:00:00', ends_at: '06:00:00', service_date: '2026-08-03',
+        guard_id: 'g-1', guard_name: 'Gina Guardia', status: 'asignado',
+        route_id: 'r-1', route_name: 'Perímetro' }]);
+    const result = await servicio(query).weeklySchedule('site-id', SUPERVISOR, '2026-08-03');
+    expect(result[0]).toMatchObject({ id: 'a-1', guardName: 'Gina Guardia', routeName: 'Perímetro' });
+    expect(query.mock.calls[1]?.[0]).toContain('a.service_date < $2::date + 7');
+    expect(query.mock.calls[1]?.[1]).toEqual(['site-id', '2026-08-03']);
+  });
+
+  it('la prevalidacion informa el choque sin insertar ni modificar', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id', weekday_ok: true }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ assignment_id: 'a-1', shift_name: 'Día', service_date: '2026-08-03', visible_to_supervisor: true }]);
+    await expect(servicio(query).checkShiftConflict('shift-id', SUPERVISOR, {
+      guardId: 'guard-id', serviceDate: '2026-08-03',
+    })).resolves.toMatchObject({ conflict: true, message: expect.stringContaining('se solapan') });
+    expect(query.mock.calls.some(([sql]) => /INSERT|UPDATE/.test(sql))).toBe(false);
+  });
+
+  it('detecta un choque ajeno sin revelar turno ni fecha de otro recinto', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id', weekday_ok: true }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        assignment_id: 'a-externa',
+        shift_name: 'Secreto otra planta',
+        service_date: '2026-08-03',
+        visible_to_supervisor: false,
+      }]);
+
+    const result = await servicio(query).checkShiftConflict('shift-id', SUPERVISOR, {
+      guardId: 'guard-id', serviceDate: '2026-08-03',
+    });
+    expect(result).toEqual({
+      conflict: true,
+      message: 'El guardia ya tiene un turno asignado en ese horario; las ventanas se solapan',
+    });
+    expect(result.message).not.toContain('Secreto');
+    expect(result.message).not.toContain('2026-08-03');
+  });
+
+  it('reasigna solo una asignacion futura y excluye esa fila del control de choque', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ shift_id: 'shift-id', site_id: 'site-id', service_date: '2026-08-03', status: 'asignado' }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'new-guard' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    await expect(servicio(query).reassignShift('assignment-id', SUPERVISOR, 'new-guard'))
+      .resolves.toEqual({ id: 'assignment-id', guardId: 'new-guard' });
+    expect(query.mock.calls[4]?.[1]).toEqual([
+      'shift-id', '2026-08-03', 'new-guard', 'assignment-id', SUPERVISOR,
+    ]);
+    expect(query.mock.calls[5]?.[0]).toContain('UPDATE shift_assignments');
+  });
 });
 
 describe('SupervisorService.createPatrol — orden aleatorio (#65)', () => {

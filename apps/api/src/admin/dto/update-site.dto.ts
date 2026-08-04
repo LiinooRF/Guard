@@ -8,29 +8,32 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class CreateSiteDto {
+export class UpdateSiteDto {
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  branchName!: string;
+  branchName?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(120)
-  name!: string;
+  name?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(3)
   @MaxLength(240)
-  address!: string;
+  address?: string;
 
   @IsOptional()
   @IsLatitude()
-  latitude?: number;
+  latitude?: number | null;
 
   @IsOptional()
   @IsLongitude()
-  longitude?: number;
+  longitude?: number | null;
 
   @IsOptional()
   @IsTimeZone()

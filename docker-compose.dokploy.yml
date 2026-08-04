@@ -216,6 +216,9 @@ services:
       # sean correctas.
       API_INTERNAL_URL: http://api:3001/api
       WEB_ORIGIN: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      # Sin default publico en produccion: el proveedor se decide por entorno.
+      MAP_TILE_URL: ${MAP_TILE_URL:-}
+      MAP_ATTRIBUTION: ${MAP_ATTRIBUTION:-(c) OpenStreetMap contributors}
     depends_on:
       api:
         condition: service_healthy

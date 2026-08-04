@@ -31,6 +31,7 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
   SUPERVISOR: [
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
     { href: '#rondas', icon: '◎', label: 'Rondas asignadas' },
+    { href: '#turnos', icon: '▦', label: 'Programar turnos' },
     { href: '#informes-evolucion', icon: '∿', label: 'Evolución' },
     { href: '#informes', icon: '▤', label: 'Informes' },
     // El supervisor tambien opera desde la app y tambien se le registra el

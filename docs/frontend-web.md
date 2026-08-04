@@ -105,17 +105,25 @@ POST   /auth/invitations/complete       {token, password}
 ```
 GET    /admin/users                                    tenant:users:manage
 POST   /admin/users     {email?, username?, givenName, familyName, role, password?}
+PATCH  /admin/users/:userId                   {givenName, familyName, role}
 PATCH  /admin/users/:userId/active            {isActive}
 DELETE /admin/users/:userId/sessions                   → cierra sus sesiones
 PATCH  /admin/users/:userId/sites/:siteId     {assigned}   ← asigna recinto a un supervisor
 
 GET    /admin/sites                                    tenant:sites:manage
 POST   /admin/sites     {branchName, name, address, latitude?, longitude?}
+PATCH  /admin/sites/:siteId {branchName?, name?, address?, latitude?, longitude?, timezone?}
 PATCH  /admin/sites/:siteId/active            {isActive}
+
+GET    /admin/sites/:siteId/business-hours
+PUT    /admin/sites/:siteId/business-hours {hours:[{weekday, opensAt, closesAt}]}
+GET    /admin/sites/:siteId/holidays
+PUT    /admin/sites/:siteId/holidays       {holidays:[{date, name?}]}
 
 GET    /admin/sites/:siteId/checkpoints
 POST   /admin/sites/:siteId/checkpoints  {name, description?, kind?, suggestedOrder?,
-                                          latitude?, longitude?, requiresPhoto?, instructions?}
+                                          latitude?, longitude?, requiresPhoto?, instructions?, tagUid?}
+POST   /admin/sites/:siteId/checkpoints/import {checkpoints:[...]}  ← carga CSV atomica
 PATCH  /admin/checkpoints/:checkpointId       {campos parciales}
 PATCH  /admin/checkpoints/:checkpointId/photo {requiresPhoto: true|false|null}
 PATCH  /admin/checkpoints/:checkpointId/active {isActive}
@@ -202,11 +210,19 @@ La auditoría es **solo lectura**: es append-only en PostgreSQL, la API ni siqui
 GET  /supervisor/sites/:siteId/shifts        shifts:manage
 POST /supervisor/sites/:siteId/shifts        {name, startsAt, endsAt, weekdays?, entryToleranceMin?}
 POST /supervisor/shifts/:shiftId/assignments {guardId, serviceDate}      shifts:manage
+GET  /supervisor/sites                       ← recintos asignados al supervisor
+GET  /supervisor/sites/:siteId/guards        ← guardias activos disponibles
+GET  /supervisor/sites/:siteId/schedule?from=YYYY-MM-DD ← siete días de asignaciones
+POST /supervisor/shifts/:shiftId/conflicts   {guardId, serviceDate}      ← prevalidación, no escribe
+PATCH /supervisor/assignments/:assignmentId  {guardId}                  ← reemplazo antes de iniciar
 GET  /supervisor/sites/:siteId/on-duty       patrols:monitor  ← quién está de servicio AHORA
 ```
 
 `startsAt > endsAt` es un **turno nocturno** que cruza medianoche, no un error. La respuesta trae
-`crossesMidnight` para que la interfaz lo muestre bien.
+`crossesMidnight` para que la interfaz lo muestre bien. La prevalidación y el alta comparan rangos
+reales en el huso del recinto; dos ventanas contiguas son válidas, pero un cruce nocturno con el día
+siguiente se considera solapamiento. El servidor vuelve a comprobarlo al insertar y serializa por
+guardia, de modo que dos solicitudes simultáneas tampoco pueden crear el choque.
 
 ### Informes y evidencia
 

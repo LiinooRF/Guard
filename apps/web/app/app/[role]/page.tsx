@@ -10,6 +10,7 @@ import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import { StatsCharts } from '../../_components/stats-charts';
+import { SupervisorSchedule } from '../../_components/supervisor-schedule';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -21,6 +22,7 @@ import {
   type SecurityEvent,
 } from '../../_components/role-management';
 import { SessionManagement, type UserSession } from '../../_components/session-management';
+import { SiteManagement } from '../../_components/site-management';
 
 const ROLE_CONTENT = {
   guardia: {
@@ -155,16 +157,25 @@ export default async function RoleDashboard({
           </div>
         )}
       </section>
+      {isSupervisor && <SupervisorSchedule apiUrl={publicApiUrl()} />}
       <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
-        <AdminManagement
-          users={users}
-          sites={sites}
-          authPolicy={authPolicy}
-          securityEvents={securityEvents}
-          apiUrl={publicApiUrl()}
-        />
+        <>
+          <AdminManagement
+            users={users}
+            sites={sites}
+            authPolicy={authPolicy}
+            securityEvents={securityEvents}
+            apiUrl={publicApiUrl()}
+          />
+          <SiteManagement
+            sites={sites}
+            apiUrl={publicApiUrl()}
+            mapTileUrl={process.env.MAP_TILE_URL ?? null}
+            mapAttribution={process.env.MAP_ATTRIBUTION ?? '© OpenStreetMap contributors'}
+          />
+        </>
       )}
       {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
       {/* Publicar el aviso y demostrar que no se registro ubicacion fuera de
