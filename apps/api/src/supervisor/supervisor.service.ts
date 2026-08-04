@@ -33,6 +33,10 @@ interface RouteRow {
     position: number;
     isClosingPoint: boolean;
     isAnchor: boolean;
+    latitude: number | null;
+    longitude: number | null;
+    requiresPhoto: boolean | null;
+    suggestedOrder: number;
   }>;
 }
 
@@ -91,6 +95,43 @@ export class SupervisorService {
       position: i + 1,
       isClosingPoint: marked.length ? Boolean(c.isClosingPoint) : i === checkpoints.length - 1,
       isAnchor: Boolean(c.isAnchor),
+      requiresPhoto: c.requiresPhoto,
+    }));
+  }
+
+  /** Catálogo mínimo del editor; el JOIN de alcance evita enumerar recintos ajenos. */
+  async routeEditorSites(supervisorId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string; name: string; branch_name: string; address: string;
+      latitude: number | null; longitude: number | null;
+      checkpoints: Array<{
+        id: string; name: string; latitude: number | null; longitude: number | null;
+        requiresPhoto: boolean | null; suggestedOrder: number;
+      }>;
+    }>>(
+      `SELECT s.id, s.name, s.branch_name, s.address, s.latitude, s.longitude,
+              COALESCE(jsonb_agg(jsonb_build_object(
+                'id', c.id, 'name', c.name, 'latitude', c.latitude,
+                'longitude', c.longitude, 'requiresPhoto', c.requires_photo,
+                'suggestedOrder', c.suggested_order
+              ) ORDER BY c.suggested_order, c.name)
+              FILTER (WHERE c.id IS NOT NULL), '[]'::jsonb) AS checkpoints
+       FROM supervisor_sites scope
+       JOIN sites s ON s.id = scope.site_id AND s.is_active
+       LEFT JOIN checkpoints c ON c.site_id = s.id AND c.is_active
+       WHERE scope.supervisor_id = $1
+       GROUP BY s.id ORDER BY s.branch_name, s.name`,
+      [supervisorId],
+    );
+    return rows.map((row) => ({
+      id: row.id, name: row.name, branchName: row.branch_name, address: row.address,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
+      checkpoints: row.checkpoints.map((checkpoint) => ({
+        ...checkpoint,
+        latitude: checkpoint.latitude === null ? null : Number(checkpoint.latitude),
+        longitude: checkpoint.longitude === null ? null : Number(checkpoint.longitude),
+      })),
     }));
   }
 
@@ -100,6 +141,13 @@ export class SupervisorService {
     seq: ReturnType<SupervisorService['normalizeSequence']>,
   ) {
     for (const punto of seq) {
+      if (punto.requiresPhoto !== undefined) {
+        await this.tenantContext.manager.query(
+          `UPDATE checkpoints SET requires_photo = $3
+           WHERE id = $1 AND site_id = $2 AND is_active`,
+          [punto.checkpointId, siteId, punto.requiresPhoto],
+        );
+      }
       const inserted = await this.tenantContext.manager.query<Array<{ checkpoint_id: string }>>(
         `INSERT INTO route_checkpoints (tenant_id, route_id, checkpoint_id, position, is_closing_point, is_anchor)
          SELECT app_tenant_id(), $1, c.id, $3, $4, $6
@@ -166,7 +214,9 @@ export class SupervisorService {
               r.version, r.is_active, r.order_mode,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'id', c.id, 'name', c.name, 'position', rc.position,
-                'isClosingPoint', rc.is_closing_point, 'isAnchor', rc.is_anchor
+                'isClosingPoint', rc.is_closing_point, 'isAnchor', rc.is_anchor,
+                'latitude', c.latitude, 'longitude', c.longitude,
+                'requiresPhoto', c.requires_photo, 'suggestedOrder', c.suggested_order
               ) ORDER BY rc.position) FILTER (WHERE c.id IS NOT NULL), '[]'::jsonb) AS checkpoints
        FROM routes r
        LEFT JOIN route_checkpoints rc ON rc.route_id = r.id

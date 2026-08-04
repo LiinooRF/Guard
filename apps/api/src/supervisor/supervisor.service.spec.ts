@@ -55,6 +55,25 @@ afterEach(() => {
 });
 
 describe('SupervisorService', () => {
+  it('el catálogo del editor contiene solo recintos asignados y normaliza coordenadas', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{
+      id: 'site-id', name: 'Planta Sur', branch_name: 'Santiago', address: 'Uno 123',
+      latitude: '-33.450000', longitude: '-70.660000', checkpoints: [{
+        id: 'cp-1', name: 'Acceso', latitude: '-33.451000', longitude: '-70.661000',
+        requiresPhoto: true, suggestedOrder: 1,
+      }],
+    }]);
+
+    await expect(servicio(query).routeEditorSites(SUPERVISOR)).resolves.toEqual([{
+      id: 'site-id', name: 'Planta Sur', branchName: 'Santiago', address: 'Uno 123',
+      latitude: -33.45, longitude: -70.66, checkpoints: [expect.objectContaining({
+        id: 'cp-1', latitude: -33.451, longitude: -70.661,
+      })],
+    }]);
+    expect(query).toHaveBeenCalledWith(expect.stringContaining(
+      'WHERE scope.supervisor_id = $1'), [SUPERVISOR]);
+  });
+
   it('un recinto NO asignado responde 403, aunque el permiso alcance', async () => {
     const query = jest.fn().mockResolvedValueOnce([]); // supervisor_sites vacio
     await expect(servicio(query).listRoutes('site-id', SUPERVISOR)).rejects.toThrow(
@@ -102,6 +121,28 @@ describe('SupervisorService', () => {
     expect(ruta[1][5]).toBe('aleatorio_con_anclas');
     const inserts = query.mock.calls.filter(([sql]) => sql.includes('route_checkpoints'));
     expect(inserts.map((c) => c[1][5])).toEqual([true, false]); // is_anchor
+  });
+
+  it('la exigencia de foto solo se actualiza si el punto pertenece al recinto', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-2' }]);
+    await servicio(query).createRoute('site-id', SUPERVISOR, {
+      name: 'Fotográfica', estimatedDurationMin: 12,
+      checkpoints: [
+        { checkpointId: 'cp-1', requiresPhoto: true },
+        { checkpointId: 'cp-2', requiresPhoto: false },
+      ],
+    });
+    const updates = query.mock.calls.filter(([sql]) => sql.includes('UPDATE checkpoints'));
+    expect(updates.map((call) => call[1])).toEqual([
+      ['cp-1', 'site-id', true], ['cp-2', 'site-id', false],
+    ]);
+    expect(updates[0]?.[0]).toContain('site_id = $2');
   });
 
   it('dos puntos de cierre marcados es un error, no una adivinanza', async () => {

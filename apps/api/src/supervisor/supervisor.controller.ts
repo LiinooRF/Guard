@@ -33,6 +33,12 @@ type Autenticado = Request & { user: AuthenticatedUser };
 export class SupervisorController {
   constructor(private readonly supervisor: SupervisorService) {}
 
+  @Get('route-editor/sites')
+  @Permissions('routes:manage')
+  routeEditorSites(@Req() request: Autenticado) {
+    return this.supervisor.routeEditorSites(request.user.sub);
+  }
+
   @Get('sites/:siteId/routes')
   @Permissions('routes:manage')
   listRoutes(@Param() params: SiteParam, @Req() request: Autenticado) {

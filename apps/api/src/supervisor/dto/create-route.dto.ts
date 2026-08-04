@@ -30,6 +30,11 @@ export class RouteCheckpointDto {
   @IsOptional()
   @IsBoolean()
   isAnchor?: boolean;
+
+  /** Override del punto, editable solo dentro de un recinto asignado. */
+  @IsOptional()
+  @IsBoolean()
+  requiresPhoto?: boolean;
 }
 
 export class CreateRouteDto {

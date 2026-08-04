@@ -5,6 +5,7 @@ import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
+import { RouteEditor, type RouteEditorSite } from '../../_components/route-editor';
 import { StatsCharts } from '../../_components/stats-charts';
 import {
   AdminManagement,
@@ -97,13 +98,14 @@ export default async function RoleDashboard({
     );
   }
 
-  const [overview, users, sites, sessions, authPolicy, securityEvents] = await Promise.all([
+  const [overview, users, sites, sessions, authPolicy, securityEvents, routeEditorSites] = await Promise.all([
     loadTenantOverview(),
     role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
     role === 'admin' ? loadAdminSites() : Promise.resolve([]),
     loadSessions(),
     role === 'admin' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
     role === 'admin' ? loadSecurityEvents() : Promise.resolve([]),
+    role === 'supervisor' ? loadRouteEditorSites() : Promise.resolve([]),
   ]);
   const isSupervisor = role === 'supervisor';
 
@@ -151,6 +153,12 @@ export default async function RoleDashboard({
           </div>
         )}
       </section>
+      {isSupervisor && <RouteEditor
+        sites={routeEditorSites}
+        apiUrl={publicApiUrl()}
+        mapTileUrl={process.env.MAP_TILE_URL ?? null}
+        mapAttribution={process.env.MAP_ATTRIBUTION ?? ''}
+      />}
       <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
@@ -272,6 +280,10 @@ function loadAdminUsers() {
 
 function loadAdminSites() {
   return authenticatedGet<TenantSite[]>('/admin/sites', []);
+}
+
+function loadRouteEditorSites() {
+  return authenticatedGet<RouteEditorSite[]>('/supervisor/route-editor/sites', []);
 }
 
 function loadSessions() {
