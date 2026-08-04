@@ -133,11 +133,29 @@ GET    /admin/security/events                          ← bloqueos por fuerza b
 ### Reglas configurables — el corazón del SaaS
 ```
 GET  /rules/defaults          público    → los defaults del producto
-GET  /rules/admin             tenant:rules:manage → {effective, overrides}
+GET  /rules/catalog           público    → catálogo de parámetros para pintar el formulario
+GET  /rules/effective?siteId=&checkpointId=   cualquier rol dentro del tenant
+                              → {context, rules, sources, layers}
+GET  /rules/admin             tenant:rules:manage → {scope, effective, overrides, sources, layers, editable}
 PUT  /rules/admin             {complianceThreshold?, photoRequiredOutsideHours?, ...}
+
+GET  /rules/admin/sites/:siteId              tenant:rules:manage
+PUT  /rules/admin/sites/:siteId
+GET  /rules/admin/checkpoints/:checkpointId  tenant:rules:manage
+PUT  /rules/admin/checkpoints/:checkpointId
+
+GET  /platform/rules          platform:tenants:manage  ← SUPERADMIN, sin contexto de empresa
+PUT  /platform/rules
 ```
-`PUT` **reemplaza el set completo** de overrides: omitir un campo lo devuelve a su default. Un campo
-desconocido responde 400. Los parámetros y sus rangos están en `packages/shared/src/rules.ts`.
+`PUT` **reemplaza el set completo** de overrides de ese nivel: omitir un campo lo devuelve al valor
+que hereda del nivel de arriba. Un campo desconocido responde 400, y una regla que ese nivel no
+configura también (`photoRetentionDays` en un punto, por ejemplo).
+
+**No hardcodees ni un nombre de campo ni un rango en la web**: `GET /rules/catalog` devuelve cada
+parámetro con tipo, mínimo, máximo, unidad, default, descripción en lenguaje del cliente y en qué
+niveles se puede configurar (`scopes`). `sources` dice de qué nivel salió cada valor efectivo, que es
+lo que distingue "heredado" de "escrito acá" en el formulario. La cascada es
+`plataforma → tenant → recinto → punto` y la resuelve el servidor.
 
 ### SUPERVISOR — `/supervisor` (solo sus recintos asignados; 403 si no)
 ```

@@ -23,6 +23,7 @@ import { QrModule } from './qr/qr.module';
 import { TenantDataModule } from './platform-data/tenant-data.module';
 import { ReportsModule } from './reports/reports.module';
 import { RulesModule } from './rules/rules.module';
+import { StatsChartsModule } from './stats/stats-charts.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
 import { SyncModule } from './sync/sync.module';
@@ -55,6 +56,7 @@ import { SyncModule } from './sync/sync.module';
     TenantDataModule,
     ReportsModule,
     RulesModule,
+    StatsChartsModule,
     SchedulingModule,
     SupervisorModule,
     SyncModule,

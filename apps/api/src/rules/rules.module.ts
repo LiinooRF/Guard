@@ -1,14 +1,17 @@
 import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../database/database.module';
+import { PlatformRulesController } from './platform-rules.controller';
+import { PlatformRulesService } from './platform-rules.service';
 import { RulesController } from './rules.controller';
 import { RulesService } from './rules.service';
 
-// DatabaseModule es obligatorio: RulesService inyecta TenantContextService.
+// DatabaseModule es obligatorio: RulesService inyecta TenantContextService y
+// PlatformRulesService el DataSource (el nivel plataforma no tiene tenant).
 @Module({
   imports: [DatabaseModule],
-  controllers: [RulesController],
-  providers: [RulesService],
+  controllers: [RulesController, PlatformRulesController],
+  providers: [RulesService, PlatformRulesService],
   exports: [RulesService],
 })
 export class RulesModule {}

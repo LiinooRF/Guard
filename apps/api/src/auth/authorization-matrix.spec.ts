@@ -22,7 +22,9 @@ import { PlatformController } from '../platform/platform.controller';
 import { SupportAccessController } from '../platform-data/support-access.controller';
 import { TenantDataController } from '../platform-data/tenant-data.controller';
 import { ReportsController } from '../reports/reports.controller';
+import { PlatformRulesController } from '../rules/platform-rules.controller';
 import { RulesController } from '../rules/rules.controller';
+import { StatsChartsController } from '../stats/stats-charts.controller';
 import { PlatformOpsController } from '../platform-ops/platform-ops.controller';
 import { PushController } from '../push/push.controller';
 import { QrController } from '../qr/qr.controller';
@@ -225,6 +227,23 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   publicEndpoint(RulesController, 'defaults'),
+  publicEndpoint(RulesController, 'catalog'),
+  secured(RulesController, 'effective', ['account:sessions:manage'], ALL_ROLES),
+  secured(RulesController, 'siteRules', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(RulesController, 'updateSiteRules', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(RulesController, 'checkpointRules', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(RulesController, 'updateCheckpointRules', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(PlatformRulesController, 'platformRules', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(
+    PlatformRulesController,
+    'updatePlatformRules',
+    ['platform:tenants:manage'],
+    ['SUPERADMIN'],
+  ),
+  secured(StatsChartsController, 'complianceBySite', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(StatsChartsController, 'evolution', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(StatsChartsController, 'missedCheckpoints', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(StatsChartsController, 'guardRanking', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(RulesController, 'tenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
   secured(RulesController, 'updateTenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
 ] as const;
@@ -237,6 +256,8 @@ const CONTROLLERS = [
   PlatformController,
   HealthController,
   RulesController,
+  PlatformRulesController,
+  StatsChartsController,
   SupervisorController,
   ReportsController,
   EvidenceController,
