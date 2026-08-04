@@ -15,6 +15,12 @@ import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
 import { EscalationController } from '../escalation/escalation.controller';
+import { AlertasRondaController } from '../escalation/alertas-ronda.controller';
+import { ConsentController } from '../consent/consent.controller';
+import { EnvioInformeController } from '../reports/envio-informe.controller';
+import { FeatureFlagsController } from '../rules/feature-flags.controller';
+import { FeatureFlagsPlatformController } from '../rules/feature-flags-platform.controller';
+import { GpsPolicyController } from '../geo/gps-policy.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { PhotoServingController } from '../evidence/photo-serving.controller';
 import { GeoController } from '../geo/geo.controller';
@@ -232,6 +238,42 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
 
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
+  secured(AlertasRondaController, 'listAlerts', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(AlertasRondaController, 'attendAlert', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(ConsentController, 'currentPolicy', ['account:sessions:manage'], ALL_ROLES),
+  secured(ConsentController, 'policyDetail', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ConsentController, 'policyHistory', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ConsentController, 'publishPolicy', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(ConsentController, 'roster', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(ConsentController, 'offShiftAudit', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(EnvioInformeController, 'estadoEnvio', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  publicEndpoint(FeatureFlagsController, 'catalog'),
+  secured(FeatureFlagsController, 'overview', ['account:sessions:manage'], ALL_ROLES),
+  secured(FeatureFlagsController, 'adminView', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(FeatureFlagsController, 'updateAdminPreferences', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(FeatureFlagsPlatformController, 'plans', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(FeatureFlagsPlatformController, 'updatePlan', ['platform:tenants:manage'], ['SUPERADMIN']),
+  secured(
+    FeatureFlagsPlatformController,
+    'tenantFeatures',
+    ['platform:tenants:manage'],
+    ['SUPERADMIN'],
+  ),
+  secured(
+    FeatureFlagsPlatformController,
+    'updateTenantFeatures',
+    ['platform:tenants:manage'],
+    ['SUPERADMIN'],
+  ),
+  secured(GpsPolicyController, 'policy', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GpsPolicyController, 'gpsCheck', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GpsPolicyController, 'reportPermission', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GpsPolicyController, 'patrolBattery', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(GpsPolicyController, 'siteGpsCoverage', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(SyncController, 'clock', ['patrols:execute'], ['GUARDIA'], true),
+  secured(SyncController, 'lateScans', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(SyncController, 'reviewLateScan', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(GuardController, 'eventAcknowledgement', ['patrols:execute'], ['GUARDIA'], true),
   publicEndpoint(RulesController, 'defaults'),
   publicEndpoint(RulesController, 'catalog'),
   secured(RulesController, 'effective', ['account:sessions:manage'], ALL_ROLES),
@@ -267,6 +309,12 @@ const CONTROLLERS = [
   SupervisorController,
   ReportsController,
   EvidenceController,
+  AlertasRondaController,
+  ConsentController,
+  EnvioInformeController,
+  FeatureFlagsController,
+  FeatureFlagsPlatformController,
+  GpsPolicyController,
   PhotoServingController,
   TenantDataController,
   SupportAccessController,

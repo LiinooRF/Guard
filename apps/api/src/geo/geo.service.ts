@@ -10,6 +10,7 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import { RulesService } from '../rules/rules.service';
 import type { TrackPointDto } from './dto/append-track.dto';
 import type { GrantConsentDto } from './dto/grant-consent.dto';
+import { gpsRules } from './gps-rules';
 import { haversineM } from './haversine';
 
 /** Mismo criterio de desfase de reloj que el escaneo (#63). */
@@ -19,7 +20,7 @@ const SIN_CONSENTIMIENTO =
   'No tienes consentimiento vigente de geolocalización: no se registra tu recorrido';
 
 const TRAZA_DESACTIVADA =
-  'Esta empresa no tiene activado el compartir ubicación: no se registra recorrido';
+  'Esta empresa no registra el recorrido de las rondas: no se guarda ubicación';
 
 const FUERA_DE_RONDA =
   'Solo se registra recorrido mientras la ronda está en curso';
@@ -49,6 +50,9 @@ interface PuntoTraza {
  *
  * Este modulo no toca guard.service.ts: el escaneo sigue guardando su punto
  * suelto con su radio GPS, y la traza es una serie aparte.
+ *
+ * La POLITICA de ubicacion (obligatorio vs opcional, arranque de ronda, plan de
+ * muestreo, bateria) vive en GpsPolicyService — issue #77.
  */
 @Injectable()
 export class GeoService {
@@ -61,8 +65,13 @@ export class GeoService {
    * Recibe el lote del muestreo en segundo plano.
    *
    * Tres filtros, en este orden y por este motivo:
-   *   1. Regla del tenant: si no exige compartir ubicacion, no se acumula traza
-   *      continua. La proporcionalidad la fija la empresa, no el dispositivo.
+   *   1. Seguimiento activo en el tenant (`gpsTrackingEnabled`): apagado, no se
+   *      acumula recorrido de nadie.
+   *
+   *      OJO: no se mira `gpsSharingRequired`. Ese flag decide obligatorio vs
+   *      OPCIONAL (#77), y opcional no es apagado: al que aceptó compartir
+   *      ubicación se le registra el recorrido igual. Mirarlo aca era el bug que
+   *      dejaba sin traza a las empresas que eligen no obligar.
    *   2. Consentimiento vigente del trabajador: sin el, 403. Es la regla legal.
    *   3. Ronda en curso: los puntos anteriores al inicio se DESCARTAN. Asi el
    *      "no se rastrea fuera del turno" es demostrable con la propia tabla, no
@@ -70,7 +79,7 @@ export class GeoService {
    */
   async appendTrack(guardId: string, patrolId: string, puntos: readonly TrackPointDto[]) {
     const rules = await this.rules.effective();
-    if (!rules.gpsSharingRequired) throw new ForbiddenException(TRAZA_DESACTIVADA);
+    if (!rules.gpsTrackingEnabled) throw new ForbiddenException(TRAZA_DESACTIVADA);
 
     const consentimientos = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT id FROM gps_consents WHERE user_id = $1 AND revoked_at IS NULL`,
@@ -157,6 +166,11 @@ export class GeoService {
    *
    * La distancia se calcula al leer y no se persiste: un lote que llega tarde
    * (offline de horas) cambiaria un total ya guardado y quedaria mintiendo.
+   *
+   * Los puntos con precision peor que `gpsTrackMaxAccuracyM` NO suman distancia
+   * (#77). Se devuelven igual —son evidencia y explican los huecos— pero un fix
+   * de 2 km de error en un subterraneo agregaria kilometros que nadie camino, y
+   * ese total termina en el informe del cliente.
    */
   async patrolTrack(patrolId: string, requester: Pick<AuthenticatedUser, 'sub' | 'role'>) {
     const patrols = await this.tenantContext.manager.query<
@@ -193,10 +207,18 @@ export class GeoService {
       batteryPct: fila.battery_pct,
     }));
 
+    const rules = await this.rules.effective({ siteId: patrol.site_id });
+    const maximoError = gpsRules(rules).gpsTrackMaxAccuracyM;
+    const confiable = (punto: PuntoTraza) =>
+      punto.accuracyM === null || punto.accuracyM <= maximoError;
+
+    // Se recorre la serie confiable en orden: dos puntos buenos separados por
+    // uno malo siguen midiendo el tramo entre ellos.
+    const paraDistancia = points.filter(confiable);
     let distancia = 0;
-    for (let i = 1; i < points.length; i += 1) {
-      const previo = points[i - 1]!;
-      const actual = points[i]!;
+    for (let i = 1; i < paraDistancia.length; i += 1) {
+      const previo = paraDistancia[i - 1]!;
+      const actual = paraDistancia[i]!;
       distancia += haversineM(previo.latitude, previo.longitude, actual.latitude, actual.longitude);
     }
 
@@ -205,13 +227,14 @@ export class GeoService {
     const duracionMs =
       primero && ultimo ? ultimo.recordedAt.getTime() - primero.recordedAt.getTime() : 0;
 
-    const rules = await this.rules.effective();
     return {
       patrolId,
       status: patrol.status,
       siteId: patrol.site_id,
       guardId: patrol.guard_id,
       pointCount: points.length,
+      lowAccuracyPointCount: points.length - paraDistancia.length,
+      maxAccuracyM: maximoError,
       totalDistanceM: redondear(distancia),
       durationMin: redondear(duracionMs / 60_000),
       firstPointAt: primero?.recordedAt ?? null,
@@ -280,14 +303,25 @@ export class GeoService {
    * NO borra la traza ya registrada: son rondas que ya ocurrieron y su registro
    * respalda informes ya emitidos. Lo que corta es hacia adelante — desde aca,
    * appendTrack rechaza. Lo viejo caduca por gpsTrackRetentionDays.
+   *
+   * El UPDATE va envuelto en un CTE, igual que GuardService.startPatrol(): con
+   * el driver de Postgres, `manager.query()` de un UPDATE devuelve
+   * [filas, rowCount] y no el arreglo de filas. Leer `filas[0]` sobre eso
+   * devolvia el ARREGLO de filas — truthy incluso vacio — y esta respuesta decia
+   * `hadActiveConsent: true` con `revokedAt: undefined` aunque no hubiera nada
+   * que revocar. Envuelto en `WITH ... SELECT` el command tag es SELECT y las
+   * filas vienen planas.
    */
   async revokeConsent(userId: string) {
     const filas = await this.tenantContext.manager.query<
       Array<{ id: string; revoked_at: Date }>
     >(
-      `UPDATE gps_consents SET revoked_at = now()
-       WHERE user_id = $1 AND revoked_at IS NULL
-       RETURNING id, revoked_at`,
+      `WITH revocado AS (
+         UPDATE gps_consents SET revoked_at = now()
+         WHERE user_id = $1 AND revoked_at IS NULL
+         RETURNING id, revoked_at
+       )
+       SELECT id, revoked_at FROM revocado`,
       [userId],
     );
     const revocado = filas[0];
@@ -301,6 +335,11 @@ export class GeoService {
   /**
    * Lo que la app consulta al abrir: si debe muestrear, cada cuanto y por
    * cuanto tiempo se conserva. La pantalla de consentimiento se arma con esto.
+   *
+   * `sharingMode` dice si la empresa EXIGE compartir ubicacion o lo deja
+   * opcional (#77). La decision de dejar o no iniciar la ronda no se toma aca:
+   * la resuelve GpsPolicyService, que ademas mira el permiso del sistema
+   * operativo.
    */
   async consentStatus(userId: string) {
     const filas = await this.tenantContext.manager.query<
@@ -327,8 +366,9 @@ export class GeoService {
       grantedAt: ultimo?.granted_at ?? null,
       revokedAt: ultimo?.revoked_at ?? null,
       policyVersion: ultimo?.policy_version ?? null,
+      trackingEnabled: rules.gpsTrackingEnabled,
+      sharingMode: rules.gpsSharingRequired ? 'obligatorio' : 'opcional',
       deviceInfo: ultimo?.device_info ?? null,
-      trackingEnabled: rules.gpsSharingRequired,
       sampleIntervalSeconds: rules.gpsTrackIntervalSeconds,
       retentionDays: rules.gpsTrackRetentionDays,
     };
