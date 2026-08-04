@@ -141,8 +141,12 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SupervisorController, 'listPatrols', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listEvents', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listShifts', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'listGuards', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'weeklySchedule', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'createShift', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'assignShift', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'checkShiftConflict', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'reassignShift', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'onDutyNow', ['patrols:monitor'], ['SUPERVISOR'], true),
 
   secured(

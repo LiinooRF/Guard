@@ -10,6 +10,7 @@ import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import { StatsCharts } from '../../_components/stats-charts';
+import { SupervisorSchedule } from '../../_components/supervisor-schedule';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -156,6 +157,7 @@ export default async function RoleDashboard({
           </div>
         )}
       </section>
+      {isSupervisor && <SupervisorSchedule apiUrl={publicApiUrl()} />}
       <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
