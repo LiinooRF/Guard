@@ -167,9 +167,12 @@ lo que distingue "heredado" de "escrito acá" en el formulario. La cascada es
 
 ### SUPERVISOR — `/supervisor` (solo sus recintos asignados; 403 si no)
 ```
+GET   /supervisor/route-editor/sites                  routes:manage
+      → recintos asignados con puntos activos, coordenadas y requisito de foto
 GET   /supervisor/sites/:siteId/routes                 routes:manage
 POST  /supervisor/sites/:siteId/routes  {name, estimatedDurationMin, toleranceMin?,
-                                         orderMode?, checkpoints:[{checkpointId, isClosingPoint?, isAnchor?}]}
+                                         orderMode?, checkpoints:[{checkpointId, isClosingPoint?,
+                                         isAnchor?, requiresPhoto?}]}
 PUT   /supervisor/routes/:routeId       {campos parciales; mandar checkpoints SUBE la versión}
 PATCH /supervisor/routes/:routeId/active {isActive}
 

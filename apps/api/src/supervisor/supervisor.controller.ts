@@ -62,6 +62,12 @@ export class SupervisorController {
     return this.supervisor.liveBoard(request.user.sub);
   }
 
+  @Get('route-editor/sites')
+  @Permissions('routes:manage')
+  routeEditorSites(@Req() request: Autenticado) {
+    return this.supervisor.routeEditorSites(request.user.sub);
+  }
+
   @Get('sites')
   @Permissions('patrols:monitor')
   listSites(@Req() request: Autenticado) {

@@ -168,6 +168,42 @@ export class SupervisorService {
     };
   }
 
+  /** Catálogo mínimo del editor; el JOIN de alcance evita enumerar recintos ajenos. */
+  async routeEditorSites(supervisorId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string; name: string; branch_name: string; address: string;
+      latitude: number | null; longitude: number | null;
+      checkpoints: Array<{
+        id: string; name: string; latitude: number | null; longitude: number | null;
+        requiresPhoto: boolean | null; suggestedOrder: number;
+      }>;
+    }>>(
+      `SELECT s.id, s.name, s.branch_name, s.address, s.latitude, s.longitude,
+              COALESCE(jsonb_agg(jsonb_build_object(
+                'id', c.id, 'name', c.name, 'latitude', c.latitude,
+                'longitude', c.longitude, 'requiresPhoto', c.requires_photo,
+                'suggestedOrder', c.suggested_order
+              ) ORDER BY c.suggested_order, c.name)
+              FILTER (WHERE c.id IS NOT NULL), '[]'::jsonb) AS checkpoints
+       FROM supervisor_sites scope
+       JOIN sites s ON s.id = scope.site_id AND s.is_active
+       LEFT JOIN checkpoints c ON c.site_id = s.id AND c.is_active
+       WHERE scope.supervisor_id = $1
+       GROUP BY s.id ORDER BY s.branch_name, s.name`,
+      [supervisorId],
+    );
+    return rows.map((row) => ({
+      id: row.id, name: row.name, branchName: row.branch_name, address: row.address,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
+      checkpoints: row.checkpoints.map((checkpoint) => ({
+        ...checkpoint,
+        latitude: checkpoint.latitude === null ? null : Number(checkpoint.latitude),
+        longitude: checkpoint.longitude === null ? null : Number(checkpoint.longitude),
+      })),
+    }));
+  }
+
   /**
    * Los recintos que el supervisor tiene asignados.
    *
