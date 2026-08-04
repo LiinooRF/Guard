@@ -48,7 +48,7 @@ export const PUENTE = 'voxia.bridge' as const;
 
 /** Version que habla ESTE build del shell. */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 1;
+export const PROTOCOLO_MINOR = 2;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -145,6 +145,18 @@ export interface RutaOfflinePayload {
   }[];
 }
 
+export interface EncolarSyncPayload {
+  readonly apiUrl: string;
+  readonly portalOrigin: string;
+  readonly operation: {
+    readonly type: 'scan' | 'event';
+    readonly clientId: string;
+    readonly patrolId?: string;
+    readonly payload: Record<string, unknown>;
+    readonly queuedAt: string;
+  };
+}
+
 export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
@@ -153,6 +165,8 @@ export type MensajePortal =
   | Sobre<'permission.query', ConsultarPermisoPayload>
   | Sobre<'offline.route.save', RutaOfflinePayload>
   | Sobre<'offline.route.clear', Record<string, never>>
+  | Sobre<'sync.queue.enqueue', EncolarSyncPayload>
+  | Sobre<'sync.queue.flush', Record<string, never>>
   | Sobre<'connectivity.query', Record<string, never>>;
 
 export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
@@ -163,6 +177,8 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'permission.query',
   'offline.route.save',
   'offline.route.clear',
+  'sync.queue.enqueue',
+  'sync.queue.flush',
   'connectivity.query',
 ];
 
@@ -280,6 +296,8 @@ export type MensajeShell =
   | Sobre<'permission.result', ResultadoPermisoPayload>
   | Sobre<'offline.route.saved', RutaOfflineGuardadaPayload>
   | Sobre<'offline.route.cleared', Record<string, never>>
+  | Sobre<'sync.queue.enqueued', { readonly clientId: string; readonly inserted: boolean }>
+  | Sobre<'sync.queue.flushed', { readonly processed: number; readonly pending: number }>
   | Sobre<'connectivity.state', EstadoConexionPayload>
   | Sobre<'error', ErrorPuentePayload>;
 
@@ -291,6 +309,8 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'permission.result',
   'offline.route.saved',
   'offline.route.cleared',
+  'sync.queue.enqueued',
+  'sync.queue.flushed',
   'connectivity.state',
   'error',
 ];
@@ -436,6 +456,7 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
           (typeof payload['titulo'] === 'string' && payload['titulo'].length <= 120));
     case 'nfc.scan.cancel':
     case 'offline.route.clear':
+    case 'sync.queue.flush':
     case 'connectivity.query':
       return Object.keys(payload).length === 0;
     case 'permission.request':
@@ -465,6 +486,21 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
           Array.isArray(punto['tagUids']) && punto['tagUids'].length <= 10 &&
           punto['tagUids'].every((uid) =>
             typeof uid === 'string' && uid.length >= 4 && uid.length <= 64 && /^[\x20-\x7E]+$/.test(uid)));
+    }
+    case 'sync.queue.enqueue': {
+      const operacion = payload['operation'];
+      if (!clavesPermitidas(payload, ['apiUrl', 'portalOrigin', 'operation']) ||
+          typeof payload['apiUrl'] !== 'string' || !esApiUrl(payload['apiUrl']) ||
+          typeof payload['portalOrigin'] !== 'string' || !esPortalOrigin(payload['portalOrigin']) ||
+          !esRegistro(operacion) ||
+          !clavesPermitidas(operacion, ['type', 'clientId', 'patrolId', 'payload', 'queuedAt'])) {
+        return false;
+      }
+      return (operacion['type'] === 'scan' || operacion['type'] === 'event') &&
+        esUuid(operacion['clientId']) &&
+        (operacion['patrolId'] === undefined || esUuid(operacion['patrolId'])) &&
+        (operacion['type'] !== 'scan' || esUuid(operacion['patrolId'])) &&
+        esRegistro(operacion['payload']) && esFecha(operacion['queuedAt']);
     }
     default:
       return false;
@@ -505,6 +541,11 @@ function payloadShellValido(type: string, payload: unknown): boolean {
       return esIdentificador(payload['patrolId']) && esFecha(payload['savedAt']);
     case 'offline.route.cleared':
       return Object.keys(payload).length === 0;
+    case 'sync.queue.enqueued':
+      return esUuid(payload['clientId']) && typeof payload['inserted'] === 'boolean';
+    case 'sync.queue.flushed':
+      return Number.isInteger(payload['processed']) && Number(payload['processed']) >= 0 &&
+        Number.isInteger(payload['pending']) && Number(payload['pending']) >= 0;
     case 'connectivity.state':
       return typeof payload['enLinea'] === 'boolean' &&
         TIPOS_CONEXION.includes(payload['tipo'] as TipoConexion);
@@ -526,6 +567,31 @@ function esIdentificador(valor: unknown): valor is string {
 
 function esFecha(valor: unknown): valor is string {
   return typeof valor === 'string' && !Number.isNaN(Date.parse(valor));
+}
+
+function esUuid(valor: unknown): valor is string {
+  return typeof valor === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(valor);
+}
+
+function esApiUrl(valor: string): boolean {
+  if (valor.length > 500) return false;
+  try {
+    const url = new URL(valor);
+    return url.protocol === 'https:' ||
+      (url.protocol === 'http:' && ['localhost', '127.0.0.1', '10.0.2.2'].includes(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+function esPortalOrigin(valor: string): boolean {
+  if (!esApiUrl(valor)) return false;
+  try {
+    return new URL(valor).origin === valor;
+  } catch {
+    return false;
+  }
 }
 
 const CODIGOS_ESCANEO: readonly CodigoErrorEscaneo[] = [

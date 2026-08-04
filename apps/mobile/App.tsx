@@ -17,6 +17,8 @@ import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
 import { crearManejadoresNfc } from './src/nfc/handlers';
 import { puertoNfcAndroid } from './src/nfc/native-port';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
+import { sincronizarCola } from './src/offline/sync-queue';
+import { registrarSincronizacionBackground } from './src/offline/sync-task';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -72,8 +74,14 @@ export default function App() {
 
   useEffect(() => puente.detener, [puente]);
   useEffect(() => {
+    void registrarSincronizacionBackground().catch(() => undefined);
+  }, []);
+  useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
       puente.notificarConexion(normalizarConexion(estado));
+      if (estado.isConnected === true && estado.isInternetReachable !== false) {
+        void sincronizarCola().catch(() => undefined);
+      }
     });
     return () => subscription.remove();
   }, [puente]);

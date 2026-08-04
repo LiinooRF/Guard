@@ -19,13 +19,13 @@ export function LogoutButton() {
           credentials: 'include',
         },
       );
+    } finally {
       const puente = crearClientePuente();
       const estado = await puente.conectar().catch(() => undefined);
       if (estado?.clase === 'listo' && estado.info.protocolo.minor >= 1) {
         await puente.borrarRutaOffline().catch(() => undefined);
       }
       puente.desconectar();
-    } finally {
       router.push('/');
       router.refresh();
     }

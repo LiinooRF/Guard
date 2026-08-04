@@ -28,6 +28,7 @@ import {
   type ResultadoEscaneoPayload,
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
+  type EncolarSyncPayload,
 } from './protocol';
 
 /**
@@ -58,6 +59,8 @@ export interface ManejadoresNativos {
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
   readonly guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<string>;
   readonly borrarRutaOffline: () => Promise<void>;
+  readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
+  readonly sincronizarCola: () => Promise<{ procesadas: number; pendientes: number }>;
 }
 
 export interface OpcionesPuente {
@@ -363,6 +366,24 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
             registrar('puente.ruta-offline-borrado.error');
             responderErrorPuente(mensaje.id);
           });
+        return;
+      case 'sync.queue.enqueue':
+        void manejadores.encolarSync(mensaje.payload)
+          .then((inserted) => enviar(armarSobre(
+            'sync.queue.enqueued',
+            { clientId: mensaje.payload.operation.clientId, inserted },
+            { replyTo: mensaje.id, prefijo: 'syn' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
+        return;
+      case 'sync.queue.flush':
+        void manejadores.sincronizarCola()
+          .then((resultado) => enviar(armarSobre(
+            'sync.queue.flushed',
+            { processed: resultado.procesadas, pending: resultado.pendientes },
+            { replyTo: mensaje.id, prefijo: 'syn' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
         return;
       case 'connectivity.query':
         void manejadores.estadoConexion()

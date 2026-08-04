@@ -146,6 +146,29 @@ describe('SyncService — sincronizacion en lote (#14)', () => {
     expect(reintento?.[0]).not.toContain('synced_at_server =');
   });
 
+  it('reenviar la misma cola tres veces conserva exactamente un registro lógico', async () => {
+    const query = consultas({
+      bitacora: [
+        { client_id: OP1, status: 'aplicado', reason: null, server_id: 'scan-1' },
+      ],
+    });
+    const guard = guardiaQueEscanea();
+    const sync = servicio(query, guard);
+    const lote = { operations: [escaneo(OP1, ESCANEO_VALIDO)] };
+
+    const respuestas = [];
+    for (let intento = 0; intento < 3; intento += 1) {
+      respuestas.push(await sync.pushBatch('guard-id', lote));
+    }
+
+    expect(respuestas.map((r) => r.summary)).toEqual([
+      { aplicado: 0, duplicado: 1, rechazado: 0 },
+      { aplicado: 0, duplicado: 1, rechazado: 0 },
+      { aplicado: 0, duplicado: 1, rechazado: 0 },
+    ]);
+    expect(guard.registerScan).not.toHaveBeenCalled();
+  });
+
   it('un client_id repetido dentro del mismo lote se aplica una sola vez', async () => {
     const query = consultas();
     const guard = guardiaQueEscanea();
