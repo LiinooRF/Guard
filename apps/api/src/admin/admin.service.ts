@@ -208,6 +208,10 @@ export class AdminService {
       if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
         throw new ConflictException('El correo o nombre de usuario ya está registrado');
       }
+      if (error instanceof QueryFailedError && error.driverError?.code === 'P0001'
+        && /límite de usuarios/i.test(String(error.driverError?.message))) {
+        throw new ConflictException(String(error.driverError.message));
+      }
       throw error;
     }
     if (input.email) {
