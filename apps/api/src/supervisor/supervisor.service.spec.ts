@@ -222,14 +222,35 @@ describe('SupervisorService', () => {
 
 describe('SupervisorService — calendario semanal (#96)', () => {
   it('lista solo los recintos activos asignados al supervisor', async () => {
+    // El mock devuelve las columnas que la consulta pide DE VERDAD, incluidas
+    // las coordenadas, que llegan como texto desde el driver (numeric) y salen
+    // como numeros porque el mapa las necesita asi.
     const query = jest.fn().mockResolvedValueOnce([
-      { id: 'site-1', name: 'Planta', branch_name: 'Norte', timezone: 'America/Santiago' },
+      {
+        id: 'site-1',
+        name: 'Planta',
+        branch_name: 'Norte',
+        address: 'Ruta 5 km 12',
+        timezone: 'America/Santiago',
+        latitude: '-33.450000',
+        longitude: '-70.660000',
+      },
     ]);
     await expect(servicio(query).listAssignedSites(SUPERVISOR)).resolves.toEqual([
-      { id: 'site-1', name: 'Planta', branchName: 'Norte', timezone: 'America/Santiago' },
+      {
+        id: 'site-1',
+        name: 'Planta',
+        branchName: 'Norte',
+        address: 'Ruta 5 km 12',
+        timezone: 'America/Santiago',
+        latitude: -33.45,
+        longitude: -70.66,
+      },
     ]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining('supervisor_sites'), [SUPERVISOR]);
     expect(query.mock.calls[0]?.[0]).toContain('s.is_active');
+    // El JOIN cruza tambien tenant_id: el aislamiento no queda solo en RLS.
+    expect(query.mock.calls[0]?.[0]).toContain('s.tenant_id = ss.tenant_id');
   });
 
   it('el calendario queda limitado al recinto asignado y a siete fechas', async () => {
