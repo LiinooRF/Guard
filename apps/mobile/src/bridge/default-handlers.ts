@@ -72,7 +72,15 @@ export function crearManejadoresBase(): ManejadoresNativos {
     capacidades: async () => ({
       tieneNfc: false,
       nfcActivado: false,
-      tieneCamara: await CameraView.isAvailableAsync(),
+      // `CameraView.isAvailableAsync()` es SOLO web (expo-camera lo marca
+      // @platform web): en Android no existe y la llamada tumba el puente
+      // entero al primer `capacidades`, que es lo primero que pide el WebView.
+      //
+      // En Android damos la camara por presente: un telefono de trabajo sin
+      // camara no puede ejecutar una ronda con evidencia, y si por algun caso
+      // faltara, la captura falla despues con su propio error entendible en vez
+      // de dejar la app sin puente desde el arranque.
+      tieneCamara: Platform.OS === 'web' ? await CameraView.isAvailableAsync() : true,
       nivelApiAndroid: typeof Platform.Version === 'number' ? Platform.Version : 0,
     }),
     escanearNfc: async () => {

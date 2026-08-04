@@ -288,7 +288,13 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
 
     const mensaje = lectura.mensaje;
 
-    if (!MAJORS_SOPORTADOS.includes(mensaje.v)) {
+    // El `hello` queda FUERA de este filtro a proposito: es el mensaje que
+    // negocia la version, y atenderHola() ya responde 'incompatible' con el
+    // motivo. Descartarlo aca dejaba al portal viejo esperando en silencio, sin
+    // saber si la app lo escucho — y sin manera de mostrarle al guardia que
+    // tiene que actualizar. El portal se despliega solo; la app tarda semanas
+    // en llegarle a todos, asi que este cruce de versiones va a pasar.
+    if (mensaje.type !== 'hello' && !MAJORS_SOPORTADOS.includes(mensaje.v)) {
       registrar('puente.version-rechazada', String(mensaje.v));
       return;
     }

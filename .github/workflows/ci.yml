@@ -90,9 +90,6 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Probar puente nativo
-        run: npm test
-
       - name: Verificar contrato compartido del puente
         run: npm run bridge:check
 
@@ -175,6 +172,12 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # Aca y no en el job de la raiz: alli `npm test` recorre los workspaces y
+      # apps/mobile esta fuera a proposito (Metro no se lleva con el hoisting),
+      # asi que las pruebas del puente no se ejecutaban nunca.
+      - name: Probar puente nativo
+        run: npm test
 
       - name: Validar configuracion Android de produccion
         env:
