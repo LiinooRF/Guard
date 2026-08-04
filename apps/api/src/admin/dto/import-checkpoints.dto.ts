@@ -1,4 +1,8 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -6,12 +10,14 @@ import {
   IsLongitude,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
-export class CreateCheckpointDto {
+export class ImportCheckpointRowDto {
   @IsString()
   @MinLength(2)
   @MaxLength(120)
@@ -22,7 +28,6 @@ export class CreateCheckpointDto {
   @MaxLength(300)
   description?: string;
 
-  /** `acceso_critico` hereda foto obligatoria de las reglas del tenant. */
   @IsOptional()
   @IsIn(['normal', 'acceso_critico'])
   kind?: 'normal' | 'acceso_critico';
@@ -40,23 +45,25 @@ export class CreateCheckpointDto {
   @IsLongitude()
   longitude?: number;
 
-  /**
-   * Sobreescribe la regla de foto SOLO para este punto. Si no viene, manda la
-   * regla del tenant (`isPhotoRequired()` en @voxia/shared).
-   */
   @IsOptional()
   @IsBoolean()
   requiresPhoto?: boolean;
 
-  /** Que tiene que revisar el guardia en este punto. */
   @IsOptional()
   @IsString()
   @MaxLength(500)
   instructions?: string;
 
-  /** UID leido durante la instalacion; se vincula en la misma transaccion. */
   @IsOptional()
-  @IsString()
-  @MaxLength(160)
+  @Matches(/^[\x20-\x7E]{1,160}$/)
   tagUid?: string;
+}
+
+export class ImportCheckpointsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => ImportCheckpointRowDto)
+  checkpoints!: ImportCheckpointRowDto[];
 }

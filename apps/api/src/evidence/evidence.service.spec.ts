@@ -59,6 +59,9 @@ describe('EvidenceService.isWithinBusinessHours', () => {
       'site-id',
       '2026-08-03T15:00:00.000Z',
     ]);
+    const sql = String(manager.query.mock.calls[0]?.[0]);
+    expect(sql).toContain('site_holidays');
+    expect(sql).toContain('holiday_date = m.local_ts::date');
     // Con horario definido, las reglas del tenant no se consultan.
     expect(rules.effective).not.toHaveBeenCalled();
   });

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { IsBoolean, IsUUID } from 'class-validator';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -7,9 +7,15 @@ import { AdminService } from './admin.service';
 import { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { CreateTenantUserDto } from './dto/create-user.dto';
+import { ImportCheckpointsDto } from './dto/import-checkpoints.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
 import { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import { RegisterTagDto, ResolveTagQuery } from './dto/register-tag.dto';
+import {
+  ReplaceSiteBusinessHoursDto,
+  ReplaceSiteHolidaysDto,
+} from './dto/site-calendar.dto';
+import { UpdateSiteDto } from './dto/update-site.dto';
 import { PhotoOverrideDto, UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 
 class UserParam {
@@ -101,10 +107,43 @@ export class AdminController {
     return this.admin.createSite(input);
   }
 
+  @Patch('sites/:siteId')
+  @Permissions('tenant:sites:manage')
+  updateSite(@Param() params: SiteParam, @Body() input: UpdateSiteDto) {
+    return this.admin.updateSite(params.siteId, input);
+  }
+
   @Patch('sites/:siteId/active')
   @Permissions('tenant:sites:manage')
   setSiteActive(@Param() params: SiteParam, @Body() input: UpdateActiveDto) {
     return this.admin.setSiteActive(params.siteId, input.isActive);
+  }
+
+  @Get('sites/:siteId/business-hours')
+  @Permissions('tenant:sites:manage')
+  listBusinessHours(@Param() params: SiteParam) {
+    return this.admin.listBusinessHours(params.siteId);
+  }
+
+  @Put('sites/:siteId/business-hours')
+  @Permissions('tenant:sites:manage')
+  replaceBusinessHours(
+    @Param() params: SiteParam,
+    @Body() input: ReplaceSiteBusinessHoursDto,
+  ) {
+    return this.admin.replaceBusinessHours(params.siteId, input.hours);
+  }
+
+  @Get('sites/:siteId/holidays')
+  @Permissions('tenant:sites:manage')
+  listHolidays(@Param() params: SiteParam) {
+    return this.admin.listHolidays(params.siteId);
+  }
+
+  @Put('sites/:siteId/holidays')
+  @Permissions('tenant:sites:manage')
+  replaceHolidays(@Param() params: SiteParam, @Body() input: ReplaceSiteHolidaysDto) {
+    return this.admin.replaceHolidays(params.siteId, input.holidays);
   }
 
   @Patch('users/:userId/sites/:siteId')
@@ -126,6 +165,12 @@ export class AdminController {
   @Permissions('tenant:sites:manage')
   createCheckpoint(@Param() params: SiteParam, @Body() input: CreateCheckpointDto) {
     return this.admin.createCheckpoint(params.siteId, input);
+  }
+
+  @Post('sites/:siteId/checkpoints/import')
+  @Permissions('tenant:sites:manage')
+  importCheckpoints(@Param() params: SiteParam, @Body() input: ImportCheckpointsDto) {
+    return this.admin.importCheckpoints(params.siteId, input.checkpoints);
   }
 
   @Patch('checkpoints/:checkpointId')

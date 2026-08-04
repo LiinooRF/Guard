@@ -16,9 +16,12 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
 import type { CreateTenantUserDto } from './dto/create-user.dto';
+import type { ImportCheckpointRowDto } from './dto/import-checkpoints.dto';
 import type { RegisterTagDto } from './dto/register-tag.dto';
+import type { SiteBusinessHourDto, SiteHolidayDto } from './dto/site-calendar.dto';
 import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import type { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
+import type { UpdateSiteDto } from './dto/update-site.dto';
 
 interface UserRow {
   id: string;
@@ -38,6 +41,7 @@ interface SiteRow {
   address: string;
   latitude: string | null;
   longitude: string | null;
+  timezone: string;
   is_active: boolean;
   checkpoint_count: number;
   supervisor_count: number;
@@ -280,6 +284,7 @@ export class AdminService {
         sites.address,
         sites.latitude,
         sites.longitude,
+        sites.timezone,
         sites.is_active,
         count(DISTINCT checkpoints.id)::integer AS checkpoint_count,
         count(DISTINCT supervisor_sites.supervisor_id)::integer AS supervisor_count
@@ -296,6 +301,7 @@ export class AdminService {
       address: site.address,
       latitude: site.latitude === null ? null : Number(site.latitude),
       longitude: site.longitude === null ? null : Number(site.longitude),
+      timezone: site.timezone,
       isActive: site.is_active,
       checkpointCount: site.checkpoint_count,
       supervisorCount: site.supervisor_count,
@@ -306,8 +312,8 @@ export class AdminService {
     const siteId = randomUUID();
     await this.tenantContext.manager.query(
       `INSERT INTO sites (
-        id, tenant_id, branch_name, name, address, latitude, longitude
-      ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6)`,
+        id, tenant_id, branch_name, name, address, latitude, longitude, timezone
+      ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7)`,
       [
         siteId,
         input.branchName,
@@ -315,8 +321,28 @@ export class AdminService {
         input.address,
         input.latitude ?? null,
         input.longitude ?? null,
+        input.timezone ?? 'America/Santiago',
       ],
     );
+    return { id: siteId };
+  }
+
+  async updateSite(siteId: string, input: UpdateSiteDto) {
+    const fields: Array<[column: string, value: unknown]> = [];
+    if (input.branchName !== undefined) fields.push(['branch_name', input.branchName.trim()]);
+    if (input.name !== undefined) fields.push(['name', input.name.trim()]);
+    if (input.address !== undefined) fields.push(['address', input.address.trim()]);
+    if (input.latitude !== undefined) fields.push(['latitude', input.latitude]);
+    if (input.longitude !== undefined) fields.push(['longitude', input.longitude]);
+    if (input.timezone !== undefined) fields.push(['timezone', input.timezone]);
+    if (!fields.length) throw new BadRequestException('Nada que actualizar');
+
+    const sets = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
+    const rows = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `UPDATE sites SET ${sets} WHERE id = $1 RETURNING id`,
+      [siteId, ...fields.map(([, value]) => value)],
+    );
+    if (!rows.length) throw new NotFoundException('Recinto no encontrado');
     return { id: siteId };
   }
 
@@ -327,6 +353,89 @@ export class AdminService {
     );
     if (!result.length) throw new NotFoundException('Recinto no encontrado');
     return { id: siteId, isActive };
+  }
+
+  async listBusinessHours(siteId: string) {
+    await this.ensureSite(siteId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      weekday: number;
+      opens_at: string;
+      closes_at: string;
+    }>>(
+      `SELECT weekday, to_char(opens_at, 'HH24:MI') AS opens_at,
+              to_char(closes_at, 'HH24:MI') AS closes_at
+       FROM site_business_hours
+       WHERE site_id = $1
+       ORDER BY weekday`,
+      [siteId],
+    );
+    return rows.map((row) => ({
+      weekday: row.weekday,
+      opensAt: row.opens_at,
+      closesAt: row.closes_at,
+    }));
+  }
+
+  async replaceBusinessHours(siteId: string, hours: SiteBusinessHourDto[]) {
+    await this.ensureSite(siteId);
+    const weekdays = hours.map((hour) => hour.weekday);
+    if (new Set(weekdays).size !== weekdays.length) {
+      throw new BadRequestException('Cada día puede tener un solo horario');
+    }
+    if (hours.some((hour) => hour.opensAt === hour.closesAt)) {
+      throw new BadRequestException('La apertura y el cierre no pueden ser iguales');
+    }
+    await this.tenantContext.manager.query(
+      `DELETE FROM site_business_hours WHERE site_id = $1`,
+      [siteId],
+    );
+    for (const hour of hours) {
+      await this.tenantContext.manager.query(
+        `INSERT INTO site_business_hours
+          (tenant_id, site_id, weekday, opens_at, closes_at)
+         VALUES (app_tenant_id(), $1, $2, $3::time, $4::time)`,
+        [siteId, hour.weekday, hour.opensAt, hour.closesAt],
+      );
+    }
+    return this.listBusinessHours(siteId);
+  }
+
+  async listHolidays(siteId: string) {
+    await this.ensureSite(siteId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      holiday_date: string;
+      name: string | null;
+    }>>(
+      `SELECT holiday_date::text, name
+       FROM site_holidays
+       WHERE site_id = $1
+       ORDER BY holiday_date`,
+      [siteId],
+    );
+    return rows.map((row) => ({ date: row.holiday_date, name: row.name }));
+  }
+
+  async replaceHolidays(siteId: string, holidays: SiteHolidayDto[]) {
+    await this.ensureSite(siteId);
+    const dates = holidays.map((holiday) => holiday.date);
+    if (new Set(dates).size !== dates.length) {
+      throw new BadRequestException('Cada feriado puede aparecer una sola vez');
+    }
+    for (const holiday of holidays) {
+      const parsed = new Date(`${holiday.date}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== holiday.date) {
+        throw new BadRequestException(`La fecha ${holiday.date} no es válida`);
+      }
+    }
+    await this.tenantContext.manager.query(`DELETE FROM site_holidays WHERE site_id = $1`, [siteId]);
+    for (const holiday of holidays) {
+      await this.tenantContext.manager.query(
+        `INSERT INTO site_holidays (tenant_id, site_id, holiday_date, name)
+         VALUES (app_tenant_id(), $1, $2::date, $3)`,
+        [siteId, holiday.date, holiday.name?.trim() || null],
+      );
+    }
+    return this.listHolidays(siteId);
   }
 
   async setSupervisorSite(supervisorId: string, siteId: string, assigned: boolean) {
@@ -413,7 +522,76 @@ export class AdminService {
         input.instructions ?? null,
       ],
     );
-    return { id: checkpointId };
+    let tagId: string | null = null;
+    if (input.tagUid?.trim()) {
+      tagId = randomUUID();
+      try {
+        await this.tenantContext.manager.query(
+          `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
+           VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
+          [tagId, checkpointId, input.tagUid.trim()],
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+          throw new ConflictException('Esa etiqueta ya está registrada en otro punto');
+        }
+        throw error;
+      }
+    }
+    return { id: checkpointId, tagId };
+  }
+
+  async importCheckpoints(siteId: string, checkpoints: ImportCheckpointRowDto[]) {
+    await this.ensureSite(siteId);
+    const tagUids = checkpoints
+      .map((checkpoint) => checkpoint.tagUid?.trim().toLowerCase())
+      .filter((uid): uid is string => Boolean(uid));
+    if (new Set(tagUids).size !== tagUids.length) {
+      throw new BadRequestException('El CSV repite una etiqueta NFC');
+    }
+
+    const imported: Array<{ id: string; tagId: string | null }> = [];
+    for (const [index, checkpoint] of checkpoints.entries()) {
+      const id = randomUUID();
+      await this.tenantContext.manager.query(
+        `INSERT INTO checkpoints (
+          id, tenant_id, site_id, name, description, suggested_order, kind,
+          latitude, longitude, requires_photo, instructions
+        ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          id,
+          siteId,
+          checkpoint.name.trim(),
+          checkpoint.description?.trim() || null,
+          checkpoint.suggestedOrder ?? index + 1,
+          checkpoint.kind ?? 'normal',
+          checkpoint.latitude ?? null,
+          checkpoint.longitude ?? null,
+          checkpoint.requiresPhoto ?? null,
+          checkpoint.instructions?.trim() || null,
+        ],
+      );
+      let tagId: string | null = null;
+      if (checkpoint.tagUid) {
+        tagId = randomUUID();
+        try {
+          await this.tenantContext.manager.query(
+            `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
+             VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
+            [tagId, id, checkpoint.tagUid.trim()],
+          );
+        } catch (error) {
+          if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+            throw new ConflictException(
+              `La etiqueta de la fila ${index + 2} ya está registrada en otro punto`,
+            );
+          }
+          throw error;
+        }
+      }
+      imported.push({ id, tagId });
+    }
+    return { imported: imported.length, checkpoints: imported };
   }
 
   async updateCheckpoint(checkpointId: string, input: UpdateCheckpointDto) {

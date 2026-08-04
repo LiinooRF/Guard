@@ -45,6 +45,9 @@ export interface TenantSite {
   branchName: string;
   name: string;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string;
   isActive: boolean;
   checkpointCount: number;
   supervisorCount: number;
@@ -294,21 +297,6 @@ export function AdminManagement({
     startTransition(() => router.refresh());
   }
 
-  async function createSite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const response = await apiRequest(`${apiUrl}/admin/sites`, 'POST', {
-      branchName: data.get('branchName'),
-      name: data.get('name'),
-      address: data.get('address'),
-    });
-    if (!response.ok) return setMessage(await responseMessage(response));
-    form.reset();
-    setMessage('Recinto creado correctamente.');
-    startTransition(() => router.refresh());
-  }
-
   async function toggleUser(user: TenantUser) {
     const response = await apiRequest(`${apiUrl}/admin/users/${user.id}/active`, 'PATCH', {
       isActive: !user.isActive,
@@ -325,14 +313,6 @@ export function AdminManagement({
     if (!response.ok) return setMessage(await responseMessage(response));
     const result = (await response.json()) as { revokedSessions: number };
     setMessage(`${result.revokedSessions} sesión(es) cerrada(s) para ${user.givenName}.`);
-  }
-
-  async function toggleSite(site: TenantSite) {
-    const response = await apiRequest(`${apiUrl}/admin/sites/${site.id}/active`, 'PATCH', {
-      isActive: !site.isActive,
-    });
-    if (!response.ok) return setMessage(await responseMessage(response));
-    startTransition(() => router.refresh());
   }
 
   async function assign(supervisor: TenantUser, siteId: string) {
@@ -376,15 +356,6 @@ export function AdminManagement({
             <button className="primary-button" disabled={pending}>Crear usuario</button>
           </form>
         </section>
-        <section className="management-card">
-          <div className="card-heading"><div><span className="eyebrow">Operación</span><h2>Crear recinto</h2></div></div>
-          <form className="management-form" onSubmit={createSite}>
-            <label>Sucursal<input name="branchName" required /></label>
-            <label>Nombre del recinto<input name="name" required /></label>
-            <label>Dirección<input name="address" required /></label>
-            <button className="primary-button" disabled={pending}>Crear recinto</button>
-          </form>
-        </section>
       </div>
       <section className="management-card management-wide" id="usuarios">
         <div className="card-heading"><div><span className="eyebrow">Accesos</span><h2>Usuarios del tenant</h2></div><span className="status-pill">{users.length}</span></div>
@@ -409,18 +380,6 @@ export function AdminManagement({
                   ))}
                 </div>
               )}
-            </article>
-          ))}
-        </div>
-      </section>
-      <section className="management-card management-wide" id="recintos">
-        <div className="card-heading"><div><span className="eyebrow">Infraestructura</span><h2>Recintos</h2></div><span className="status-pill">{sites.length}</span></div>
-        <div className="management-list">
-          {sites.map((site) => (
-            <article className="management-row" key={site.id}>
-              <div><strong>{site.name}</strong><small>{site.branchName} · {site.address}</small><small>{site.checkpointCount} puntos · {site.supervisorCount} supervisores</small></div>
-              <span className={`state-chip ${site.isActive ? 'active' : 'suspended'}`}>{site.isActive ? 'Activo' : 'Inactivo'}</span>
-              <button className="secondary-button" onClick={() => toggleSite(site)} disabled={pending}>{site.isActive ? 'Desactivar' : 'Activar'}</button>
             </article>
           ))}
         </div>
