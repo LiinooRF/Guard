@@ -56,6 +56,10 @@ export class EvidenceService {
           EXISTS (
             SELECT 1 FROM site_business_hours h
             WHERE h.tenant_id = m.tenant_id AND h.site_id = m.site_id
+          ) OR EXISTS (
+            SELECT 1 FROM site_holidays f
+            WHERE f.tenant_id = m.tenant_id AND f.site_id = m.site_id
+              AND f.holiday_date = m.local_ts::date
           ) AS has_hours,
           NOT EXISTS (
             SELECT 1 FROM site_holidays f
@@ -80,7 +84,7 @@ export class EvidenceService {
                 AND h.opens_at > h.closes_at
                 AND m.local_ts::time < h.closes_at
             )
-          )) AS within
+          ) AS within
         FROM momento m
       `,
       [siteId, cuando.toISOString()],

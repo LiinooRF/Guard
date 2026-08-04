@@ -35,6 +35,8 @@ interface Holiday {
   name: string | null;
 }
 
+type Coordinates = [number | null, number | null];
+
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export function SiteManagement({
@@ -56,9 +58,9 @@ export function SiteManagement({
   const [hours, setHours] = useState<BusinessHour[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [siteCoordinates, setSiteCoordinates] = useState<[number, number] | null>(null);
-  const [siteEditCoordinates, setSiteEditCoordinates] = useState<[number, number] | null>(null);
-  const [checkpointCoordinates, setCheckpointCoordinates] = useState<[number, number] | null>(null);
+  const [siteCoordinates, setSiteCoordinates] = useState<Coordinates>([null, null]);
+  const [siteEditCoordinates, setSiteEditCoordinates] = useState<Coordinates>([null, null]);
+  const [checkpointCoordinates, setCheckpointCoordinates] = useState<Coordinates>([null, null]);
   const [csv, setCsv] = useState<CsvResult | null>(null);
   const selected = sites.find((site) => site.id === selectedId) ?? null;
   const branches = useMemo(() => groupByBranch(sites), [sites]);
@@ -68,17 +70,20 @@ export function SiteManagement({
     setMessage(null);
     const form = event.currentTarget;
     const data = new FormData(form);
+    if (!coordinatesComplete(siteCoordinates)) {
+      return setMessage('Completa latitud y longitud, o deja ambas vacías.');
+    }
     const response = await jsonRequest(`${apiUrl}/admin/sites`, 'POST', {
       branchName: data.get('branchName'),
       name: data.get('name'),
       address: data.get('address'),
       timezone: data.get('timezone'),
-      latitude: siteCoordinates?.[0],
-      longitude: siteCoordinates?.[1],
+      latitude: siteCoordinates[0] ?? undefined,
+      longitude: siteCoordinates[1] ?? undefined,
     });
     if (!response.ok) return setMessage(await responseMessage(response));
     form.reset();
-    setSiteCoordinates(null);
+    setSiteCoordinates([null, null]);
     setMessage('Recinto creado. Ya puedes cargar sus puntos y horarios.');
     startTransition(() => router.refresh());
   }
@@ -88,10 +93,10 @@ export function SiteManagement({
     setLoadingDetail(true);
     setMessage(null);
     setCheckpointCoordinates(
-      site.latitude !== null && site.longitude !== null ? [site.latitude, site.longitude] : null,
+      [site.latitude, site.longitude],
     );
     setSiteEditCoordinates(
-      site.latitude !== null && site.longitude !== null ? [site.latitude, site.longitude] : null,
+      [site.latitude, site.longitude],
     );
     const [pointResponse, hourResponse, holidayResponse] = await Promise.all([
       fetch(`${apiUrl}/admin/sites/${site.id}/checkpoints`, requestOptions()),
@@ -113,13 +118,16 @@ export function SiteManagement({
     event.preventDefault();
     if (!selected) return;
     const data = new FormData(event.currentTarget);
+    if (!coordinatesComplete(siteEditCoordinates)) {
+      return setMessage('Completa latitud y longitud, o deja ambas vacías.');
+    }
     const response = await jsonRequest(`${apiUrl}/admin/sites/${selected.id}`, 'PATCH', {
       branchName: data.get('branchName'),
       name: data.get('name'),
       address: data.get('address'),
       timezone: data.get('timezone'),
-      latitude: siteEditCoordinates?.[0] ?? null,
-      longitude: siteEditCoordinates?.[1] ?? null,
+      latitude: siteEditCoordinates[0],
+      longitude: siteEditCoordinates[1],
     });
     if (!response.ok) return setMessage(await responseMessage(response));
     setMessage('Datos del recinto actualizados.');
@@ -141,13 +149,16 @@ export function SiteManagement({
     const form = event.currentTarget;
     const data = new FormData(form);
     const photo = String(data.get('requiresPhoto') ?? 'inherit');
+    if (!coordinatesComplete(checkpointCoordinates)) {
+      return setMessage('Completa latitud y longitud, o deja ambas vacías.');
+    }
     const body: Record<string, unknown> = {
       name: data.get('name'),
       description: data.get('description') || undefined,
       kind: data.get('kind'),
       suggestedOrder: Number(data.get('suggestedOrder')),
-      latitude: checkpointCoordinates?.[0],
-      longitude: checkpointCoordinates?.[1],
+      latitude: checkpointCoordinates[0] ?? undefined,
+      longitude: checkpointCoordinates[1] ?? undefined,
       instructions: data.get('instructions') || undefined,
       tagUid: data.get('tagUid') || undefined,
     };
@@ -260,8 +271,8 @@ export function SiteManagement({
           </form>
         </section>
         <CoordinateMap
-          latitude={siteCoordinates?.[0] ?? null}
-          longitude={siteCoordinates?.[1] ?? null}
+          latitude={siteCoordinates[0]}
+          longitude={siteCoordinates[1]}
           tileUrl={mapTileUrl}
           attribution={mapAttribution}
           onPick={(lat, lng) => setSiteCoordinates([roundCoordinate(lat), roundCoordinate(lng)])}
@@ -313,8 +324,8 @@ export function SiteManagement({
                   onSubmit={createCheckpoint}
                 />
                 <CoordinateMap
-                  latitude={checkpointCoordinates?.[0] ?? null}
-                  longitude={checkpointCoordinates?.[1] ?? null}
+                  latitude={checkpointCoordinates[0]}
+                  longitude={checkpointCoordinates[1]}
                   tileUrl={mapTileUrl}
                   attribution={mapAttribution}
                   onPick={(lat, lng) => setCheckpointCoordinates([roundCoordinate(lat), roundCoordinate(lng)])}
@@ -335,7 +346,7 @@ export function SiteManagement({
   );
 }
 
-function SiteGeneralForm({ site, pending, coordinates, setCoordinates, onSubmit }: { site: TenantSite; pending: boolean; coordinates: [number, number] | null; setCoordinates: (value: [number, number] | null) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function SiteGeneralForm({ site, pending, coordinates, setCoordinates, onSubmit }: { site: TenantSite; pending: boolean; coordinates: Coordinates; setCoordinates: (value: Coordinates) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <section className="management-card"><div className="card-heading"><div><span className="eyebrow">Datos</span><h3>Información general</h3></div></div>
       <form className="management-form" onSubmit={onSubmit}>
@@ -384,7 +395,7 @@ function HolidayEditor({ holidays, setHolidays, onSave }: { holidays: Holiday[];
   );
 }
 
-function CheckpointCreateForm({ nextOrder, coordinates, setCoordinates, onSubmit }: { nextOrder: number; coordinates: [number, number] | null; setCoordinates: (value: [number, number] | null) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function CheckpointCreateForm({ nextOrder, coordinates, setCoordinates, onSubmit }: { nextOrder: number; coordinates: Coordinates; setCoordinates: (value: Coordinates) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
     <section className="management-card"><div className="card-heading"><div><span className="eyebrow">Puntos</span><h3>Nuevo punto de control</h3></div></div>
       <form className="management-form" onSubmit={onSubmit}>
@@ -392,7 +403,7 @@ function CheckpointCreateForm({ nextOrder, coordinates, setCoordinates, onSubmit
         <label>Criticidad<select name="kind"><option value="normal">Normal</option><option value="acceso_critico">Acceso crítico</option></select></label>
         <label>Orden sugerido<input name="suggestedOrder" type="number" min={0} defaultValue={nextOrder} required /></label>
         <label>Foto<select name="requiresPhoto"><option value="inherit">Heredar reglas</option><option value="yes">Siempre</option><option value="no">Nunca</option></select></label>
-        <label>Instrucciones<textarea name="instructions" rows={2} /></label><label>UID etiqueta NFC<input name="tagUid" maxLength={160} /></label>
+        <label>Instrucciones<textarea name="instructions" rows={2} /></label><label>UID etiqueta NFC<input name="tagUid" minLength={4} maxLength={64} /></label>
         <CoordinateFields value={coordinates} onChange={setCoordinates} />
         <button className="primary-button">Crear punto</button>
       </form>
@@ -400,8 +411,8 @@ function CheckpointCreateForm({ nextOrder, coordinates, setCoordinates, onSubmit
   );
 }
 
-function CoordinateFields({ value, onChange }: { value: [number, number] | null; onChange: (value: [number, number] | null) => void }) {
-  return <div className="coordinate-fields"><label>Latitud<input type="number" step="0.000001" min={-90} max={90} value={value?.[0] ?? ''} onChange={(event) => onChange(event.target.value === '' ? null : [Number(event.target.value), value?.[1] ?? 0])} /></label><label>Longitud<input type="number" step="0.000001" min={-180} max={180} value={value?.[1] ?? ''} onChange={(event) => onChange(event.target.value === '' ? null : [value?.[0] ?? 0, Number(event.target.value)])} /></label></div>;
+function CoordinateFields({ value, onChange }: { value: Coordinates; onChange: (value: Coordinates) => void }) {
+  return <div className="coordinate-fields"><label>Latitud<input type="number" step="0.000001" min={-90} max={90} value={value[0] ?? ''} onChange={(event) => onChange([event.target.value === '' ? null : Number(event.target.value), value[1]])} /></label><label>Longitud<input type="number" step="0.000001" min={-180} max={180} value={value[1] ?? ''} onChange={(event) => onChange([value[0], event.target.value === '' ? null : Number(event.target.value)])} /></label></div>;
 }
 
 function CsvImporter({ value, setValue, onImport }: { value: CsvResult | null; setValue: (value: CsvResult | null) => void; onImport: () => void }) {
@@ -410,11 +421,12 @@ function CsvImporter({ value, setValue, onImport }: { value: CsvResult | null; s
 }
 
 function CheckpointList({ checkpoints, onUpdate, onToggle, onBind }: { checkpoints: Checkpoint[]; onUpdate: (event: FormEvent<HTMLFormElement>, checkpoint: Checkpoint) => void; onToggle: (checkpoint: Checkpoint) => void; onBind: (event: FormEvent<HTMLFormElement>, checkpoint: Checkpoint) => void }) {
-  return <section className="management-card management-wide"><div className="card-heading"><div><span className="eyebrow">Inventario</span><h3>Puntos de control</h3></div><span className="status-pill">{checkpoints.length}</span></div><div className="checkpoint-admin-list">{checkpoints.map((checkpoint) => <details key={checkpoint.id}><summary><span><strong>{checkpoint.suggestedOrder}. {checkpoint.name}</strong><small>{checkpoint.kind === 'acceso_critico' ? 'Acceso crítico' : 'Normal'} · {checkpoint.latitude === null ? 'Sin ubicación' : `${checkpoint.latitude}, ${checkpoint.longitude}`}</small></span><span className={`state-chip ${checkpoint.isActive ? 'active' : 'suspended'}`}>{checkpoint.isActive ? 'Activo' : 'Inactivo'}</span></summary><form className="management-form checkpoint-edit-form" onSubmit={(event) => onUpdate(event, checkpoint)}><label>Nombre<input name="name" defaultValue={checkpoint.name} required /></label><label>Descripción<input name="description" defaultValue={checkpoint.description ?? ''} /></label><label>Tipo<select name="kind" defaultValue={checkpoint.kind}><option value="normal">Normal</option><option value="acceso_critico">Acceso crítico</option></select></label><label>Orden<input name="suggestedOrder" type="number" min={0} defaultValue={checkpoint.suggestedOrder} /></label><label>Latitud<input name="latitude" type="number" step="0.000001" defaultValue={checkpoint.latitude ?? ''} /></label><label>Longitud<input name="longitude" type="number" step="0.000001" defaultValue={checkpoint.longitude ?? ''} /></label><label>Instrucciones<input name="instructions" defaultValue={checkpoint.instructions ?? ''} /></label><div className="row-actions"><button className="primary-button">Guardar punto</button><button className="secondary-button" type="button" onClick={() => onToggle(checkpoint)}>{checkpoint.isActive ? 'Dar de baja' : 'Reactivar'}</button></div></form><form className="tag-bind-form" onSubmit={(event) => onBind(event, checkpoint)}><label>Vincular/reemplazar NFC<input name="uid" required maxLength={160} placeholder="UID leído por el instalador" /></label><button className="secondary-button">Vincular etiqueta</button></form></details>)}</div></section>;
+  return <section className="management-card management-wide"><div className="card-heading"><div><span className="eyebrow">Inventario</span><h3>Puntos de control</h3></div><span className="status-pill">{checkpoints.length}</span></div><div className="checkpoint-admin-list">{checkpoints.map((checkpoint) => <details key={checkpoint.id}><summary><span><strong>{checkpoint.suggestedOrder}. {checkpoint.name}</strong><small>{checkpoint.kind === 'acceso_critico' ? 'Acceso crítico' : 'Normal'} · {checkpoint.latitude === null ? 'Sin ubicación' : `${checkpoint.latitude}, ${checkpoint.longitude}`}</small></span><span className={`state-chip ${checkpoint.isActive ? 'active' : 'suspended'}`}>{checkpoint.isActive ? 'Activo' : 'Inactivo'}</span></summary><form className="management-form checkpoint-edit-form" onSubmit={(event) => onUpdate(event, checkpoint)}><label>Nombre<input name="name" defaultValue={checkpoint.name} required /></label><label>Descripción<input name="description" defaultValue={checkpoint.description ?? ''} /></label><label>Tipo<select name="kind" defaultValue={checkpoint.kind}><option value="normal">Normal</option><option value="acceso_critico">Acceso crítico</option></select></label><label>Orden<input name="suggestedOrder" type="number" min={0} defaultValue={checkpoint.suggestedOrder} /></label><label>Latitud<input name="latitude" type="number" step="0.000001" defaultValue={checkpoint.latitude ?? ''} /></label><label>Longitud<input name="longitude" type="number" step="0.000001" defaultValue={checkpoint.longitude ?? ''} /></label><label>Instrucciones<input name="instructions" defaultValue={checkpoint.instructions ?? ''} /></label><div className="row-actions"><button className="primary-button">Guardar punto</button><button className="secondary-button" type="button" onClick={() => onToggle(checkpoint)}>{checkpoint.isActive ? 'Dar de baja' : 'Reactivar'}</button></div></form><form className="tag-bind-form" onSubmit={(event) => onBind(event, checkpoint)}><label>Vincular/reemplazar NFC<input name="uid" required minLength={4} maxLength={64} placeholder="UID leído por el instalador" /></label><button className="secondary-button">Vincular etiqueta</button></form></details>)}</div></section>;
 }
 
 function groupByBranch(sites: TenantSite[]): Array<[string, TenantSite[]]> { const groups = new Map<string, TenantSite[]>(); for (const site of sites) groups.set(site.branchName, [...(groups.get(site.branchName) ?? []), site]); return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, 'es')); }
 function roundCoordinate(value: number) { return Math.round(value * 1_000_000) / 1_000_000; }
+function coordinatesComplete(value: Coordinates) { return (value[0] === null) === (value[1] === null); }
 function requestOptions(): RequestInit { return { credentials: 'include', cache: 'no-store' }; }
 function jsonRequest(url: string, method: string, body: object) { return fetch(url, { method, credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
 async function responseMessage(response: Response) { try { const data = (await response.json()) as { message?: string | string[] }; return Array.isArray(data.message) ? data.message.join('. ') : data.message ?? 'No fue posible completar la operación.'; } catch { return 'No fue posible completar la operación.'; } }
