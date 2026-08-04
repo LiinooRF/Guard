@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { MapaBase } from './mapa-base';
 import { leyendaDeRuta, marcasDeRuta } from './guard-mapa-modelo';
+import { precacheTilesDeRuta } from './guard-tiles-offline';
 import type { PuntoRuta, RegistroPunto } from './guard-shift-state';
 
 /**
@@ -40,6 +41,14 @@ export function GuardMapa({
     () => leyendaDeRuta(puntos, escaneados, siguienteId),
     [puntos, escaneados, siguienteId],
   );
+
+  // Con señal, baja los tiles del recinto para que el mapa siga estando en modo
+  // avión (#76). Best-effort: si no se puede, el mapa online y el modo lista
+  // siguen.
+  useEffect(() => {
+    if (marcas.length === 0) return;
+    void precacheTilesDeRuta(marcas);
+  }, [marcas]);
 
   if (marcas.length === 0) return null;
 
