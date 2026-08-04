@@ -23,6 +23,7 @@ import { TenantDataController } from '../platform-data/tenant-data.controller';
 import { ReportsController } from '../reports/reports.controller';
 import { RulesController } from '../rules/rules.controller';
 import { PlatformOpsController } from '../platform-ops/platform-ops.controller';
+import { PushController } from '../push/push.controller';
 import { QrController } from '../qr/qr.controller';
 import { SchedulingController } from '../scheduling/scheduling.controller';
 import { SupervisorController } from '../supervisor/supervisor.controller';
@@ -193,6 +194,9 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SchedulingController, 'listPatterns', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SchedulingController, 'replacePatterns', ['shifts:manage'], ['SUPERVISOR'], true),
 
+  secured(PushController, 'registerDevice', ['account:sessions:manage'], ALL_ROLES),
+  secured(PushController, 'unregisterDevice', ['account:sessions:manage'], ALL_ROLES),
+
   secured(QrController, 'issueCheckpointQr', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(QrController, 'siteSheet', ['tenant:sites:manage'], ['ADMIN'], true),
 
@@ -235,6 +239,7 @@ const CONTROLLERS = [
   EventsStreamController,
   SchedulingController,
   QrController,
+  PushController,
   PlatformOpsController,
   EscalationController,
   SyncController,

@@ -9,10 +9,18 @@ describe('loggedPath', () => {
     expect(loggedPath(`/auth/handoff/${token}`)).toBe('/auth/handoff/:token');
   });
 
+  it('reemplaza el token de dispositivo del push (#113)', () => {
+    const token = `c${'d'.repeat(150)}`;
+    expect(loggedPath(`/api/push/devices/${token}`)).toBe('/api/push/devices/:token');
+    expect(loggedPath(`/push/devices/${token}`)).toBe('/push/devices/:token');
+  });
+
   it('no toca las rutas normales, ni la de emisión que no lleva token', () => {
     expect(loggedPath('/api/auth/handoff')).toBe('/api/auth/handoff');
     expect(loggedPath('/api/auth/sessions/1234')).toBe('/api/auth/sessions/1234');
     expect(loggedPath('/api/guard/home')).toBe('/api/guard/home');
+    // El alta no lleva el token en la ruta: va en el cuerpo.
+    expect(loggedPath('/api/push/devices')).toBe('/api/push/devices');
   });
 });
 

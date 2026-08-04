@@ -213,3 +213,140 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* ==========================================================================
+   PANTALLA DEL GUARDIA — ejecución guiada, novedades y cierre (#91 a #94)
+   --------------------------------------------------------------------------
+   Se usa dentro del WebView, con guantes, de noche, caminando y con el teléfono
+   al sol. De ahí sale todo lo de abajo:
+
+   · Ningún objetivo táctil bajo 48px (--guardia-toque).
+   · Texto grande y contraste alto: los equipos son de gama baja y la pantalla
+     se lava con luz directa.
+   · NINGÚN estado :hover. En un teléfono no existe, y un botón que solo se ve
+     "activo" al pasar el mouse no se ve nunca. Los estados reales son
+     :focus-visible (teclado y lectores) y :active (el dedo).
+   · La barra de conexión va sticky arriba: si el guardia no sabe si lo que hizo
+     se subió, repite escaneos o los da por perdidos.
+   ========================================================================== */
+
+:root {
+  --guardia-ink: #0b1220;
+  --guardia-muted: #3b4358;
+  --guardia-borde: #b9c1d1;
+  --guardia-azul: #1d3ec8;
+  --guardia-verde: #0b6b40;
+  --guardia-ambar: #7a4a00;
+  --guardia-rojo: #a3121f;
+  --guardia-toque: 3rem;
+}
+
+.guardia-conexion { position: sticky; top: 0; z-index: 5; display: grid; gap: .6rem; margin-bottom: 1rem; border-radius: .8rem; padding: .8rem .9rem; color: white; background: var(--guardia-ink); box-shadow: 0 6px 18px rgba(9,15,30,.28); }
+.guardia-conexion-linea { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin: 0; font-size: 1rem; font-weight: 700; }
+.guardia-conexion-linea small { color: #c3cbdd; font-size: .82rem; font-weight: 600; }
+.guardia-senal { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; }
+.guardia-senal.ok { background: #3ddc91; }
+.guardia-senal.sin { background: #ff8f7a; }
+.guardia-cola { margin-left: auto; border-radius: 99px; padding: .25rem .6rem; color: #0b1220; background: #d7f5e6; font-size: .9rem; font-weight: 800; }
+.guardia-cola.alerta { color: #3a2400; background: #ffd479; }
+.guardia-rechazos { display: grid; gap: .5rem; border: 2px solid #ff8f7a; border-radius: .7rem; padding: .7rem; color: white; background: #4a0d13; font-size: .95rem; }
+.guardia-rechazos ul { margin: 0; padding-left: 1.1rem; line-height: 1.5; }
+
+.guardia-cabecera { margin-bottom: 1rem; }
+.guardia-eyebrow { margin: 0; color: var(--guardia-muted); font-size: .95rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.guardia-titulo { margin: .2rem 0 .3rem; color: var(--guardia-ink); font-size: clamp(1.7rem, 6vw, 2.4rem); letter-spacing: -.03em; line-height: 1.1; }
+.guardia-turno { margin: 0; color: var(--guardia-muted); font-size: 1rem; font-weight: 600; }
+
+.guardia-ronda, .guardia-novedades, .guardia-resumen { border: 1px solid var(--guardia-borde); border-radius: 1rem; padding: 1.1rem; background: white; }
+.guardia-progreso { margin: 0; color: var(--guardia-muted); font-size: 1rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.guardia-destino { margin: .25rem 0 .6rem; color: var(--guardia-ink); font-size: clamp(1.9rem, 7vw, 2.8rem); letter-spacing: -.03em; line-height: 1.08; }
+.guardia-nota { margin: .4rem 0; color: var(--guardia-muted); font-size: 1rem; line-height: 1.5; }
+.guardia-anuncio { margin: .7rem 0 0; min-height: 1.5rem; color: var(--guardia-ink); font-size: 1.05rem; font-weight: 700; line-height: 1.45; }
+.guardia-aviso { margin: .7rem 0 0; border-left: .35rem solid var(--guardia-ambar); padding: .6rem .7rem; color: #3a2400; background: #fff4dc; font-size: 1rem; line-height: 1.45; }
+.guardia-error { margin: .7rem 0 0; border-left: .35rem solid var(--guardia-rojo); padding: .6rem .7rem; color: #5c0710; background: #ffeced; font-size: 1.05rem; font-weight: 700; line-height: 1.45; }
+
+.guardia-boton-escanear, .guardia-boton-primario, .guardia-boton-secundario, .guardia-boton-panico, .guardia-boton-opcion { min-height: var(--guardia-toque); border-radius: .8rem; font-weight: 800; cursor: pointer; touch-action: manipulation; }
+.guardia-boton-escanear { display: block; width: 100%; min-height: 4.75rem; margin-top: .9rem; border: 0; color: white; background: var(--guardia-azul); font-size: 1.35rem; letter-spacing: .01em; }
+.guardia-boton-primario { display: block; width: 100%; margin-top: 1rem; border: 0; color: white; background: var(--guardia-azul); font-size: 1.1rem; }
+.guardia-boton-secundario { display: block; border: 2px solid var(--guardia-ink); padding: 0 1rem; color: var(--guardia-ink); background: white; font-size: 1.05rem; }
+.guardia-boton-secundario.ancho { width: 100%; margin-top: .7rem; text-align: center; }
+/* El label de la cámara es un botón a los ojos del guardia; su input está oculto. */
+label.guardia-boton-secundario { display: flex; align-items: center; justify-content: center; }
+.guardia-boton-texto { min-height: var(--guardia-toque); border: 0; padding: 0 .5rem; color: var(--guardia-azul); background: transparent; font-size: 1rem; font-weight: 800; cursor: pointer; }
+.guardia-boton-escanear:disabled, .guardia-boton-primario:disabled { background: #6b7488; cursor: not-allowed; }
+.guardia-boton-escanear:active, .guardia-boton-primario:active, .guardia-boton-panico:active { transform: translateY(2px); filter: brightness(.9); }
+.guardia-boton-secundario:active, .guardia-boton-opcion:active { transform: translateY(2px); background: #e8ecf7; }
+/* Foco real, por clase y no por contenedor: en un teléfono no hay :hover, así
+   que estos dos estados —foco y :active— son los únicos que existen. */
+.guardia-boton-escanear:focus-visible, .guardia-boton-primario:focus-visible, .guardia-boton-secundario:focus-visible, .guardia-boton-panico:focus-visible, .guardia-boton-opcion:focus-visible, .guardia-boton-texto:focus-visible, .guardia-opcion:focus-within, .guardia-foto:focus-within .guardia-boton-secundario { outline: 4px solid #ffbf47; outline-offset: 3px; }
+
+.guardia-puntos { display: grid; gap: .5rem; margin: 1.2rem 0 0; padding: 0; list-style: none; }
+.guardia-punto { display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); align-items: start; gap: .8rem; border: 1px solid var(--guardia-borde); border-radius: .7rem; padding: .75rem; background: white; }
+.guardia-punto.siguiente { border: 3px solid var(--guardia-azul); background: #eef2ff; }
+.guardia-punto.escaneado, .guardia-punto.con_anomalia { background: #f6f8fb; }
+.guardia-punto-orden { display: grid; width: 2.6rem; height: 2.6rem; place-items: center; border-radius: 50%; color: white; background: var(--guardia-muted); font-size: 1.05rem; font-weight: 800; }
+.guardia-punto.siguiente .guardia-punto-orden { background: var(--guardia-azul); }
+.guardia-punto.escaneado .guardia-punto-orden { background: var(--guardia-verde); }
+.guardia-punto.con_anomalia .guardia-punto-orden { background: var(--guardia-ambar); }
+.guardia-punto-cuerpo { display: grid; gap: .3rem; min-width: 0; }
+.guardia-punto-cuerpo strong { color: var(--guardia-ink); font-size: 1.15rem; line-height: 1.25; }
+.guardia-punto-estados { display: flex; flex-wrap: wrap; gap: .35rem; }
+.guardia-punto-anomalia { color: #5c3a00; font-size: .95rem; line-height: 1.35; }
+.guardia-chip { border-radius: 99px; padding: .25rem .6rem; font-size: .9rem; font-weight: 800; }
+.guardia-chip.pendiente { color: #262d3d; background: #e6e9f0; }
+.guardia-chip.escaneado { color: #063c24; background: #ccf0dd; }
+.guardia-chip.con_anomalia { color: #3a2400; background: #ffe0a6; }
+.guardia-chip.sin-subir { color: #3a2400; background: #ffd479; }
+.guardia-chip.criticidad-info, .guardia-chip.criticidad-baja { color: #262d3d; background: #e6e9f0; }
+.guardia-chip.criticidad-media { color: #3a2400; background: #ffe0a6; }
+.guardia-chip.criticidad-alta { color: #5c0710; background: #ffd0d4; }
+.guardia-chip.criticidad-panico { color: white; background: var(--guardia-rojo); }
+
+.guardia-acciones { display: grid; gap: .2rem; margin-top: 1rem; }
+
+.guardia-novedades { margin-top: 1rem; }
+.guardia-novedades h2, .guardia-resumen h2 { margin: 0 0 .8rem; color: var(--guardia-ink); font-size: 1.6rem; letter-spacing: -.02em; }
+.guardia-formulario { display: grid; gap: .8rem; }
+.guardia-criticidad { display: grid; gap: .5rem; margin: 0; border: 0; padding: 0; }
+.guardia-criticidad legend { padding: 0 0 .4rem; color: var(--guardia-ink); font-size: 1.05rem; font-weight: 800; }
+.guardia-opcion { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .2rem .7rem; min-height: var(--guardia-toque); border: 2px solid var(--guardia-borde); border-radius: .7rem; padding: .55rem .7rem; background: white; }
+.guardia-opcion.elegida { border-color: var(--guardia-azul); background: #eef2ff; }
+.guardia-opcion input { grid-row: span 2; width: 1.6rem; height: 1.6rem; accent-color: var(--guardia-azul); }
+.guardia-opcion strong { color: var(--guardia-ink); font-size: 1.05rem; }
+.guardia-opcion small { color: var(--guardia-muted); font-size: .92rem; }
+.guardia-campo { color: var(--guardia-ink); font-size: 1.05rem; font-weight: 800; }
+.guardia-texto, .guardia-entrada { width: 100%; border: 2px solid var(--guardia-borde); border-radius: .7rem; padding: .7rem; color: var(--guardia-ink); background: white; font-size: 1.1rem; line-height: 1.4; }
+.guardia-entrada { min-height: var(--guardia-toque); }
+.guardia-texto:focus-visible, .guardia-entrada:focus-visible { border-color: var(--guardia-azul); outline: 4px solid #ffbf47; outline-offset: 2px; }
+.guardia-foto { display: grid; gap: .3rem; }
+/* Visible para lectores y enfocable con teclado, invisible en pantalla. */
+.guardia-invisible { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.guardia-panico { margin-top: 1.8rem; border-top: .3rem solid var(--guardia-rojo); padding-top: 1rem; }
+.guardia-panico h3 { margin: 0 0 .5rem; color: var(--guardia-rojo); font-size: 1.25rem; }
+.guardia-panico-pregunta { margin: 0 0 .7rem; color: var(--guardia-ink); font-size: 1.15rem; font-weight: 700; line-height: 1.4; }
+.guardia-boton-panico { display: block; width: 100%; min-height: 4.5rem; border: 0; color: white; background: var(--guardia-rojo); font-size: 1.4rem; letter-spacing: .06em; }
+
+.guardia-resumen { margin-top: 1rem; }
+.guardia-cumplimiento { display: flex; align-items: baseline; gap: .6rem; margin: .3rem 0; }
+.guardia-cumplimiento strong { color: var(--guardia-ink); font-size: 3.2rem; letter-spacing: -.04em; }
+.guardia-cumplimiento span { color: var(--guardia-muted); font-size: 1.05rem; font-weight: 700; }
+.guardia-resumen-conteo { margin: .2rem 0 1rem; color: var(--guardia-ink); font-size: 1.2rem; font-weight: 700; }
+.guardia-faltantes h3, .guardia-novedades-turno h3, .guardia-checklist h3 { margin: 1.1rem 0 .5rem; color: var(--guardia-ink); font-size: 1.2rem; }
+.guardia-faltantes ul, .guardia-novedades-turno ul { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.guardia-faltantes li { border-left: .35rem solid var(--guardia-ambar); padding: .5rem .7rem; background: #fff4dc; font-size: 1.05rem; font-weight: 700; }
+.guardia-novedades-turno li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; border: 1px solid var(--guardia-borde); border-radius: .7rem; padding: .6rem .7rem; }
+.guardia-novedades-turno time { color: var(--guardia-muted); font-size: .95rem; font-weight: 700; }
+.guardia-novedades-turno p { flex-basis: 100%; margin: 0; color: var(--guardia-ink); font-size: 1.05rem; line-height: 1.4; }
+
+.guardia-checklist { margin-top: 1.4rem; border-top: 1px solid var(--guardia-borde); padding-top: .6rem; }
+.guardia-checklist-item { display: grid; gap: .5rem; border-bottom: 1px solid #eff1f5; padding: .8rem 0; }
+.guardia-checklist-label { margin: 0; color: var(--guardia-ink); font-size: 1.1rem; font-weight: 700; line-height: 1.35; }
+.guardia-ok-falla { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.guardia-boton-opcion { border: 2px solid var(--guardia-borde); color: var(--guardia-ink); background: white; font-size: 1.1rem; }
+.guardia-boton-opcion.elegida { border-color: var(--guardia-verde); color: white; background: var(--guardia-verde); }
+.guardia-boton-opcion.falla.elegida { border-color: var(--guardia-rojo); background: var(--guardia-rojo); }
+
+@media (min-width: 901px) {
+  .guardia-ronda, .guardia-novedades, .guardia-resumen, .guardia-conexion { width: min(100%, 52rem); }
+}
