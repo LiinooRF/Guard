@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
+import { OperationalAlerts, type OperationalAlert } from '../../_components/operational-alerts';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import { StatsCharts } from '../../_components/stats-charts';
 import {
@@ -96,13 +97,14 @@ export default async function RoleDashboard({
     );
   }
 
-  const [overview, users, sites, sessions, authPolicy, securityEvents] = await Promise.all([
+  const [overview, users, sites, sessions, authPolicy, securityEvents, alerts] = await Promise.all([
     loadTenantOverview(),
     role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
     role === 'admin' ? loadAdminSites() : Promise.resolve([]),
     loadSessions(),
     role === 'admin' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
     role === 'admin' ? loadSecurityEvents() : Promise.resolve([]),
+    role === 'supervisor' ? loadOperationalAlerts() : Promise.resolve([]),
   ]);
   const isSupervisor = role === 'supervisor';
 
@@ -150,6 +152,7 @@ export default async function RoleDashboard({
           </div>
         )}
       </section>
+      {isSupervisor && <OperationalAlerts initialAlerts={alerts} apiUrl={publicApiUrl()} />}
       <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
@@ -259,6 +262,10 @@ function loadPlatformBilling() {
 
 function loadAdminUsers() {
   return authenticatedGet<TenantUser[]>('/admin/users', []);
+}
+
+function loadOperationalAlerts() {
+  return authenticatedGet<OperationalAlert[]>('/supervisor/alerts', []);
 }
 
 function loadAdminSites() {

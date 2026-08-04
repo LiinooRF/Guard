@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
+import { AlertsService } from '../alerts/alerts.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
 import type { AssignShiftDto, CreateShiftDto } from './dto/create-shift.dto';
@@ -47,6 +48,7 @@ export class SupervisorService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly rules: RulesService,
+    private readonly alerts: AlertsService,
   ) {}
 
   /**
@@ -318,6 +320,7 @@ export class SupervisorService {
         JSON.stringify(orden),
       ],
     );
+    await this.alerts.schedulePatrol(patrolId);
     return {
       id: patrolId,
       status: 'pendiente',

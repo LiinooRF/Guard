@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
 import { randomUUID } from 'node:crypto';
 
+import { AlertsService } from '../alerts/alerts.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EscalationService } from '../escalation/escalation.service';
 import { MailQueueService } from '../mail/mail-queue.service';
@@ -51,6 +52,7 @@ export class GuardService {
     private readonly mail: MailQueueService,
     private readonly rules: RulesService,
     private readonly escalation: EscalationService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async getHome(guardId: string) {
@@ -252,6 +254,11 @@ export class GuardService {
       ],
     );
     const replay = !inserted.length;
+    if (!replay && anomalies.length) {
+      await this.registrarAlertaOperativa(() =>
+        this.alerts.recordAnomaly(patrolId, inserted[0]!.id, anomalies),
+      );
+    }
 
     const allScans = await this.tenantContext.manager.query<Array<{
       checkpoint_id: string;
@@ -280,6 +287,9 @@ export class GuardService {
 
       if (compliance.belowThreshold) {
         await this.alertarBajoUmbral(patrolId, compliance, rules.complianceThreshold);
+      }
+      if (compliance.missedCheckpointIds.length) {
+        await this.registrarAlertaOperativa(() => this.alerts.recordIncomplete(patrolId));
       }
     }
 
@@ -483,6 +493,9 @@ export class GuardService {
     let notified = false;
     if (!replay) {
       notified = await this.notificarEvento(eventId!, patrol.site_id, guardId, input);
+      await this.registrarAlertaOperativa(() =>
+        this.alerts.recordSevereEvent(eventId!, patrol.id, input.criticality),
+      );
     }
 
     return {
@@ -493,6 +506,18 @@ export class GuardService {
       patrolId: patrol.id,
       notified,
     };
+  }
+
+  /** Un fallo del canal de alertas jamás revierte el hecho operacional registrado. */
+  private async registrarAlertaOperativa(operation: () => Promise<void>): Promise<void> {
+    try {
+      await operation();
+    } catch (error) {
+      this.logger.error(
+        'No se pudo registrar la alerta operacional',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /** Un fallo de correo jamas rompe el registro del evento. */

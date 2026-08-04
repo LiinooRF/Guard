@@ -3,6 +3,7 @@ import { DEFAULT_PATROL_RULES, type PatrolRules } from '@voxia/shared';
 import { SupervisorService } from './supervisor.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
+import type { AlertsService } from '../alerts/alerts.service';
 
 const SUPERVISOR = 'supervisor-id';
 
@@ -10,7 +11,14 @@ function servicio(query: jest.Mock, reglas: Partial<PatrolRules> = {}) {
   const rules = {
     effective: jest.fn().mockResolvedValue({ ...DEFAULT_PATROL_RULES, ...reglas }),
   } as unknown as RulesService;
-  return new SupervisorService({ manager: { query } } as unknown as TenantContextService, rules);
+  const alerts = {
+    schedulePatrol: jest.fn().mockResolvedValue(undefined),
+  } as unknown as AlertsService;
+  return new SupervisorService(
+    { manager: { query } } as unknown as TenantContextService,
+    rules,
+    alerts,
+  );
 }
 
 /** Math.random determinista: devuelve la secuencia dada, ciclando. */

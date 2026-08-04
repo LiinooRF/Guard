@@ -24,6 +24,7 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
   ],
   SUPERVISOR: [
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
+    { href: '#alertas', icon: '!', label: 'Alertas' },
     { href: '#rondas', icon: '◎', label: 'Rondas asignadas' },
     { href: '#informes-evolucion', icon: '∿', label: 'Evolución' },
     { href: '#informes', icon: '▤', label: 'Informes' },

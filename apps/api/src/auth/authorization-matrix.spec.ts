@@ -7,6 +7,7 @@ import {
 } from '@voxia/shared';
 
 import { AdminController } from '../admin/admin.controller';
+import { AlertsController } from '../alerts/alerts.controller';
 import { AuditController } from '../audit/audit.controller';
 import { BrandingController } from '../branding/branding.controller';
 import { ChecklistsController } from '../checklists/checklists.controller';
@@ -56,6 +57,8 @@ const TENANT_ROLES = ['ADMIN', 'SUPERVISOR', 'GUARDIA'] as const;
  * verdad ejecutable de rol × endpoint.
  */
 const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
+  secured(AlertsController, 'list', ['patrols:monitor'], ['SUPERVISOR'], true),
+  secured(AlertsController, 'attend', ['patrols:monitor'], ['SUPERVISOR'], true),
   publicEndpoint(AuthController, 'login'),
   publicEndpoint(AuthController, 'logout'),
   publicEndpoint(AuthController, 'refresh'),
@@ -249,6 +252,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
 ] as const;
 
 const CONTROLLERS = [
+  AlertsController,
   AuthController,
   AdminController,
   DashboardController,

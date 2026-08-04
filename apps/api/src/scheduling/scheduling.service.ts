@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
+import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
@@ -191,6 +192,7 @@ export class SchedulingService {
     private readonly supervisor: SupervisorService,
     private readonly rules: RulesService,
     private readonly audit: AuditService,
+    private readonly alerts: AlertsService,
   ) {}
 
   /**
@@ -328,7 +330,10 @@ export class SchedulingService {
         ],
       );
 
-      if (insertada.length) generated += 1;
+      if (insertada.length) {
+        generated += 1;
+        await this.alerts.schedulePatrol(insertada[0]!.id);
+      }
       else omitir(YA_GENERADA);
     }
 

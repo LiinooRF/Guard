@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AdminModule } from './admin/admin.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { AuditModule } from './audit/audit.module';
 import { BrandingModule } from './branding/branding.module';
 import { ChecklistsModule } from './checklists/checklists.module';
@@ -38,6 +39,7 @@ import { SyncModule } from './sync/sync.module';
     }),
     DatabaseModule,
     AdminModule,
+    AlertsModule,
     AuditModule,
     BrandingModule,
     ChecklistsModule,

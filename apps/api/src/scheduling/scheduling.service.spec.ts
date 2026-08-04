@@ -1,6 +1,7 @@
 import { patrolRulesSchema } from '@voxia/shared';
 
 import type { AuditService } from '../audit/audit.service';
+import type { AlertsService } from '../alerts/alerts.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
 import type { SupervisorService } from '../supervisor/supervisor.service';
@@ -30,12 +31,16 @@ function servicio(query: jest.Mock) {
     sortearOrden,
   } as unknown as SupervisorService;
   const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+  const alerts = {
+    schedulePatrol: jest.fn().mockResolvedValue(undefined),
+  } as unknown as AlertsService;
 
   const service = new SchedulingService(
     { manager: { query } } as unknown as TenantContextService,
     supervisor,
     sinReglas(),
     audit,
+    alerts,
   );
   return { service, supervisor, audit, sortearOrden };
 }

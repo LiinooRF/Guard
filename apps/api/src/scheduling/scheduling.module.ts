@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AlertsModule } from '../alerts/alerts.module';
 import { AuditModule } from '../audit/audit.module';
 import { DatabaseModule } from '../database/database.module';
 import { RulesModule } from '../rules/rules.module';
@@ -20,7 +21,7 @@ import { SchedulingService } from './scheduling.service';
  * generateForDate sin pasar por HTTP.
  */
 @Module({
-  imports: [DatabaseModule, SupervisorModule, RulesModule, AuditModule],
+  imports: [DatabaseModule, SupervisorModule, RulesModule, AuditModule, AlertsModule],
   controllers: [SchedulingController],
   providers: [SchedulingService],
   exports: [SchedulingService],
