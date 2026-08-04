@@ -65,6 +65,48 @@ export class SupervisorService {
     }
   }
 
+  /**
+   * Los recintos que el supervisor tiene asignados.
+   *
+   * Faltaba: el supervisor podia consultar CADA recinto por id pero no tenia
+   * como saber cuales son los suyos, y `/admin/sites` es de ADMIN. Cualquier
+   * pantalla que empiece por "elige un recinto" necesitaba esto.
+   *
+   * No lleva ensureAssignedSite porque es justamente la consulta que RESUELVE
+   * que recintos son suyos: el JOIN con supervisor_sites es el filtro.
+   */
+  async listAssignedSites(supervisorId: string) {
+    const filas = await this.tenantContext.manager.query<
+      Array<{
+        id: string;
+        name: string;
+        branch_name: string;
+        // NOT NULL en la migracion 1722524400000-CreateDemoDomain.
+        address: string;
+        timezone: string;
+        latitude: string | null;
+        longitude: string | null;
+      }>
+    >(
+      `SELECT s.id, s.name, s.branch_name, s.address, s.timezone, s.latitude, s.longitude
+       FROM supervisor_sites ss
+       JOIN sites s ON s.tenant_id = ss.tenant_id AND s.id = ss.site_id
+       WHERE ss.supervisor_id = $1 AND s.is_active
+       ORDER BY s.branch_name, s.name`,
+      [supervisorId],
+    );
+    return filas.map((f) => ({
+      id: f.id,
+      name: f.name,
+      branchName: f.branch_name,
+      address: f.address,
+      timezone: f.timezone,
+      // numeric llega como texto desde el driver; el mapa necesita numeros.
+      latitude: f.latitude === null ? null : Number(f.latitude),
+      longitude: f.longitude === null ? null : Number(f.longitude),
+    }));
+  }
+
   private async routeSite(
     routeId: string,
   ): Promise<{ siteId: string; version: number; orderMode: RouteOrderMode }> {
