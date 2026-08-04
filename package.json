@@ -20,6 +20,7 @@
     "dev:web": "npm run dev --workspace @voxia/web",
     "dev:mobile": "npm --prefix apps/mobile run start",
     "build": "npm run build --workspace @voxia/shared && npm run build --workspace @voxia/api && npm run build --workspace @voxia/web",
+    "bridge:check": "npm --prefix apps/mobile run bridge:check",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run test --workspaces --if-present"
