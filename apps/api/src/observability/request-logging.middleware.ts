@@ -11,10 +11,13 @@ interface AuthenticatedRequest extends Request {
 
 const SAFE_REQUEST_ID = /^[a-zA-Z0-9._:-]{1,128}$/;
 
-// Rutas que llevan una credencial en el propio path. El token de traspaso al
-// WebView (#37) es la unica hasta ahora: sin esto, el log de accesos guardaria
-// credenciales canjeables en claro.
-const SECRET_IN_PATH = /^(\/api)?\/auth\/handoff\/[^/]+\/?$/;
+// Rutas que llevan una credencial en el propio path:
+//   - el token de traspaso al WebView (#37);
+//   - el token de dispositivo del push (#113), que se da de baja con
+//     DELETE /push/devices/:token. Quien lo tenga puede mandarle
+//     notificaciones a ese telefono, asi que tampoco puede quedar en claro en
+//     el log de accesos.
+const SECRET_IN_PATH = /^(\/api)?\/(auth\/handoff|push\/devices)\/[^/]+\/?$/;
 
 export function loggedPath(path: string): string {
   return SECRET_IN_PATH.test(path) ? path.replace(/[^/]+\/?$/, ':token') : path;

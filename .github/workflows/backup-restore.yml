@@ -1,0 +1,161 @@
+# Prueba de restore de los respaldos (issue #24).
+#
+# "Un backup que nunca se restauro no es un backup". Esto lo convierte en algo
+# que corre solo: levanta un Postgres limpio, aplica TODAS las migraciones y el
+# seed, toma un dump con el mismo comando del servicio postgres-backup, lo
+# restaura en una base vacia distinta y verifica que el resultado SIRVE
+# —conteos, RLS, funciones y filas—, no solo que el comando no dio error.
+#
+# La logica vive en docker/postgres/backup/verificar-restore.sh, no aca: el
+# mismo procedimiento tiene que poder correrse a mano contra el VPS. Este
+# workflow solo prepara la base y llama al script.
+#
+# Lo que esta prueba SI prueba: que el dump que produce el servicio de backup se
+# puede restaurar y queda utilizable, y que el procedimiento de restore funciona.
+# Lo que NO prueba: el restore del VPS real (otro disco, otro volumen, otros
+# datos y otro hardware). Ver docs/respaldos.md, seccion "Que NO cubre".
+
+name: Prueba de restore
+
+# Semanal y a mano, NUNCA en cada push: tarda varios minutos y su resultado no
+# cambia commit a commit. En cada push solo gastaria minutos de Actions.
+#
+# OJO: GitHub deshabilita los workflows programados en repos sin actividad por
+# 60 dias, y no avisa. Si el repo se queda quieto, revisar en la pestaña Actions
+# que la ultima ejecucion sea reciente.
+on:
+  schedule:
+    # Lunes 06:17 UTC = 02:17 (verano) / 03:17 (invierno) en America/Santiago.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-restore
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: dump, restore y verificacion
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      # Postgres limpio y descartable: nace vacio con el job y muere con el.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voxia
+          POSTGRES_PASSWORD: cambiar_en_ci
+          POSTGRES_DB: voxia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_USER: voxia
+      POSTGRES_PASSWORD: cambiar_en_ci
+      POSTGRES_DB: voxia
+      DATABASE_APP_USER: voxia_app
+      DATABASE_APP_PASSWORD: cambiar_app_en_ci
+      # Las migraciones corren como dueño del esquema; la API nunca usa esta URL.
+      DATABASE_MIGRATION_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      DATABASE_ADMIN_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
+      # Datos efimeros: la base del runner se destruye al terminar el job.
+      DEMO_PASSWORD: DemoGuardia2026!
+      BASE_VERIFICACION: voxia_verificacion_restore
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # docker/postgres/init/01-app-role.sh no se puede montar en el servicio:
+      # los service containers arrancan ANTES del checkout, asi que el repo
+      # todavia no existe en el disco del runner. Se replica aca el rol que crea
+      # ese script —sin BYPASSRLS— porque el dump trae los GRANT pero no los
+      # roles: sin voxia_app en el cluster destino, el restore falla.
+      - name: Crear el rol de la aplicacion
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" \
+          psql -h localhost -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<SQL
+          CREATE ROLE $DATABASE_APP_USER LOGIN PASSWORD '$DATABASE_APP_PASSWORD'
+            NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          GRANT USAGE ON SCHEMA public TO $DATABASE_APP_USER;
+          REVOKE CREATE ON SCHEMA public FROM $DATABASE_APP_USER;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DATABASE_APP_USER;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT USAGE, SELECT ON SEQUENCES TO $DATABASE_APP_USER;
+          SQL
+
+      - name: Correr todas las migraciones
+        run: npm run db:migrate --workspace @voxia/api
+
+      # Sin datos, comparar origen contra destino seria comparar 0 con 0 y
+      # pasaria sin probar nada. El script falla si el origen viene vacio.
+      - name: Cargar el seed
+        run: npm run seed --workspace @voxia/api
+
+      # La prueba vale solo si dumpea igual que el servicio de backup. Si alguien
+      # cambia el comando en el compose y no aca, la prueba pasa a verificar otra
+      # cosa y nadie se entera.
+      - name: Verificar que el dump sigue siendo el del servicio de backup
+        run: |
+          set -eu
+          for archivo in docker-compose.dokploy.yml docker/postgres/backup/verificar-restore.sh; do
+            if ! grep -q 'pg_dump -Fc -f' "$archivo"; then
+              echo "::error file=$archivo::ya no usa 'pg_dump -Fc -f'; la prueba de restore dejo de reflejar al servicio postgres-backup"
+              exit 1
+            fi
+          done
+          echo "el dump de la prueba y el del servicio postgres-backup coinciden"
+
+      # Corre DENTRO de postgres:17-alpine —la misma imagen del servicio de
+      # backup— por dos razones: pg_dump se niega a dumpear un servidor mas nuevo
+      # que el cliente (el runner trae 16), y asi el dump lo produce exactamente
+      # el mismo binario que en el VPS. Monta la carpeta en /scripts igual que el
+      # compose, para probar tambien esa ruta. --network host alcanza el puerto
+      # publicado por el service container.
+      - name: Dump, restore y verificacion
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/salida"
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/salida:/salida" \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER="$POSTGRES_USER" \
+            -e PGPASSWORD="$POSTGRES_PASSWORD" \
+            -e PGDATABASE="$POSTGRES_DB" \
+            -e DATABASE_APP_USER="$DATABASE_APP_USER" \
+            -e RESUMEN_ARCHIVO=/salida/resumen.md \
+            postgres:17-alpine \
+            sh /scripts/verificar-restore.sh "$BASE_VERIFICACION"
+
+      # El tiempo de restore es criterio del issue: queda en el resumen del run,
+      # no enterrado en el log.
+      - name: Publicar el resumen
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/salida/resumen.md" ]; then
+            cat "$RUNNER_TEMP/salida/resumen.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Prueba de restore: sin resumen" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "El job murio antes de terminar el restore. Revisar el log del paso que fallo." >> "$GITHUB_STEP_SUMMARY"
+          fi

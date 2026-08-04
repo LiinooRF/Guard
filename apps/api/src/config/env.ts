@@ -50,6 +50,27 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  // Notificaciones push (#113). Mismo criterio que el correo: el codigo va
+  // contra la interfaz PushProvider y el proveedor NO esta decidido.
+  //
+  //   log  desarrollo y default: escribe el aviso en el log y no manda nada
+  //   fcm  Firebase Cloud Messaging. Declarado y documentado en
+  //        push/fcm.provider.ts, todavia SIN adaptador: seleccionarlo hoy hace
+  //        fallar el arranque a proposito, en vez de descubrirlo en el primer
+  //        panico que no suena.
+  //
+  // No se exige `fcm` en produccion, a diferencia de MAIL_DRIVER=smtp: el push
+  // es un canal ADICIONAL. El correo sigue siendo el aviso garantizado, y
+  // bloquear el despliegue por un proveedor no decidido seria cambiar una
+  // notificacion que no suena por un producto que no arranca.
+  PUSH_DRIVER: z.enum(['log', 'fcm']).default('log'),
+  FCM_PROJECT_ID: z.string().optional(),
+  FCM_CLIENT_EMAIL: z.string().optional(),
+  // SECRETO: va en el gestor de secretos de Dokploy, nunca en el repositorio.
+  // Se guarda con los saltos de linea escapados (`\n`); el adaptador los
+  // desescapa antes de firmar.
+  FCM_PRIVATE_KEY: z.string().optional(),
+
   WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
 });
 
@@ -83,6 +104,15 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   // En produccion no se envia correo real por un canal sin cifrar.
   if (env.NODE_ENV === 'production' && env.MAIL_DRIVER === 'smtp' && !env.SMTP_SECURE) {
     throw new Error('en produccion MAIL_DRIVER=smtp requiere SMTP_SECURE=true');
+  }
+
+  // Mismo criterio que el correo: las credenciales del push se validan al
+  // arrancar y no cuando falla el primer aviso.
+  if (
+    env.PUSH_DRIVER === 'fcm' &&
+    (!env.FCM_PROJECT_ID || !env.FCM_CLIENT_EMAIL || !env.FCM_PRIVATE_KEY)
+  ) {
+    throw new Error('PUSH_DRIVER=fcm requiere FCM_PROJECT_ID, FCM_CLIENT_EMAIL y FCM_PRIVATE_KEY');
   }
 
   if (
