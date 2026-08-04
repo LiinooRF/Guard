@@ -148,6 +148,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      MAP_TILE_URL: ${MAP_TILE_URL:?Configura un proveedor de mapas, no los tiles publicos de OSM}
+      MAP_ATTRIBUTION: ${MAP_ATTRIBUTION:-}
     networks:
       - proxy
     depends_on:

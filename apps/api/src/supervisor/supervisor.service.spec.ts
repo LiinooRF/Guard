@@ -55,6 +55,38 @@ afterEach(() => {
 });
 
 describe('SupervisorService', () => {
+  it('tablero vivo limita por supervisor y calcula progreso, ultimo punto y GPS', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{
+      id: 'patrol-id', site_id: 'site-id', site_name: 'Planta', route_name: 'Perímetro',
+      guard_id: 'guard-id', guard_name: 'Gina Guardia', status: 'en_curso',
+      scheduled_start_at: new Date('2026-08-04T01:00:00Z'),
+      scheduled_end_at: new Date('2026-08-04T02:00:00Z'),
+      started_at: new Date('2026-08-04T01:01:00Z'), expected_count: 4, scanned_count: 2,
+      last_checkpoint_name: 'Portón', last_scan_at: new Date('2026-08-04T01:20:00Z'),
+      latitude: '-33.4', longitude: '-70.6', position_at: new Date('2026-08-04T01:21:00Z'),
+      accuracy_m: '8.5',
+    }]);
+    const board = await servicio(query, { gpsSharingRequired: true }).liveBoard(SUPERVISOR);
+    expect(board.pollAfterMs).toBe(5_000);
+    expect(board.patrols[0]).toMatchObject({
+      progressPct: 50, lastCheckpointName: 'Portón', gpsEnabled: true,
+      position: { latitude: -33.4, longitude: -70.6, accuracyM: 8.5 },
+    });
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('scope.supervisor_id = $1'), [SUPERVISOR]);
+  });
+
+  it('no expone la posicion si GPS esta desactivado para el recinto', async () => {
+    const query = jest.fn().mockResolvedValueOnce([{
+      id: 'patrol-id', site_id: 'site-id', site_name: 'Planta', route_name: 'Ruta',
+      guard_id: 'guard-id', guard_name: 'Gina', status: 'en_curso',
+      scheduled_start_at: new Date(), scheduled_end_at: new Date(), started_at: new Date(),
+      expected_count: 1, scanned_count: 0, last_checkpoint_name: null, last_scan_at: null,
+      latitude: '-33.4', longitude: '-70.6', position_at: new Date(), accuracy_m: null,
+    }]);
+    const board = await servicio(query, { gpsSharingRequired: false }).liveBoard(SUPERVISOR);
+    expect(board.patrols[0]).toMatchObject({ gpsEnabled: false, position: null });
+  });
+
   it('un recinto NO asignado responde 403, aunque el permiso alcance', async () => {
     const query = jest.fn().mockResolvedValueOnce([]); // supervisor_sites vacio
     await expect(servicio(query).listRoutes('site-id', SUPERVISOR)).rejects.toThrow(

@@ -112,6 +112,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(GuardController, 'startVoluntaryPatrol', ['patrols:execute'], ['GUARDIA'], true),
 
   secured(SupervisorController, 'listRoutes', ['routes:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'liveBoard', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'createRoute', ['routes:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'updateRoute', ['routes:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'setRouteActive', ['routes:manage'], ['SUPERVISOR'], true),

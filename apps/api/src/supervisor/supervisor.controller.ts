@@ -33,6 +33,12 @@ type Autenticado = Request & { user: AuthenticatedUser };
 export class SupervisorController {
   constructor(private readonly supervisor: SupervisorService) {}
 
+  @Get('live')
+  @Permissions('patrols:monitor')
+  liveBoard(@Req() request: Autenticado) {
+    return this.supervisor.liveBoard(request.user.sub);
+  }
+
   @Get('sites/:siteId/routes')
   @Permissions('routes:manage')
   listRoutes(@Param() params: SiteParam, @Req() request: Autenticado) {

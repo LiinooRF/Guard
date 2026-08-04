@@ -216,6 +216,8 @@ services:
       # sean correctas.
       API_INTERNAL_URL: http://api:3001/api
       WEB_ORIGIN: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      MAP_TILE_URL: ${MAP_TILE_URL:?Configura un proveedor de mapas, no los tiles publicos de OSM}
+      MAP_ATTRIBUTION: ${MAP_ATTRIBUTION:-}
     depends_on:
       api:
         condition: service_healthy
