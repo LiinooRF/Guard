@@ -3,6 +3,7 @@ import { patrolRulesSchema } from '@voxia/shared';
 import { QueryFailedError } from 'typeorm';
 
 import { RulesService } from './rules.service';
+import type { AuditService } from '../audit/audit.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 
 const DEFAULTS = patrolRulesSchema.parse({});
@@ -10,8 +11,10 @@ const DEFAULTS = patrolRulesSchema.parse({});
 /** Filas tal como las devuelve la consulta de cascada: una por nivel con fila. */
 type Capa = { scope: string; overrides: unknown };
 
-const servicio = (query: jest.Mock) =>
-  new RulesService({ manager: { query } } as unknown as TenantContextService);
+const ACTOR = '10000000-0000-4000-8000-000000000001';
+const audit = () => ({ record: jest.fn().mockResolvedValue(undefined) }) as unknown as AuditService;
+const servicio = (query: jest.Mock, auditor = audit()) =>
+  new RulesService({ manager: { query } } as unknown as TenantContextService, auditor);
 
 const capas = (...filas: Capa[]) => jest.fn().mockResolvedValueOnce(filas);
 
@@ -166,9 +169,12 @@ describe('RulesService.updateOverrides', () => {
     const query = jest.fn();
     query
       .mockResolvedValueOnce([]) // upsert
+      .mockResolvedValueOnce([{ label: 'Ana Admin' }]) // actor de auditoria
       .mockResolvedValueOnce([{ scope: 'tenant', overrides: { complianceThreshold: 85 } }]);
 
-    await expect(servicio(query).updateOverrides({ complianceThreshold: 85 })).resolves.toMatchObject(
+    await expect(
+      servicio(query).updateOverrides({ complianceThreshold: 85 }, ACTOR),
+    ).resolves.toMatchObject(
       {
         scope: 'tenant',
         effective: { ...DEFAULTS, complianceThreshold: 85 },
@@ -183,12 +189,41 @@ describe('RulesService.updateOverrides', () => {
 
   it('un body vacio limpia los overrides y el tenant vuelve a lo heredado', async () => {
     const query = jest.fn();
-    query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ scope: 'tenant', overrides: {} }]);
+    query
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ label: 'Ana Admin' }])
+      .mockResolvedValueOnce([{ scope: 'tenant', overrides: {} }]);
 
-    await expect(servicio(query).updateOverrides({})).resolves.toMatchObject({
+    await expect(servicio(query).updateOverrides({}, ACTOR)).resolves.toMatchObject({
       effective: DEFAULTS,
       overrides: {},
     });
+  });
+
+  it('audita actor y alcance sin copiar valores configurados al historial', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ label: 'Ana Admin' }])
+      .mockResolvedValueOnce([{ scope: 'tenant', overrides: { reportRecipients: [] } }]);
+    const auditor = audit();
+
+    await servicio(query, auditor).updateOverrides(
+      { reportRecipients: ['privado@cliente.cl'], gpsSharingRequired: true },
+      ACTOR,
+    );
+
+    expect(auditor.record).toHaveBeenCalledWith({
+      actorId: ACTOR,
+      actorLabel: 'Ana Admin',
+      action: 'reglas.modificadas',
+      entityType: 'tenant_rules',
+      entityId: undefined,
+      summary: 'tenant: 2 regla(s) configurada(s): gpsSharingRequired, reportRecipients',
+    });
+    expect(JSON.stringify((auditor.record as jest.Mock).mock.calls)).not.toContain(
+      'privado@cliente.cl',
+    );
   });
 });
 
@@ -197,6 +232,7 @@ describe('RulesService.updateSiteOverrides', () => {
     const query = jest.fn();
     query
       .mockResolvedValueOnce([]) // upsert
+      .mockResolvedValueOnce([{ label: 'Ana Admin' }])
       .mockResolvedValueOnce([
         { scope: 'tenant', overrides: { complianceThreshold: 85 } },
         { scope: 'site', overrides: { complianceThreshold: 95 } },
@@ -205,6 +241,7 @@ describe('RulesService.updateSiteOverrides', () => {
     const vista = await servicio(query).updateSiteOverrides(
       'a0000000-0000-4000-8000-000000000009',
       { complianceThreshold: 95 },
+      ACTOR,
     );
 
     expect(query).toHaveBeenCalledWith(
@@ -226,7 +263,11 @@ describe('RulesService.updateSiteOverrides', () => {
     const query = jest.fn().mockRejectedValueOnce(fk);
 
     await expect(
-      servicio(query).updateSiteOverrides('a0000000-0000-4000-8000-000000000404', {}),
+      servicio(query).updateSiteOverrides(
+        'a0000000-0000-4000-8000-000000000404',
+        {},
+        ACTOR,
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
@@ -236,11 +277,13 @@ describe('RulesService.updateCheckpointOverrides', () => {
     const query = jest.fn();
     query
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ label: 'Ana Admin' }])
       .mockResolvedValueOnce([{ scope: 'checkpoint', overrides: { gpsValidationRadiusM: 150 } }]);
 
     const vista = await servicio(query).updateCheckpointOverrides(
       'c0000000-0000-4000-8000-000000000009',
       { gpsValidationRadiusM: 150 },
+      ACTOR,
     );
 
     expect(query).toHaveBeenCalledWith(
@@ -257,7 +300,11 @@ describe('RulesService.updateCheckpointOverrides', () => {
     const query = jest.fn().mockRejectedValueOnce(fk);
 
     await expect(
-      servicio(query).updateCheckpointOverrides('c0000000-0000-4000-8000-000000000404', {}),
+      servicio(query).updateCheckpointOverrides(
+        'c0000000-0000-4000-8000-000000000404',
+        {},
+        ACTOR,
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
