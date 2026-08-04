@@ -77,6 +77,9 @@ const config: ExpoConfig = {
   assetBundlePatterns: ['assets/**/*'],
   plugins: [
     'expo-dev-client',
+    // Modulo nativo: no funciona en Expo Go. Cualquier cambio exige regenerar
+    // el proyecto y distribuir un development build nuevo.
+    'react-native-nfc-manager',
 
     [
       'expo-splash-screen',

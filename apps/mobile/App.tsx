@@ -11,8 +11,10 @@ import {
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
 
-import { crearManejadoresBase, normalizarConexion } from './src/bridge/default-handlers';
+import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
+import { crearManejadoresNfc } from './src/nfc/handlers';
+import { puertoNfcAndroid } from './src/nfc/native-port';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -52,7 +54,7 @@ export default function App() {
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
-  const manejadores = useMemo(crearManejadoresBase, []);
+  const manejadores = useMemo(() => crearManejadoresNfc(puertoNfcAndroid), []);
   const puente = useMemo(() => crearPuenteNativo({
     portalOrigen: portal.origin,
     appVersion: mobilePackage.version,
