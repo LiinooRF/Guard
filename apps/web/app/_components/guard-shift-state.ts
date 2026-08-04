@@ -48,6 +48,9 @@ export interface PuntoRuta {
   position: number;
   /** Al escanearlo, el servidor cierra la ronda. Llega en `GET /guard/home`. */
   isClosingPoint?: boolean;
+  /** Coordenadas para el visor de ruta (#76). `null`/ausente = punto sin ubicar. */
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export type EstadoPunto = 'pendiente' | 'escaneado' | 'con_anomalia';
