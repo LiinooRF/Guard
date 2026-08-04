@@ -393,6 +393,55 @@ export class SupervisorService {
     );
     if (!guardias.length) throw new NotFoundException('El guardia no existe en esta empresa');
 
+    // Serializa las asignaciones del mismo guardia. Sin este lock, dos requests
+    // simultaneos podrian hacer ambos el SELECT sin ver al otro y crear el
+    // solapamiento justo entre la validacion y el INSERT.
+    await this.tenantContext.manager.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [input.guardId],
+    );
+
+    const conflictos = await this.tenantContext.manager.query<Array<{
+      assignment_id: string;
+      shift_name: string;
+      service_date: string;
+    }>>(
+      `WITH solicitada AS (
+         SELECT
+           (($2::date + objetivo.starts_at) AT TIME ZONE recinto.timezone) AS inicio,
+           (($2::date + objetivo.ends_at
+             + CASE WHEN objetivo.starts_at > objetivo.ends_at
+                    THEN interval '1 day' ELSE interval '0 days' END
+           ) AT TIME ZONE recinto.timezone) AS fin
+         FROM shifts objetivo
+         JOIN sites recinto ON recinto.id = objetivo.site_id
+         WHERE objetivo.id = $1
+       )
+       SELECT a.id AS assignment_id, existente.name AS shift_name,
+              a.service_date::text AS service_date
+       FROM shift_assignments a
+       JOIN shifts existente ON existente.id = a.shift_id
+       JOIN sites recinto ON recinto.id = existente.site_id
+       CROSS JOIN solicitada
+       WHERE a.guard_id = $3
+         AND tstzrange(
+           (a.service_date + existente.starts_at) AT TIME ZONE recinto.timezone,
+           (a.service_date + existente.ends_at
+             + CASE WHEN existente.starts_at > existente.ends_at
+                    THEN interval '1 day' ELSE interval '0 days' END
+           ) AT TIME ZONE recinto.timezone,
+           '[)'
+         ) && tstzrange(solicitada.inicio, solicitada.fin, '[)')
+       LIMIT 1`,
+      [shiftId, input.serviceDate, input.guardId],
+    );
+    if (conflictos.length) {
+      const conflicto = conflictos[0]!;
+      throw new ConflictException(
+        `El guardia ya tiene el turno ${conflicto.shift_name} el ${conflicto.service_date}; las ventanas se solapan`,
+      );
+    }
+
     const asignado = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `INSERT INTO shift_assignments (tenant_id, shift_id, guard_id, service_date)
        VALUES (app_tenant_id(), $1, $2, $3)

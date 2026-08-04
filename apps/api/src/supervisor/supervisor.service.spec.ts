@@ -173,6 +173,48 @@ describe('SupervisorService', () => {
       }),
     ).rejects.toThrow('La ventana termina antes de empezar');
   });
+
+  it('avisa un solapamiento antes de guardar la asignacion', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id' }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([
+        { assignment_id: 'assignment-id', shift_name: 'Noche', service_date: '2026-08-03' },
+      ]);
+
+    await expect(
+      servicio(query).assignShift('shift-id', SUPERVISOR, {
+        guardId: 'guard-id',
+        serviceDate: '2026-08-03',
+      }),
+    ).rejects.toThrow('las ventanas se solapan');
+    expect(query.mock.calls.some(([sql]) => sql.includes('INSERT INTO shift_assignments'))).toBe(
+      false,
+    );
+  });
+
+  it('serializa por guardia y fecha y permite ventanas contiguas', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id' }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([]) // advisory lock
+      .mockResolvedValueOnce([]) // no hay solapamiento
+      .mockResolvedValueOnce([{ id: 'assignment-id' }]);
+
+    await expect(
+      servicio(query).assignShift('shift-id', SUPERVISOR, {
+        guardId: 'guard-id',
+        serviceDate: '2026-08-03',
+      }),
+    ).resolves.toMatchObject({ id: 'assignment-id' });
+    expect(query.mock.calls[3]?.[0]).toContain('pg_advisory_xact_lock');
+    expect(query.mock.calls[4]?.[0]).toContain("tstzrange(solicitada.inicio, solicitada.fin, '[)')");
+  });
 });
 
 describe('SupervisorService.createPatrol — orden aleatorio (#65)', () => {
