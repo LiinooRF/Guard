@@ -86,5 +86,9 @@ export function crearManejadoresBase(): ManejadoresNativos {
     pedirPermiso: (permisoSolicitado) => permiso(permisoSolicitado, true),
     consultarPermiso: (permisoSolicitado) => permiso(permisoSolicitado, false),
     estadoConexion: async () => normalizarConexion(await Network.getNetworkStateAsync()),
+    guardarRutaOffline: async () => {
+      throw new Error('almacenamiento-offline-no-configurado');
+    },
+    borrarRutaOffline: async () => undefined,
   };
 }

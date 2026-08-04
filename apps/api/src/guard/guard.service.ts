@@ -40,6 +40,7 @@ interface PatrolRow {
     name: string;
     position: number;
     isClosingPoint: boolean;
+    tagUids: string[];
   }>;
 }
 
@@ -73,7 +74,14 @@ export class GuardService {
                 'id', c.id,
                 'name', c.name,
                 'position', rc.position,
-                'isClosingPoint', rc.is_closing_point
+                'isClosingPoint', rc.is_closing_point,
+                'tagUids', COALESCE((
+                  SELECT jsonb_agg(t.uid ORDER BY t.installed_at DESC)
+                  FROM tags t
+                  WHERE t.tenant_id = p.tenant_id
+                    AND t.checkpoint_id = c.id
+                    AND t.is_active
+                ), '[]'::jsonb)
               )
               ORDER BY rc.position
             ) FILTER (WHERE c.id IS NOT NULL),

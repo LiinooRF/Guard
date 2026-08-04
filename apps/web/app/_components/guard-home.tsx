@@ -1,7 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+import { useGuardBridge } from './use-guard-bridge';
 
 export interface GuardHomeData {
   hasAssignment: boolean;
@@ -12,12 +14,18 @@ export interface GuardHomeData {
   };
   patrol?: {
     id: string;
-    status: string;
+    status: 'pendiente' | 'en_curso';
     siteName: string;
     routeName: string;
     estimatedDurationMin: number;
     completedCheckpointCount: number;
-    checkpoints: Array<{ id: string; name: string; position: number }>;
+    checkpoints: Array<{
+      id: string;
+      name: string;
+      position: number;
+      isClosingPoint?: boolean;
+      tagUids: string[];
+    }>;
   };
   synchronization: { pendingItems: number };
 }
@@ -31,8 +39,24 @@ const time = new Intl.DateTimeFormat('es-CL', {
 
 export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: string }) {
   const router = useRouter();
+  const puente = useGuardBridge();
+  const guardarRutaOffline = puente.guardarRutaOffline;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    if (!data.hasAssignment || !data.patrol || !data.shift) return;
+    void guardarRutaOffline({
+      patrolId: data.patrol.id,
+      status: data.patrol.status,
+      siteName: data.patrol.siteName,
+      routeName: data.patrol.routeName,
+      scheduledStartAt: data.shift.scheduledStartAt,
+      scheduledEndAt: data.shift.scheduledEndAt,
+      estimatedDurationMin: data.patrol.estimatedDurationMin,
+      checkpoints: data.patrol.checkpoints,
+    }).catch(() => undefined);
+  }, [data, guardarRutaOffline]);
 
   if (!data.hasAssignment || !data.patrol || !data.shift) {
     return (

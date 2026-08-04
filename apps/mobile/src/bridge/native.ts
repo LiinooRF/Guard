@@ -27,6 +27,7 @@ import {
   type Permiso,
   type ResultadoEscaneoPayload,
   type ResultadoPermisoPayload,
+  type RutaOfflinePayload,
 } from './protocol';
 
 /**
@@ -55,6 +56,8 @@ export interface ManejadoresNativos {
   readonly pedirPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly consultarPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
+  readonly guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<string>;
+  readonly borrarRutaOffline: () => Promise<void>;
 }
 
 export interface OpcionesPuente {
@@ -338,6 +341,28 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
       }
       case 'permission.query':
         void atenderPermiso(mensaje.id, mensaje.payload.permiso, false);
+        return;
+      case 'offline.route.save':
+        void manejadores.guardarRutaOffline(mensaje.payload)
+          .then((savedAt) => enviar(armarSobre(
+            'offline.route.saved',
+            { patrolId: mensaje.payload.patrolId, savedAt },
+            { replyTo: mensaje.id, prefijo: 'off' },
+          )))
+          .catch(() => {
+            registrar('puente.ruta-offline.error');
+            responderErrorPuente(mensaje.id);
+          });
+        return;
+      case 'offline.route.clear':
+        void manejadores.borrarRutaOffline()
+          .then(() => enviar(armarSobre(
+            'offline.route.cleared', {}, { replyTo: mensaje.id, prefijo: 'off' },
+          )))
+          .catch(() => {
+            registrar('puente.ruta-offline-borrado.error');
+            responderErrorPuente(mensaje.id);
+          });
         return;
       case 'connectivity.query':
         void manejadores.estadoConexion()

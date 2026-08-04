@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,6 +16,7 @@ import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
 import { crearManejadoresNfc } from './src/nfc/handlers';
 import { puertoNfcAndroid } from './src/nfc/native-port';
+import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -51,6 +53,7 @@ export default function App() {
   const webView = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [rutaOffline, setRutaOffline] = useState<RutaOfflineGuardada>();
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -86,8 +89,15 @@ export default function App() {
   const retry = () => {
     setBloqueo(null);
     setFailed(false);
+    setRutaOffline(undefined);
     setLoading(true);
     webView.current?.reload();
+  };
+
+  const mostrarFallo = () => {
+    setLoading(false);
+    setFailed(true);
+    void leerRutaOffline().then(setRutaOffline).catch(() => undefined);
   };
 
   return (
@@ -106,14 +116,10 @@ export default function App() {
           setFailed(false);
         }}
         onLoadEnd={() => setLoading(false)}
-        onError={() => {
-          setLoading(false);
-          setFailed(true);
-        }}
+        onError={mostrarFallo}
         onHttpError={({ nativeEvent }) => {
           if (nativeEvent.statusCode >= 400) {
-            setLoading(false);
-            setFailed(true);
+            mostrarFallo();
           }
         }}
         javaScriptEnabled
@@ -135,7 +141,28 @@ export default function App() {
         </View>
       ) : null}
 
-      {failed ? (
+      {failed && rutaOffline ? (
+        <ScrollView accessibilityRole="summary" contentContainerStyle={styles.offlineRoute}>
+          <Text style={styles.offlineBadge}>Modo sin conexión</Text>
+          <Text style={styles.title}>{rutaOffline.routeName}</Text>
+          <Text style={styles.description}>{rutaOffline.siteName}</Text>
+          <Text style={styles.offlineHint}>
+            Ruta guardada en este teléfono. Puedes consultar todos los puntos aunque no haya señal.
+          </Text>
+          {rutaOffline.checkpoints
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((punto) => (
+              <View key={punto.id} style={styles.offlineCheckpoint}>
+                <Text style={styles.offlinePosition}>{punto.position}</Text>
+                <Text style={styles.offlineName}>{punto.name}</Text>
+              </View>
+            ))}
+          <Pressable accessibilityRole="button" onPress={retry} style={styles.button}>
+            <Text style={styles.buttonText}>Intentar conectar</Text>
+          </Pressable>
+        </ScrollView>
+      ) : failed ? (
         <View accessibilityRole="alert" style={styles.overlay}>
           <Text style={styles.title}>Sin conexión</Text>
           <Text style={styles.description}>
@@ -217,6 +244,53 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#ffffff',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  offlineRoute: {
+    minHeight: '100%',
+    gap: 14,
+    padding: 28,
+    paddingTop: 56,
+    backgroundColor: '#f8fafc',
+  },
+  offlineBadge: {
+    alignSelf: 'center',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    color: '#713f12',
+    backgroundColor: '#fef3c7',
+    fontWeight: '700',
+  },
+  offlineHint: {
+    marginBottom: 4,
+    color: '#475569',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  offlineCheckpoint: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#ffffff',
+  },
+  offlinePosition: {
+    width: 32,
+    color: '#ffffff',
+    borderRadius: 16,
+    paddingVertical: 6,
+    backgroundColor: '#1f3b73',
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  offlineName: {
+    flex: 1,
+    color: '#0f172a',
+    fontSize: 17,
     fontWeight: '700',
   },
 });

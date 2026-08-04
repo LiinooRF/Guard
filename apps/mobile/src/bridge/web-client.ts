@@ -24,6 +24,7 @@ import {
   type Permiso,
   type ResultadoEscaneoPayload,
   type ResultadoPermisoPayload,
+  type RutaOfflinePayload,
 } from './protocol';
 
 /**
@@ -103,6 +104,8 @@ export interface ClientePuente {
   ) => Promise<ResultadoPermisoPayload>;
   readonly consultarPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
+  readonly guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<string>;
+  readonly borrarRutaOffline: () => Promise<void>;
   /** Cambios empujados por el shell. Devuelve la funcion para desuscribirse. */
   readonly alCambiarConexion: (fn: (estado: EstadoConexionPayload) => void) => () => void;
   readonly desconectar: () => void;
@@ -260,6 +263,21 @@ export function crearClientePuente(): ClientePuente {
         throw new Error('respuesta-inesperada-a-conectividad');
       }
       return respuesta.payload;
+    },
+
+    guardarRutaOffline: async (ruta) => {
+      const respuesta = await pedir('offline.route.save', ruta, MS_ESPERA_DEFECTO);
+      if (respuesta.type !== 'offline.route.saved') {
+        throw new Error('respuesta-inesperada-al-guardar-ruta');
+      }
+      return respuesta.payload.savedAt;
+    },
+
+    borrarRutaOffline: async () => {
+      const respuesta = await pedir('offline.route.clear', {}, MS_ESPERA_DEFECTO);
+      if (respuesta.type !== 'offline.route.cleared') {
+        throw new Error('respuesta-inesperada-al-borrar-ruta');
+      }
     },
 
     alCambiarConexion: (fn) => {

@@ -48,7 +48,7 @@ export const PUENTE = 'voxia.bridge' as const;
 
 /** Version que habla ESTE build del shell. */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 0;
+export const PROTOCOLO_MINOR = 1;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -128,12 +128,31 @@ export interface ConsultarPermisoPayload {
   readonly permiso: Permiso;
 }
 
+export interface RutaOfflinePayload {
+  readonly patrolId: string;
+  readonly status: 'pendiente' | 'en_curso';
+  readonly siteName: string;
+  readonly routeName: string;
+  readonly scheduledStartAt: string;
+  readonly scheduledEndAt: string;
+  readonly estimatedDurationMin: number;
+  readonly checkpoints: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly position: number;
+    readonly isClosingPoint?: boolean;
+    readonly tagUids: readonly string[];
+  }[];
+}
+
 export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
   | Sobre<'nfc.scan.cancel', Record<string, never>>
   | Sobre<'permission.request', PedirPermisoPayload>
   | Sobre<'permission.query', ConsultarPermisoPayload>
+  | Sobre<'offline.route.save', RutaOfflinePayload>
+  | Sobre<'offline.route.clear', Record<string, never>>
   | Sobre<'connectivity.query', Record<string, never>>;
 
 export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
@@ -142,6 +161,8 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'nfc.scan.cancel',
   'permission.request',
   'permission.query',
+  'offline.route.save',
+  'offline.route.clear',
   'connectivity.query',
 ];
 
@@ -233,6 +254,11 @@ export interface EstadoConexionPayload {
   readonly tipo: TipoConexion;
 }
 
+export interface RutaOfflineGuardadaPayload {
+  readonly patrolId: string;
+  readonly savedAt: string;
+}
+
 export type CodigoErrorPuente =
   | 'mensaje-invalido'
   | 'mensaje-demasiado-grande'
@@ -252,6 +278,8 @@ export type MensajeShell =
   | Sobre<'nfc.scan.result', ResultadoEscaneoPayload>
   | Sobre<'nfc.scan.error', ErrorEscaneoPayload>
   | Sobre<'permission.result', ResultadoPermisoPayload>
+  | Sobre<'offline.route.saved', RutaOfflineGuardadaPayload>
+  | Sobre<'offline.route.cleared', Record<string, never>>
   | Sobre<'connectivity.state', EstadoConexionPayload>
   | Sobre<'error', ErrorPuentePayload>;
 
@@ -261,6 +289,8 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'nfc.scan.result',
   'nfc.scan.error',
   'permission.result',
+  'offline.route.saved',
+  'offline.route.cleared',
   'connectivity.state',
   'error',
 ];
@@ -405,6 +435,7 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
         (payload['titulo'] === undefined ||
           (typeof payload['titulo'] === 'string' && payload['titulo'].length <= 120));
     case 'nfc.scan.cancel':
+    case 'offline.route.clear':
     case 'connectivity.query':
       return Object.keys(payload).length === 0;
     case 'permission.request':
@@ -414,6 +445,27 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
     case 'permission.query':
       return clavesPermitidas(payload, ['permiso']) &&
         PERMISOS.includes(payload['permiso'] as Permiso);
+    case 'offline.route.save': {
+      const checkpoints = payload['checkpoints'];
+      return clavesPermitidas(payload, [
+        'patrolId', 'status', 'siteName', 'routeName', 'scheduledStartAt', 'scheduledEndAt',
+        'estimatedDurationMin', 'checkpoints',
+      ]) && esIdentificador(payload['patrolId']) &&
+        (payload['status'] === 'pendiente' || payload['status'] === 'en_curso') &&
+        esTexto(payload['siteName'], 160) && esTexto(payload['routeName'], 160) &&
+        esFecha(payload['scheduledStartAt']) && esFecha(payload['scheduledEndAt']) &&
+        Number.isInteger(payload['estimatedDurationMin']) &&
+        Number(payload['estimatedDurationMin']) >= 1 && Number(payload['estimatedDurationMin']) <= 1_440 &&
+        Array.isArray(checkpoints) && checkpoints.length > 0 && checkpoints.length <= 500 &&
+        checkpoints.every((punto) => esRegistro(punto) &&
+          clavesPermitidas(punto, ['id', 'name', 'position', 'isClosingPoint', 'tagUids']) &&
+          esIdentificador(punto['id']) && esTexto(punto['name'], 160) &&
+          Number.isInteger(punto['position']) && Number(punto['position']) >= 1 &&
+          (punto['isClosingPoint'] === undefined || typeof punto['isClosingPoint'] === 'boolean') &&
+          Array.isArray(punto['tagUids']) && punto['tagUids'].length <= 10 &&
+          punto['tagUids'].every((uid) =>
+            typeof uid === 'string' && uid.length >= 4 && uid.length <= 64 && /^[\x20-\x7E]+$/.test(uid)));
+    }
     default:
       return false;
   }
@@ -449,6 +501,10 @@ function payloadShellValido(type: string, payload: unknown): boolean {
       return PERMISOS.includes(payload['permiso'] as Permiso) &&
         ESTADOS_PERMISO.includes(payload['estado'] as EstadoPermiso) &&
         typeof payload['puedeVolverAPedir'] === 'boolean';
+    case 'offline.route.saved':
+      return esIdentificador(payload['patrolId']) && esFecha(payload['savedAt']);
+    case 'offline.route.cleared':
+      return Object.keys(payload).length === 0;
     case 'connectivity.state':
       return typeof payload['enLinea'] === 'boolean' &&
         TIPOS_CONEXION.includes(payload['tipo'] as TipoConexion);
@@ -458,6 +514,18 @@ function payloadShellValido(type: string, payload: unknown): boolean {
     default:
       return false;
   }
+}
+
+function esTexto(valor: unknown, maximo: number): valor is string {
+  return typeof valor === 'string' && valor.length > 0 && valor.length <= maximo;
+}
+
+function esIdentificador(valor: unknown): valor is string {
+  return esTexto(valor, 128) && /^[A-Za-z0-9_-]+$/.test(valor);
+}
+
+function esFecha(valor: unknown): valor is string {
+  return typeof valor === 'string' && !Number.isNaN(Date.parse(valor));
 }
 
 const CODIGOS_ESCANEO: readonly CodigoErrorEscaneo[] = [

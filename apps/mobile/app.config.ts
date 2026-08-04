@@ -80,6 +80,8 @@ const config: ExpoConfig = {
     // Modulo nativo: no funciona en Expo Go. Cualquier cambio exige regenerar
     // el proyecto y distribuir un development build nuevo.
     'react-native-nfc-manager',
+    ['expo-sqlite', { useSQLCipher: true }],
+    'expo-secure-store',
 
     [
       'expo-splash-screen',
@@ -277,9 +279,9 @@ const config: ExpoConfig = {
     // se pierde el formulario a medio llenar.
     predictiveBackGestureEnabled: false,
 
-    // Sin respaldo automatico: la app no guarda datos propios que valga la pena
-    // restaurar, y una copia en Google Drive de cachés con posiciones de un
-    // trabajador es un dato personal viajando a un lugar que no controlamos.
+    // Sin respaldo automático: la ruta vive cifrada con una clave del Keystore
+    // de ESTE dispositivo. Restaurar solo el archivo en otro teléfono lo deja
+    // ilegible y copiaría datos operativos a un equipo aún no autenticado.
     allowBackup: false,
   },
 };

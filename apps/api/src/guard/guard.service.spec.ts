@@ -51,7 +51,10 @@ describe('GuardService', () => {
           route_name: 'Ronda nocturna demo',
           estimated_duration_min: 30,
           checkpoints: [
-            { id: 'checkpoint-id', name: 'Acceso', position: 1, isClosingPoint: true },
+            {
+              id: 'checkpoint-id', name: 'Acceso', position: 1,
+              isClosingPoint: true, tagUids: ['04AABBCC'],
+            },
           ],
         },
       ]),
