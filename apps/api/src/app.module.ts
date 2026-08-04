@@ -22,6 +22,10 @@ import { PushModule } from './push/push.module';
 import { QrModule } from './qr/qr.module';
 import { TenantDataModule } from './platform-data/tenant-data.module';
 import { ReportsModule } from './reports/reports.module';
+import { AlertasRondaModule } from './escalation/alertas-ronda.module';
+import { ConsentModule } from './consent/consent.module';
+import { FeatureFlagsModule } from './rules/feature-flags.module';
+import { EnvioInformeModule } from './reports/envio-informe.module';
 import { RulesModule } from './rules/rules.module';
 import { StatsChartsModule } from './stats/stats-charts.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
@@ -56,6 +60,10 @@ import { SyncModule } from './sync/sync.module';
     TenantDataModule,
     ReportsModule,
     RulesModule,
+    EnvioInformeModule,
+    FeatureFlagsModule,
+    ConsentModule,
+    AlertasRondaModule,
     StatsChartsModule,
     SchedulingModule,
     SupervisorModule,

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../database/database.module';
 import { EscalationModule } from '../escalation/escalation.module';
+import { GeoModule } from '../geo/geo.module';
 import { MailModule } from '../mail/mail.module';
 import { RulesModule } from '../rules/rules.module';
 import { GuardController } from './guard.controller';
@@ -10,7 +11,7 @@ import { GuardService } from './guard.service';
 // Se exporta el servicio para que la sincronizacion en lote (#14) reuse
 // registerScan/reportEvent en vez de reimplementar el flujo de escaneo.
 @Module({
-  imports: [DatabaseModule, MailModule, RulesModule, EscalationModule],
+  imports: [DatabaseModule, MailModule, RulesModule, EscalationModule, GeoModule],
   controllers: [GuardController],
   providers: [GuardService],
   exports: [GuardService],
