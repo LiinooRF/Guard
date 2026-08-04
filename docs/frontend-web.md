@@ -167,16 +167,28 @@ lo que distingue "heredado" de "escrito acá" en el formulario. La cascada es
 
 ### SUPERVISOR — `/supervisor` (solo sus recintos asignados; 403 si no)
 ```
+GET   /supervisor/route-editor/sites                  routes:manage
+      → recintos asignados con puntos activos, coordenadas y requisito de foto
 GET   /supervisor/sites/:siteId/routes                 routes:manage
 POST  /supervisor/sites/:siteId/routes  {name, estimatedDurationMin, toleranceMin?,
-                                         orderMode?, checkpoints:[{checkpointId, isClosingPoint?, isAnchor?}]}
+                                         orderMode?, checkpoints:[{checkpointId, isClosingPoint?,
+                                         isAnchor?, requiresPhoto?}]}
 PUT   /supervisor/routes/:routeId       {campos parciales; mandar checkpoints SUBE la versión}
 PATCH /supervisor/routes/:routeId/active {isActive}
 
 POST  /supervisor/routes/:routeId/patrols  {guardId, scheduledStartAt, scheduledEndAt}   shifts:manage
 GET   /supervisor/sites/:siteId/patrols                patrols:monitor
 GET   /supervisor/sites/:siteId/events                 patrols:monitor  ← novedades y pánico
+GET   /supervisor/live                                 patrols:monitor
+      → rondas pendientes/en curso de los recintos asignados, progreso, último escaneo y
+        posición más reciente solo cuando la regla GPS efectiva está activa
 ```
+
+El tablero consulta `/supervisor/live` cada 5 segundos (también al volver a una pestaña visible),
+por debajo del límite de 10 segundos del producto. `pollAfterMs` viene en la respuesta para dejar
+explícito el contrato. El mapa recibe `MAP_TILE_URL` y `MAP_ATTRIBUTION` desde el servidor; en los
+compose productivos el proveedor es obligatorio y nunca cae silenciosamente en los tiles públicos
+de OpenStreetMap.
 
 ### SUPERADMIN — `/platform/tenants` (sin contexto de empresa)
 ```

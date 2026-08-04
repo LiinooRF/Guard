@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CircleMarker, Map as LeafletMap } from 'leaflet';
+import { resolverOrigenTiles } from './mapa-tiles';
 
 const SANTIAGO: [number, number] = [-33.4489, -70.6693];
 
@@ -38,10 +39,24 @@ export function CoordinateMap({
         zoom: latitude === null ? 11 : 18,
         zoomControl: true,
       });
-      leaflet.tileLayer(tileUrl, {
-        attribution,
-        maxZoom: 20,
-      }).on('tileerror', () => setError(true)).addTo(instance);
+      // El origen pasa por resolverOrigenTiles(): impide que un MAP_TILE_URL
+      // apuntando a tile.openstreetmap.org sirva tiles publicos en produccion,
+      // cosa que su politica de uso prohibe. Sin origen valido el mapa va SIN
+      // fondo y las capas propias se siguen viendo.
+      const origen = resolverOrigenTiles({
+        url: tileUrl || undefined,
+        atribucion: attribution || undefined,
+        produccion: process.env.NODE_ENV === 'production',
+      });
+      if (origen.url) {
+        leaflet
+          .tileLayer(origen.url, {
+            attribution: origen.atribucionProveedor ?? attribution,
+            maxZoom: origen.maxZoom,
+          })
+          .on('tileerror', () => setError(true))
+          .addTo(instance);
+      }
       if (latitude !== null && longitude !== null) {
         marker.current = leaflet.circleMarker([latitude, longitude], {
           radius: 8,
