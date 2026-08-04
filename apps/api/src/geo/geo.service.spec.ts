@@ -5,8 +5,8 @@ import type { TenantContextService } from '../database/tenant-context/tenant-con
 import type { RulesService } from '../rules/rules.service';
 
 /**
- * Reglas efectivas del producto mas los dos campos que este modulo pide en
- * INTEGRACION.md (gpsTrackIntervalSeconds, gpsTrackRetentionDays).
+ * Reglas efectivas del producto mas los campos que este modulo pide en
+ * INTEGRACION.md (gpsTrackIntervalSeconds, gpsTrackRetentionDays y los de #77).
  */
 const reglas = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -69,16 +69,34 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     });
   });
 
-  it('si el tenant no exige compartir ubicación, no se acumula traza continua', async () => {
+  it('con el seguimiento apagado en la empresa, no se acumula traza continua', async () => {
     const query = jest.fn();
+
+    await expect(
+      servicio(query, { gpsTrackingEnabled: false }).appendTrack('guard-1', 'patrol-1', [
+        PUNTO(1),
+      ]),
+    ).rejects.toThrow('no registra el recorrido');
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  /**
+   * #77: "opcional" no es "apagado". Antes se miraba gpsSharingRequired aca y la
+   * empresa que elegia NO obligar se quedaba sin traza para nadie, incluso para
+   * el guardia que si habia aceptado compartir su ubicacion.
+   */
+  it('con GPS opcional, al guardia que aceptó igual se le registra el recorrido', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([{ id: 't1' }]);
 
     await expect(
       servicio(query, { gpsSharingRequired: false }).appendTrack('guard-1', 'patrol-1', [
         PUNTO(1),
       ]),
-    ).rejects.toThrow('no tiene activado el compartir ubicación');
-
-    expect(query).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ received: 1, stored: 1 });
   });
 
   it('fuera de una ronda en curso no se registra ubicación', async () => {
@@ -164,10 +182,46 @@ describe('GeoService — distancia y duración de la traza', () => {
     });
 
     expect(traza.pointCount).toBe(3);
+    expect(traza.lowAccuracyPointCount).toBe(0);
     expect(traza.totalDistanceM).toBeCloseTo(222.4, 1);
     expect(traza.durationMin).toBe(4);
     expect(traza.retentionDays).toBe(90);
     expect(traza.points[0]).toMatchObject({ latitude: -33.45, accuracyM: 8.5, batteryPct: 90 });
+  });
+
+  /**
+   * #77: un fix con 3 km de error en un subterraneo no puede sumar 3 km de
+   * recorrido al informe. El punto se devuelve igual —explica el hueco— pero no
+   * entra en la cuenta.
+   */
+  it('el punto con precisión pésima se devuelve pero no suma distancia', async () => {
+    const conRuido = [
+      filas[0],
+      {
+        recorded_at_device: new Date('2026-08-01T10:01:00Z'),
+        latitude: '-33.480000',
+        longitude: '-70.660000',
+        accuracy_m: '3000.00',
+        battery_pct: 88,
+      },
+      filas[1],
+      filas[2],
+    ];
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'completada' },
+      ])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce(conRuido);
+
+    const traza = await servicio(query).patrolTrack('patrol-1', {
+      sub: 'supervisor-1',
+      role: 'SUPERVISOR',
+    });
+
+    expect(traza.pointCount).toBe(4);
+    expect(traza.lowAccuracyPointCount).toBe(1);
+    expect(traza.totalDistanceM).toBeCloseTo(222.4, 1);
   });
 
   it('una ronda sin puntos responde traza vacía, no error', async () => {
@@ -236,6 +290,20 @@ describe('GeoService — consentimiento', () => {
     ).resolves.toMatchObject({ pointCount: 1 });
   });
 
+  /**
+   * Con el driver de Postgres, `manager.query()` de un UPDATE devuelve
+   * [filas, rowCount] y no las filas. Este test NO puede detectarlo (el mock
+   * devuelve lo que uno quiera), asi que fija lo unico verificable sin base: que
+   * el UPDATE viaja envuelto en un CTE y el comando que se ejecuta es un SELECT.
+   */
+  it('la revocación envuelve el UPDATE en un CTE para no leer [filas, rowCount]', async () => {
+    const query = jest.fn().mockResolvedValueOnce([]);
+    await servicio(query).revokeConsent('guard-1');
+    const sql = sqlDe(query)[0]!;
+    expect(sql).toContain('WITH revocado AS');
+    expect(sql).toContain('SELECT id, revoked_at FROM revocado');
+  });
+
   it('revocar sin consentimiento vigente responde OK: es un derecho, no un trámite', async () => {
     const query = jest.fn().mockResolvedValueOnce([]);
     await expect(servicio(query).revokeConsent('guard-1')).resolves.toMatchObject({
@@ -277,7 +345,7 @@ describe('GeoService — consentimiento', () => {
     expect(sqlDe(query)[2]).toContain('INSERT INTO gps_consents');
   });
 
-  it('el estado informa a la app si debe muestrear y cada cuánto', async () => {
+  it('el estado informa a la app si debe muestrear, cada cuánto y en qué modo', async () => {
     const query = jest.fn().mockResolvedValueOnce([
       {
         id: 'consent-1',
@@ -292,6 +360,7 @@ describe('GeoService — consentimiento', () => {
       granted: true,
       policyVersion: 'v1',
       trackingEnabled: true,
+      sharingMode: 'obligatorio',
       sampleIntervalSeconds: 60,
       retentionDays: 90,
     });
