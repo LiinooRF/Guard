@@ -62,6 +62,7 @@ describe('AdminService usuarios', () => {
       familyName: 'Pérez',
       role: 'GUARDIA',
       revokedSessions: 0,
+      removedSiteAssignments: 0,
     });
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1]?.[1]).toEqual(['user-1', 'Ana', 'Pérez']);
@@ -71,7 +72,7 @@ describe('AdminService usuarios', () => {
   it('al convertir supervisor en guardia retira sus recintos y revoca sesiones', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'user-1', role_key: 'SUPERVISOR' }])
-      .mockResolvedValueOnce([]) // DELETE supervisor_sites
+      .mockResolvedValueOnce([{ removed: 2 }]) // DELETE supervisor_sites envuelto en SELECT
       .mockResolvedValueOnce([]) // UPDATE membership
       .mockResolvedValueOnce([{ id: 'user-1', given_name: 'Ana', family_name: 'Pérez' }]);
     const revokeAllSessions = jest.fn().mockResolvedValue(3);
@@ -87,6 +88,7 @@ describe('AdminService usuarios', () => {
     expect(query.mock.calls[2]?.[0]).toContain('UPDATE memberships');
     expect(revokeAllSessions).toHaveBeenCalledWith('user-1');
     expect(result.revokedSessions).toBe(3);
+    expect(result.removedSiteAssignments).toBe(2);
   });
 
   it('al convertir guardia en supervisor conserva integridad y revoca sesiones', async () => {

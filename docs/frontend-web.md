@@ -105,6 +105,7 @@ POST   /auth/invitations/complete       {token, password}
 ```
 GET    /admin/users                                    tenant:users:manage
 POST   /admin/users     {email?, username?, givenName, familyName, role, password?}
+PATCH  /admin/users/:userId                   {givenName, familyName, role}
 PATCH  /admin/users/:userId/active            {isActive}
 DELETE /admin/users/:userId/sessions                   → cierra sus sesiones
 PATCH  /admin/users/:userId/sites/:siteId     {assigned}   ← asigna recinto a un supervisor

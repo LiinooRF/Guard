@@ -278,13 +278,18 @@ export class AdminService {
     if (!user) throw new NotFoundException('Usuario administrable no encontrado');
 
     const roleChanged = user.role_key !== input.role;
+    let removedSiteAssignments = 0;
     if (roleChanged && input.role === 'GUARDIA') {
       // La asignacion referencia la membresia SUPERVISOR. Se retira antes de
       // cambiar el rol para no dejar recintos asignados a un guardia.
-      await this.tenantContext.manager.query(
-        `DELETE FROM supervisor_sites WHERE supervisor_id = $1`,
+      const removed = await this.tenantContext.manager.query<Array<{ removed: number }>>(
+        `WITH deleted AS (
+           DELETE FROM supervisor_sites WHERE supervisor_id = $1 RETURNING 1
+         )
+         SELECT count(*)::int AS removed FROM deleted`,
         [userId],
       );
+      removedSiteAssignments = Number(removed[0]?.removed ?? 0);
     }
     if (roleChanged) {
       await this.tenantContext.manager.query(
@@ -298,10 +303,13 @@ export class AdminService {
       given_name: string;
       family_name: string;
     }>>(
-      `UPDATE users
-       SET given_name = $2, family_name = $3, updated_at = now()
-       WHERE id = $1
-       RETURNING id, given_name, family_name`,
+      `WITH changed AS (
+         UPDATE users
+         SET given_name = $2, family_name = $3, updated_at = now()
+         WHERE id = $1
+         RETURNING id, given_name, family_name
+       )
+       SELECT id, given_name, family_name FROM changed`,
       [userId, input.givenName.trim(), input.familyName.trim()],
     );
     if (!updated.length) throw new NotFoundException('Usuario administrable no encontrado');
@@ -313,6 +321,7 @@ export class AdminService {
       familyName: updated[0]!.family_name,
       role: input.role,
       revokedSessions,
+      removedSiteAssignments,
     };
   }
 

@@ -333,6 +333,15 @@ export function AdminManagement({
   async function updateUser(event: FormEvent<HTMLFormElement>, user: TenantUser) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const nextRole = data.get('role');
+    if (
+      user.role === 'SUPERVISOR'
+      && nextRole === 'GUARDIA'
+      && user.siteIds.length > 0
+      && !window.confirm(
+        `Este cambio retirará ${user.siteIds.length} asignación(es) de recinto y cerrará sus sesiones. ¿Continuar?`,
+      )
+    ) return;
     setMessage(null);
     const response = await apiRequest(`${apiUrl}/admin/users/${user.id}`, 'PATCH', {
       givenName: data.get('givenName'),
@@ -340,11 +349,14 @@ export function AdminManagement({
       role: data.get('role'),
     });
     if (!response.ok) return setMessage(await responseMessage(response));
-    const result = (await response.json()) as { revokedSessions: number };
+    const result = (await response.json()) as {
+      revokedSessions: number;
+      removedSiteAssignments: number;
+    };
     setEditingUserId(null);
     setMessage(
-      result.revokedSessions
-        ? `Usuario actualizado. Se cerraron ${result.revokedSessions} sesión(es) por el cambio de rol.`
+      result.revokedSessions || result.removedSiteAssignments
+        ? `Usuario actualizado. Se cerraron ${result.revokedSessions} sesión(es) y se retiraron ${result.removedSiteAssignments} asignación(es) de recinto.`
         : 'Usuario actualizado correctamente.',
     );
     startTransition(() => router.refresh());
