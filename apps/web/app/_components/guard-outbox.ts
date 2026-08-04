@@ -403,11 +403,11 @@ export async function enviarNovedad(
 /**
  * Foto de una novedad.
  *
- * OJO: `POST /evidence/events/:eventId/photos` TODAVÍA NO EXISTE en la API —
- * hoy solo hay el de escaneos. Está escrito con el mismo contrato (multipart,
- * campo `foto`) para que el día que el carril de backend lo agregue esto quede
- * conectado sin tocar la interfaz. Mientras no exista responde 404 y la pantalla
- * dice que la foto no se subió, en vez de fingir que sí. Ver INTEGRACION.md.
+ * Va en una petición aparte del reporte y no en el mismo POST: el texto pesa
+ * bytes y la foto pesa megas, así que en terreno una subida cortada se llevaría
+ * también el reporte, que es la parte que importa. Por eso la foto se manda
+ * recién cuando el servidor devolvió el id de la novedad, y si esta segunda
+ * parte falla la pantalla lo dice en vez de fingir que subió.
  */
 export async function subirFotoNovedad(
   apiUrl: string,
