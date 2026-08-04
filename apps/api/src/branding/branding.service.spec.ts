@@ -63,11 +63,16 @@ describe('BrandingService', () => {
   it('para documentos cae al nombre legal si no hay nombre comercial', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([]) // sin branding configurado
-      .mockResolvedValueOnce([{ name: 'Andina Seguridad SpA' }]);
+      .mockResolvedValueOnce([{ display_name: 'Andina Seguridad', legal_name: 'Andina Seguridad SpA' }]);
     await expect(new BrandingService(ctx(query)).forDocuments()).resolves.toMatchObject({
-      displayName: 'Andina Seguridad SpA',
-      mailFromName: 'Andina Seguridad SpA',
+      displayName: 'Andina Seguridad',
+      mailFromName: 'Andina Seguridad',
     });
+    // Las columnas del mock son las REALES de la tabla. Un mock con una columna
+    // inventada hace pasar el test y revienta en produccion: fue exactamente lo
+    // que paso con "name", que no existe en tenants.
+    expect(query.mock.calls[1][0]).toMatch(/display_name/);
+    expect(query.mock.calls[1][0]).not.toMatch(/SELECT name/);
   });
 
   it('el nombre comercial gana sobre el legal en informes y correos', async () => {
@@ -77,7 +82,7 @@ describe('BrandingService', () => {
         primary_color: '#1f3b73', secondary_color: '#4263eb',
         mail_from_name: null, mail_footer: 'Andina · Seguridad 24/7',
       }])
-      .mockResolvedValueOnce([{ name: 'Andina Seguridad SpA' }]);
+      .mockResolvedValueOnce([{ display_name: 'Andina Seguridad', legal_name: 'Andina Seguridad SpA' }]);
     await expect(new BrandingService(ctx(query)).forDocuments()).resolves.toMatchObject({
       displayName: 'Andina',
       mailFromName: 'Andina',

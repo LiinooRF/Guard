@@ -64,8 +64,9 @@ export class SupportAccessService {
       throw new ConflictException('Ya tienes un acceso de soporte abierto a esta empresa');
     }
 
+    // display_name, no "name": esa columna no existe en tenants.
     const tenant = await this.dataSource.query(
-      `SELECT id, name FROM tenants WHERE id = $1`,
+      `SELECT id, display_name FROM tenants WHERE id = $1`,
       [input.tenantId],
     );
     if (!tenant.length) throw new NotFoundException('La empresa no existe');
