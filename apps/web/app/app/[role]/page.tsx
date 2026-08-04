@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
+import { InformesPanel } from '../../_components/informes-panel';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -139,6 +140,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
           </div>
         )}
       </section>
+      <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
         <AdminManagement
           users={users}
