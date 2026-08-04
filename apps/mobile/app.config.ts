@@ -80,6 +80,8 @@ const config: ExpoConfig = {
     // Modulo nativo: no funciona en Expo Go. Cualquier cambio exige regenerar
     // el proyecto y distribuir un development build nuevo.
     'react-native-nfc-manager',
+    ['expo-sqlite', { useSQLCipher: true }],
+    'expo-secure-store',
 
     [
       'expo-splash-screen',

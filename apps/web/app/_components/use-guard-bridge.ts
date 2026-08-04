@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import type { EstadoConexionPayload, ResultadoEscaneoPayload } from '../_lib/bridge/protocol';
+import type {
+  EstadoConexionPayload,
+  ResultadoEscaneoPayload,
+  RutaOfflinePayload,
+} from '../_lib/bridge/protocol';
 import { crearClientePuente } from '../_lib/bridge/web-client';
 
 export { ErrorEscaneoPortal } from '../_lib/bridge/web-client';
@@ -40,6 +44,7 @@ export interface PuenteGuardia {
   conexion: EstadoConexionPayload;
   escanear: (titulo: string) => Promise<ResultadoEscaneoPayload>;
   cancelarEscaneo: () => void;
+  guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<boolean>;
 }
 
 export function useGuardBridge(): PuenteGuardia {
@@ -49,6 +54,7 @@ export function useGuardBridge(): PuenteGuardia {
   const [fase, setFase] = useState<FasePuente>('conectando');
   const [aviso, setAviso] = useState<string>();
   const [puedeEscanear, setPuedeEscanear] = useState(false);
+  const [soportaRutaOffline, setSoportaRutaOffline] = useState(false);
   // Valor fijo en el primer render: leer `navigator` acá rompería la hidratación.
   const [conexion, setConexion] = useState<EstadoConexionPayload>({
     enLinea: true,
@@ -83,6 +89,7 @@ export function useGuardBridge(): PuenteGuardia {
       }
 
       setFase('listo');
+      setSoportaRutaOffline(estado.info.protocolo.minor >= 1);
       const { dispositivo } = estado.info;
       if (!dispositivo.tieneNfc) {
         setAviso(SIN_ANTENA);
@@ -124,6 +131,11 @@ export function useGuardBridge(): PuenteGuardia {
     [cliente],
   );
   const cancelarEscaneo = useCallback(() => cliente.cancelarEscaneo(), [cliente]);
+  const guardarRutaOffline = useCallback(async (ruta: RutaOfflinePayload) => {
+    if (!soportaRutaOffline) return false;
+    await cliente.guardarRutaOffline(ruta);
+    return true;
+  }, [cliente, soportaRutaOffline]);
 
   return {
     fase,
@@ -132,5 +144,6 @@ export function useGuardBridge(): PuenteGuardia {
     conexion,
     escanear,
     cancelarEscaneo,
+    guardarRutaOffline,
   };
 }

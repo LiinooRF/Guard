@@ -40,6 +40,8 @@ function setup() {
       permiso, estado: 'concedido', puedeVolverAPedir: true,
     }),
     estadoConexion: async () => ({ enLinea: true, tipo: 'wifi' }),
+    guardarRutaOffline: async () => new Date().toISOString(),
+    borrarRutaOffline: async () => undefined,
   };
   const puente = crearPuenteNativo({
     portalOrigen: ORIGEN,
@@ -113,4 +115,40 @@ test('clasifica app antigua y portal antiguo sin confundir la solución', () => 
   assert.equal(appAntigua.ok ? undefined : appAntigua.motivo, 'app-antigua');
   assert.equal(portalAntiguo.ok ? undefined : portalAntiguo.motivo, 'portal-antiguo');
   assert.equal(verificarCompatibilidad({ major: 1, minMinor: 0 }).ok, true);
+});
+
+test('valida y persiste la ruta offline solo después del saludo', async () => {
+  const { puente, inyectados } = setup();
+  puente.alRecibirMensaje(evento(
+    armarSobre('hello', { portalBuild: 'test', requiere: { major: 1, minMinor: 0 } }),
+  ));
+  await esperarMensajes();
+  puente.alRecibirMensaje(evento(armarSobre('offline.route.save', {
+    patrolId: '3a0c8f7e-1111-4222-8333-444455556666',
+    status: 'en_curso' as const,
+    siteName: 'Recinto Norte',
+    routeName: 'Perímetro',
+    scheduledStartAt: '2026-08-04T01:00:00.000Z',
+    scheduledEndAt: '2026-08-04T09:00:00.000Z',
+    estimatedDurationMin: 45,
+    checkpoints: [{ id: 'punto-1', name: 'Acceso norte', position: 1, tagUids: ['04AABBCC'] }],
+  })));
+  await esperarMensajes();
+
+  assert.match(inyectados[1] ?? '', /offline\.route\.saved|offline.route.saved/);
+  puente.detener();
+});
+
+test('rechaza una ruta offline vacía o de tamaño operativo absurdo', () => {
+  const mensaje = armarSobre('offline.route.save', {
+    patrolId: 'patrol-1',
+    status: 'en_curso',
+    siteName: 'Recinto',
+    routeName: 'Ruta',
+    scheduledStartAt: '2026-08-04T01:00:00.000Z',
+    scheduledEndAt: '2026-08-04T09:00:00.000Z',
+    estimatedDurationMin: 45,
+    checkpoints: [],
+  });
+  assert.equal(leerMensajePortal(JSON.stringify(mensaje)).ok, false);
 });

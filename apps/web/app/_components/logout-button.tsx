@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { crearClientePuente } from '../_lib/bridge/web-client';
+
 export function LogoutButton() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -17,6 +19,12 @@ export function LogoutButton() {
           credentials: 'include',
         },
       );
+      const puente = crearClientePuente();
+      const estado = await puente.conectar().catch(() => undefined);
+      if (estado?.clase === 'listo' && estado.info.protocolo.minor >= 1) {
+        await puente.borrarRutaOffline().catch(() => undefined);
+      }
+      puente.desconectar();
     } finally {
       router.push('/');
       router.refresh();
