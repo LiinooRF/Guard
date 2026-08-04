@@ -90,19 +90,30 @@ export const patrolRulesSchema = z.object({
     .default(['alta', 'panico']),
 
   /**
-   * Minutos que espera la cadena antes de subir al nivel siguiente cuando la
-   * politica de ese nivel no define un delay propio.
-   */
-  /**
    * Un item de checklist marcado como falla avisa por correo al supervisor
    * del recinto (#129). El aviso en vivo de la bandeja no depende de esto.
    */
   checklistFailureNotify: z.boolean().default(true),
 
+  /**
+   * Minutos que espera la cadena antes de subir al nivel siguiente cuando la
+   * politica de ese nivel no define un delay propio.
+   */
   escalationDefaultDelayMin: z.number().int().min(0).max(1440).default(10),
 
   /** Minutos tras los cuales una ronda sin cerrar se marca como vencida. */
   maxPatrolDurationMin: z.number().int().min(5).max(1440).default(480),
+
+  /**
+   * Correos que reciben ADEMAS del admin cada informe de ronda (#81). Vacio =
+   * solo los admin del tenant. Es una lista y no un correo unico porque en la
+   * practica el informe lo quiere tambien el jefe de operaciones del cliente
+   * final, que no es usuario del sistema.
+   *
+   * No se puede fijar a nivel plataforma: un destinatario global recibiria los
+   * informes de TODAS las empresas. Ver PATROL_RULE_CATALOG.reportRecipients.
+   */
+  reportRecipients: z.array(z.string().email()).max(10).default([]),
 
   /** Dias que se conserva la evidencia fotografica. */
   photoRetentionDays: z.number().int().min(30).max(3650).default(365),
@@ -143,17 +154,441 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = featureFlagsSchema.parse({});
 export const RULE_SCOPES = ['platform', 'tenant', 'site', 'checkpoint'] as const;
 export type RuleScope = (typeof RULE_SCOPES)[number];
 
+/** Overrides por nivel, tal como salen de la base (#80). */
+export type RuleOverridesByScope = Partial<Record<RuleScope, Partial<PatrolRules>>>;
+
+/** De donde salio cada valor efectivo. 'default' = ningun nivel lo sobreescribio. */
+export type RuleSource = RuleScope | 'default';
+export type RuleSources = Record<keyof PatrolRules, RuleSource>;
+
 /**
  * Resuelve la configuracion efectiva aplicando la cascada. El nivel mas
  * especifico gana. La app pide el resultado ya resuelto y no reimplementa esto.
  */
-export function resolveRules(
-  overrides: Partial<Record<RuleScope, Partial<PatrolRules>>>,
-): PatrolRules {
-  let acc: PatrolRules = { ...DEFAULT_PATROL_RULES };
+export function resolveRules(overrides: RuleOverridesByScope): PatrolRules {
+  return resolveRulesWithSource(overrides).rules;
+}
+
+/**
+ * Igual que resolveRules(), pero ademas dice QUE nivel gano cada parametro.
+ *
+ * Lo necesita el panel del admin (#83): sin esto, un valor heredado del tenant y
+ * uno escrito en el recinto se ven identicos, y el admin no sabe si lo que edita
+ * lo esta creando o lo esta pisando.
+ */
+export function resolveRulesWithSource(overrides: RuleOverridesByScope): {
+  rules: PatrolRules;
+  sources: RuleSources;
+} {
+  const acc: Record<string, unknown> = { ...DEFAULT_PATROL_RULES };
+  const sources = Object.fromEntries(
+    Object.keys(DEFAULT_PATROL_RULES).map((key) => [key, 'default']),
+  ) as RuleSources;
+
   for (const scope of RULE_SCOPES) {
     const layer = overrides[scope];
-    if (layer) acc = { ...acc, ...layer };
+    if (!layer) continue;
+    for (const [key, value] of Object.entries(layer)) {
+      // undefined no es un override: es "este nivel no opina".
+      if (value === undefined) continue;
+      acc[key] = value;
+      sources[key as keyof PatrolRules] = scope;
+    }
   }
-  return patrolRulesSchema.parse(acc);
+
+  return { rules: patrolRulesSchema.parse(acc), sources };
+}
+
+/* ------------------------------------------------------------------ *
+ * Catalogo de parametros de ronda (#81)
+ *
+ * Cada parametro declara tipo, rango, unidad, default y descripcion EN LENGUAJE
+ * DEL CLIENTE, mas los niveles de la cascada donde tiene sentido configurarlo.
+ * El panel del admin (#83) pinta el formulario leyendo esto: si manana entra una
+ * regla nueva, aparece sola en la interfaz. Nada de listas de campos en la web.
+ * ------------------------------------------------------------------ */
+
+/** Como se edita el parametro. Determina el control que pinta la interfaz. */
+export const RULE_VALUE_TYPES = ['boolean', 'integer', 'email-list', 'multi-select'] as const;
+export type RuleValueType = (typeof RULE_VALUE_TYPES)[number];
+
+/** Unidad del valor. Clave estable para la API; la etiqueta se muestra. */
+export const RULE_UNITS = [
+  'percent',
+  'meters',
+  'seconds',
+  'minutes',
+  'days',
+  'megabytes',
+  'attempts',
+  'operations',
+] as const;
+export type RuleUnit = (typeof RULE_UNITS)[number];
+
+export const RULE_UNIT_LABELS: Record<RuleUnit, string> = {
+  percent: '%',
+  meters: 'm',
+  seconds: 's',
+  minutes: 'min',
+  days: 'dias',
+  megabytes: 'MB',
+  attempts: 'intentos',
+  operations: 'operaciones',
+};
+
+/** Agrupacion para la interfaz. No cambia el comportamiento. */
+export const RULE_GROUPS = [
+  'cumplimiento',
+  'evidencia',
+  'ubicacion',
+  'operacion',
+  'avisos',
+  'retencion',
+  'seguridad',
+] as const;
+export type RuleGroup = (typeof RULE_GROUPS)[number];
+
+export const RULE_GROUP_LABELS: Record<RuleGroup, string> = {
+  cumplimiento: 'Cumplimiento de rondas',
+  evidencia: 'Evidencia fotografica',
+  ubicacion: 'Ubicacion y GPS',
+  operacion: 'Operacion en terreno',
+  avisos: 'Avisos y escalamiento',
+  retencion: 'Retencion de datos',
+  seguridad: 'Seguridad de acceso',
+};
+
+/**
+ * Un array de solo lectura tambien sirve como default: asi el catalogo puede ser
+ * literal sin pelear con el tipo mutable que infiere zod.
+ */
+type RuleDefault<K extends keyof PatrolRules> = PatrolRules[K] extends ReadonlyArray<infer T>
+  ? readonly T[]
+  : PatrolRules[K];
+
+export interface RuleParameter<K extends keyof PatrolRules = keyof PatrolRules> {
+  key: K;
+  /** Nombre corto para el formulario. */
+  label: string;
+  /** Que hace, en lenguaje del cliente y no tecnico (#81). */
+  description: string;
+  type: RuleValueType;
+  unit: RuleUnit | null;
+  /** Solo para type 'integer'. Espejo del rango que valida patrolRulesSchema. */
+  min?: number;
+  max?: number;
+  /** Solo para type 'multi-select'. */
+  options?: readonly string[];
+  /** Solo para type 'email-list'. */
+  maxItems?: number;
+  default: RuleDefault<K>;
+  /** Niveles donde el parametro se puede sobreescribir, de general a especifico. */
+  scopes: readonly RuleScope[];
+  group: RuleGroup;
+}
+
+export type AnyRuleParameter = RuleParameter<keyof PatrolRules>;
+
+/**
+ * El tipo obliga a que TODO parametro de patrolRulesSchema tenga ficha y a que
+ * no sobre ninguna: agregar una regla sin describirla no compila. Es la garantia
+ * de que la interfaz del admin nunca queda con un campo sin explicacion.
+ */
+type RuleCatalog = { [K in keyof PatrolRules]: RuleParameter<K> };
+
+const TODOS_LOS_NIVELES = RULE_SCOPES;
+const HASTA_RECINTO = ['platform', 'tenant', 'site'] as const;
+const SOLO_EMPRESA = ['platform', 'tenant'] as const;
+
+export const PATROL_RULE_CATALOG: RuleCatalog = {
+  complianceThreshold: {
+    key: 'complianceThreshold',
+    label: 'Umbral de cumplimiento',
+    description:
+      'Si la ronda termina bajo este porcentaje de puntos marcados, el informe llega directo al administrador de la empresa.',
+    type: 'integer',
+    unit: 'percent',
+    min: 0,
+    max: 100,
+    default: DEFAULT_PATROL_RULES.complianceThreshold,
+    // Por punto no tiene sentido: el cumplimiento se mide sobre la ronda completa.
+    scopes: HASTA_RECINTO,
+    group: 'cumplimiento',
+  },
+  photoRequiredOutsideHours: {
+    key: 'photoRequiredOutsideHours',
+    label: 'Foto obligatoria fuera de horario',
+    description:
+      'Fuera del horario habil del recinto, el guardia debe fotografiar cada punto que marca.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.photoRequiredOutsideHours,
+    scopes: TODOS_LOS_NIVELES,
+    group: 'evidencia',
+  },
+  photoRequiredOnCritical: {
+    key: 'photoRequiredOnCritical',
+    label: 'Foto obligatoria en accesos criticos',
+    description:
+      'En accesos, puertas y porterias la foto es obligatoria a cualquier hora, aunque el recinto este abierto.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.photoRequiredOnCritical,
+    scopes: TODOS_LOS_NIVELES,
+    group: 'evidencia',
+  },
+  businessHoursDefaultOpen: {
+    key: 'businessHoursDefaultOpen',
+    label: 'Recinto sin horario cargado cuenta como abierto',
+    description:
+      'Mientras el recinto no tenga su horario cargado, se asume abierto (solo los accesos criticos piden foto). Apagado, se asume cerrado y se pide foto en todos los puntos.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.businessHoursDefaultOpen,
+    // El horario en si vive por recinto en site_business_hours (#13); esto es
+    // solo que hacer mientras ese horario no existe.
+    scopes: HASTA_RECINTO,
+    group: 'evidencia',
+  },
+  gpsSharingRequired: {
+    key: 'gpsSharingRequired',
+    label: 'Exigir permiso de ubicacion',
+    description:
+      'Si el guardia no acepta compartir su ubicacion, no puede iniciar la ronda.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.gpsSharingRequired,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsValidationRadiusM: {
+    key: 'gpsValidationRadiusM',
+    label: 'Radio de validacion del escaneo',
+    description:
+      'Distancia maxima entre el guardia y el punto para dar el escaneo por hecho en el lugar. Subelo en subterraneos y bodegas, donde el GPS se equivoca mas.',
+    type: 'integer',
+    unit: 'meters',
+    min: 5,
+    max: 1000,
+    default: DEFAULT_PATROL_RULES.gpsValidationRadiusM,
+    // Por punto si aplica: el estacionamiento subterraneo necesita mas margen
+    // que la porteria de la entrada.
+    scopes: TODOS_LOS_NIVELES,
+    group: 'ubicacion',
+  },
+  gpsTrackIntervalSeconds: {
+    key: 'gpsTrackIntervalSeconds',
+    label: 'Frecuencia de la traza de recorrido',
+    description:
+      'Cada cuanto el telefono registra la posicion durante la ronda. Mas seguido = recorrido mas fiel y bateria mas corta.',
+    type: 'integer',
+    unit: 'seconds',
+    min: 15,
+    max: 900,
+    default: DEFAULT_PATROL_RULES.gpsTrackIntervalSeconds,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsTrackRetentionDays: {
+    key: 'gpsTrackRetentionDays',
+    label: 'Retencion de la traza de recorrido',
+    description:
+      'Dias que se guarda el recorrido del guardia antes de borrarlo. Es un dato sensible de la persona: mientras menos tiempo se guarde, mejor.',
+    type: 'integer',
+    unit: 'days',
+    min: 7,
+    max: 365,
+    default: DEFAULT_PATROL_RULES.gpsTrackRetentionDays,
+    // La retencion es una politica legal de la empresa completa, no de un recinto.
+    scopes: SOLO_EMPRESA,
+    group: 'retencion',
+  },
+  randomizeRouteOrder: {
+    key: 'randomizeRouteOrder',
+    label: 'Orden aleatorio de la ronda',
+    description:
+      'Presenta los puntos en orden distinto cada vez para que la ronda no sea predecible. Una ronda siempre igual es la que aprovecha quien quiere entrar.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.randomizeRouteOrder,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  autoSendReportOnClose: {
+    key: 'autoSendReportOnClose',
+    label: 'Enviar el informe al cerrar la ronda',
+    description:
+      'Al marcar el ultimo punto, el informe se genera y se envia solo, sin que nadie tenga que pedirlo.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.autoSendReportOnClose,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  allowQrFallback: {
+    key: 'allowQrFallback',
+    label: 'Permitir QR como respaldo',
+    description:
+      'Deja marcar el punto con QR cuando la etiqueta NFC falla o el telefono no tiene NFC. El escaneo queda marcado como QR: una foto del QR se puede reusar, la etiqueta hay que ir a tocarla.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.allowQrFallback,
+    // Por punto: sirve para habilitarlo solo donde la etiqueta esta fallando.
+    scopes: TODOS_LOS_NIVELES,
+    group: 'operacion',
+  },
+  syncMaxBatchSize: {
+    key: 'syncMaxBatchSize',
+    label: 'Tamano maximo de sincronizacion',
+    description:
+      'Cuantos registros manda el telefono de una vez cuando recupera senal despues de una ronda sin cobertura. El resto viaja en el envio siguiente.',
+    type: 'integer',
+    unit: 'operations',
+    min: 1,
+    max: 1000,
+    default: DEFAULT_PATROL_RULES.syncMaxBatchSize,
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
+  },
+  escalationCriticalities: {
+    key: 'escalationCriticalities',
+    label: 'Criticidades que escalan',
+    description:
+      'Que nivel de novedad despierta la cadena de avisos hasta que alguien acuse recibo.',
+    type: 'multi-select',
+    unit: null,
+    options: ['media', 'alta', 'panico'],
+    default: DEFAULT_PATROL_RULES.escalationCriticalities,
+    scopes: HASTA_RECINTO,
+    group: 'avisos',
+  },
+  checklistFailureNotify: {
+    key: 'checklistFailureNotify',
+    label: 'Avisar por correo las fallas de checklist',
+    description:
+      'Cuando el guardia marca un item de checklist como falla, el supervisor del recinto recibe un correo.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.checklistFailureNotify,
+    scopes: HASTA_RECINTO,
+    group: 'avisos',
+  },
+  escalationDefaultDelayMin: {
+    key: 'escalationDefaultDelayMin',
+    label: 'Espera entre niveles de aviso',
+    description:
+      'Cuanto espera el sistema a que alguien acuse recibo antes de avisar al nivel siguiente.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 0,
+    max: 1440,
+    default: DEFAULT_PATROL_RULES.escalationDefaultDelayMin,
+    scopes: HASTA_RECINTO,
+    group: 'avisos',
+  },
+  maxPatrolDurationMin: {
+    key: 'maxPatrolDurationMin',
+    label: 'Duracion maxima de una ronda',
+    description:
+      'Pasado este tiempo sin cerrarse, la ronda se marca como vencida y deja de aceptar escaneos.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 5,
+    max: 1440,
+    default: DEFAULT_PATROL_RULES.maxPatrolDurationMin,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  reportRecipients: {
+    key: 'reportRecipients',
+    label: 'Destinatarios del informe',
+    description:
+      'Correos que reciben cada informe ademas de los administradores de la empresa. Vacio: solo los administradores.',
+    type: 'email-list',
+    unit: null,
+    maxItems: 10,
+    default: DEFAULT_PATROL_RULES.reportRecipients,
+    // A proposito SIN 'platform': un destinatario global recibiria los informes
+    // de todas las empresas del SaaS. Eso es una fuga cruzada, no una comodidad.
+    scopes: ['tenant', 'site'],
+    group: 'avisos',
+  },
+  photoRetentionDays: {
+    key: 'photoRetentionDays',
+    label: 'Retencion de fotos',
+    description:
+      'Dias que se guarda la evidencia fotografica antes de borrarla.',
+    type: 'integer',
+    unit: 'days',
+    min: 30,
+    max: 3650,
+    default: DEFAULT_PATROL_RULES.photoRetentionDays,
+    scopes: SOLO_EMPRESA,
+    group: 'retencion',
+  },
+  photoMaxSizeMB: {
+    key: 'photoMaxSizeMB',
+    label: 'Peso maximo por foto',
+    description:
+      'Tamano maximo de cada foto de evidencia. Mas alto es mas nitido y mas lento de subir donde hay poca senal.',
+    type: 'integer',
+    unit: 'megabytes',
+    min: 1,
+    max: 50,
+    default: DEFAULT_PATROL_RULES.photoMaxSizeMB,
+    scopes: SOLO_EMPRESA,
+    group: 'evidencia',
+  },
+  maxLoginAttempts: {
+    key: 'maxLoginAttempts',
+    label: 'Intentos de ingreso permitidos',
+    description:
+      'Intentos fallidos de contrasena antes de bloquear temporalmente la cuenta.',
+    type: 'integer',
+    unit: 'attempts',
+    min: 3,
+    max: 20,
+    default: DEFAULT_PATROL_RULES.maxLoginAttempts,
+    // El ingreso es de la cuenta, no del recinto ni del punto.
+    scopes: SOLO_EMPRESA,
+    group: 'seguridad',
+  },
+};
+
+/** El catalogo como lista, en el orden en que se declaro. */
+export const PATROL_RULE_LIST: readonly AnyRuleParameter[] = Object.values(
+  PATROL_RULE_CATALOG,
+) as AnyRuleParameter[];
+
+export const PATROL_RULE_KEYS = Object.keys(PATROL_RULE_CATALOG) as Array<keyof PatrolRules>;
+
+/** Parametros configurables en un nivel de la cascada. */
+export function ruleKeysForScope(scope: RuleScope): Array<keyof PatrolRules> {
+  return PATROL_RULE_KEYS.filter((key) => PATROL_RULE_CATALOG[key].scopes.includes(scope));
+}
+
+/** Fichas del catalogo configurables en un nivel, para pintar el formulario. */
+export function ruleCatalogForScope(scope: RuleScope): readonly AnyRuleParameter[] {
+  return PATROL_RULE_LIST.filter((parametro) => parametro.scopes.includes(scope));
+}
+
+export function isRuleAllowedAtScope(key: keyof PatrolRules, scope: RuleScope): boolean {
+  return PATROL_RULE_CATALOG[key]?.scopes.includes(scope) ?? false;
+}
+
+/**
+ * Deja solo los parametros que ese nivel puede sobreescribir. Un override de
+ * retencion de fotos guardado en un punto de control no se aplica: se ignora.
+ */
+export function pickRulesForScope(
+  scope: RuleScope,
+  overrides: Partial<PatrolRules>,
+): Partial<PatrolRules> {
+  const permitido: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) continue;
+    if (!isRuleAllowedAtScope(key as keyof PatrolRules, scope)) continue;
+    permitido[key] = value;
+  }
+  return permitido as Partial<PatrolRules>;
 }
