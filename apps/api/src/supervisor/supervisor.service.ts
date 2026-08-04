@@ -65,6 +65,28 @@ export class SupervisorService {
     }
   }
 
+  async listAssignedSites(supervisorId: string) {
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      name: string;
+      branch_name: string;
+      timezone: string;
+    }>>(
+      `SELECT s.id, s.name, s.branch_name, s.timezone
+       FROM supervisor_sites ss
+       JOIN sites s ON s.id = ss.site_id
+       WHERE ss.supervisor_id = $1 AND s.is_active
+       ORDER BY s.branch_name, s.name`,
+      [supervisorId],
+    );
+    return rows.map((site) => ({
+      id: site.id,
+      name: site.name,
+      branchName: site.branch_name,
+      timezone: site.timezone,
+    }));
+  }
+
   private async routeSite(
     routeId: string,
   ): Promise<{ siteId: string; version: number; orderMode: RouteOrderMode }> {
@@ -359,6 +381,74 @@ export class SupervisorService {
     }));
   }
 
+  async listGuards(siteId: string, supervisorId: string) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      given_name: string;
+      family_name: string;
+    }>>(
+      `SELECT u.id, u.given_name, u.family_name
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.role_key = 'GUARDIA' AND u.is_active
+       ORDER BY u.given_name, u.family_name`,
+    );
+    return rows.map((guard) => ({
+      id: guard.id,
+      name: `${guard.given_name} ${guard.family_name}`.trim(),
+    }));
+  }
+
+  async weeklySchedule(siteId: string, supervisorId: string, from: string) {
+    await this.ensureAssignedSite(siteId, supervisorId);
+    const rows = await this.tenantContext.manager.query<Array<{
+      id: string;
+      shift_id: string;
+      shift_name: string;
+      starts_at: string;
+      ends_at: string;
+      service_date: string;
+      guard_id: string;
+      guard_name: string;
+      status: string;
+      route_id: string | null;
+      route_name: string | null;
+    }>>(
+      `SELECT a.id, s.id AS shift_id, s.name AS shift_name, s.starts_at, s.ends_at,
+              a.service_date::text AS service_date, a.guard_id,
+              trim(u.given_name || ' ' || u.family_name) AS guard_name, a.status,
+              p.route_id, r.name AS route_name
+       FROM shift_assignments a
+       JOIN shifts s ON s.id = a.shift_id
+       JOIN users u ON u.id = a.guard_id
+       LEFT JOIN LATERAL (
+         SELECT sp.route_id FROM shift_patterns sp
+         WHERE sp.shift_id = s.id AND sp.is_active
+         ORDER BY sp.created_at, sp.route_id LIMIT 1
+       ) p ON true
+       LEFT JOIN routes r ON r.id = p.route_id
+       WHERE s.site_id = $1
+         AND a.service_date >= $2::date
+         AND a.service_date < $2::date + 7
+       ORDER BY a.service_date, s.starts_at, guard_name`,
+      [siteId, from],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      shiftId: row.shift_id,
+      shiftName: row.shift_name,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      serviceDate: row.service_date,
+      guardId: row.guard_id,
+      guardName: row.guard_name,
+      status: row.status,
+      routeId: row.route_id,
+      routeName: row.route_name,
+    }));
+  }
+
   async createShift(siteId: string, supervisorId: string, input: CreateShiftDto) {
     await this.ensureAssignedSite(siteId, supervisorId);
     if (input.startsAt === input.endsAt) {
@@ -379,12 +469,19 @@ export class SupervisorService {
   }
 
   async assignShift(shiftId: string, supervisorId: string, input: AssignShiftDto) {
-    const turnos = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
-      `SELECT site_id FROM shifts WHERE id = $1 AND is_active`,
-      [shiftId],
+    const turnos = await this.tenantContext.manager.query<Array<{
+      site_id: string;
+      weekday_ok: boolean;
+    }>>(
+      `SELECT site_id, extract(dow FROM $2::date)::int = ANY(weekdays) AS weekday_ok
+       FROM shifts WHERE id = $1 AND is_active`,
+      [shiftId, input.serviceDate],
     );
     const turno = turnos[0];
     if (!turno) throw new NotFoundException('El turno no existe o esta inactivo');
+    if (turno.weekday_ok === false) {
+      throw new BadRequestException('El turno no aplica en ese dia de la semana');
+    }
     await this.ensureAssignedSite(turno.site_id, supervisorId);
 
     const guardias = await this.tenantContext.manager.query<Array<{ user_id: string }>>(
@@ -393,14 +490,95 @@ export class SupervisorService {
     );
     if (!guardias.length) throw new NotFoundException('El guardia no existe en esta empresa');
 
-    // Serializa las asignaciones del mismo guardia. Sin este lock, dos requests
-    // simultaneos podrian hacer ambos el SELECT sin ver al otro y crear el
-    // solapamiento justo entre la validacion y el INSERT.
-    await this.tenantContext.manager.query(
-      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+    await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate);
+
+    const asignado = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `INSERT INTO shift_assignments (tenant_id, shift_id, guard_id, service_date)
+       VALUES (app_tenant_id(), $1, $2, $3)
+       ON CONFLICT (tenant_id, shift_id, guard_id, service_date) DO NOTHING
+       RETURNING id`,
+      [shiftId, input.guardId, input.serviceDate],
+    );
+    if (!asignado.length) {
+      throw new ConflictException('Ese guardia ya esta asignado a este turno en esa fecha');
+    }
+    return { id: asignado[0]!.id, shiftId, guardId: input.guardId, serviceDate: input.serviceDate };
+  }
+
+  async checkShiftConflict(shiftId: string, supervisorId: string, input: AssignShiftDto) {
+    const shifts = await this.tenantContext.manager.query<Array<{
+      site_id: string;
+      weekday_ok: boolean;
+    }>>(
+      `SELECT site_id, extract(dow FROM $2::date)::int = ANY(weekdays) AS weekday_ok
+       FROM shifts WHERE id = $1 AND is_active`,
+      [shiftId, input.serviceDate],
+    );
+    if (!shifts[0]) throw new NotFoundException('El turno no existe o esta inactivo');
+    if (shifts[0].weekday_ok === false) {
+      throw new BadRequestException('El turno no aplica en ese dia de la semana');
+    }
+    await this.ensureAssignedSite(shifts[0].site_id, supervisorId);
+    const guards = await this.tenantContext.manager.query<Array<{ user_id: string }>>(
+      `SELECT m.user_id FROM memberships m JOIN users u ON u.id = m.user_id
+       WHERE m.user_id = $1 AND m.role_key = 'GUARDIA' AND u.is_active`,
       [input.guardId],
     );
+    if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
+    try {
+      await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate);
+      return { conflict: false };
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        return { conflict: true, message: error.message };
+      }
+      throw error;
+    }
+  }
 
+  async reassignShift(assignmentId: string, supervisorId: string, guardId: string) {
+    const assignments = await this.tenantContext.manager.query<Array<{
+      shift_id: string;
+      site_id: string;
+      service_date: string;
+      status: string;
+    }>>(
+      `SELECT a.shift_id, s.site_id, a.service_date::text AS service_date, a.status
+       FROM shift_assignments a JOIN shifts s ON s.id = a.shift_id
+       WHERE a.id = $1`,
+      [assignmentId],
+    );
+    const assignment = assignments[0];
+    if (!assignment) throw new NotFoundException('La asignacion no existe');
+    await this.ensureAssignedSite(assignment.site_id, supervisorId);
+    if (assignment.status !== 'asignado') {
+      throw new ConflictException('Solo se puede reasignar un turno que aun no ha comenzado');
+    }
+    const guards = await this.tenantContext.manager.query<Array<{ user_id: string }>>(
+      `SELECT m.user_id FROM memberships m JOIN users u ON u.id = m.user_id
+       WHERE m.user_id = $1 AND m.role_key = 'GUARDIA' AND u.is_active`,
+      [guardId],
+    );
+    if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
+    await this.assertNoOverlap(assignment.shift_id, guardId, assignment.service_date, assignmentId);
+    await this.tenantContext.manager.query(
+      `UPDATE shift_assignments SET guard_id = $2 WHERE id = $1`,
+      [assignmentId, guardId],
+    );
+    return { id: assignmentId, guardId };
+  }
+
+  private async assertNoOverlap(
+    shiftId: string,
+    guardId: string,
+    serviceDate: string,
+    excludeAssignmentId?: string,
+  ) {
+    // Un lock por guardia tambien cubre turnos nocturnos en fechas adyacentes.
+    await this.tenantContext.manager.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [guardId],
+    );
     const conflictos = await this.tenantContext.manager.query<Array<{
       assignment_id: string;
       shift_name: string;
@@ -424,6 +602,7 @@ export class SupervisorService {
        JOIN sites recinto ON recinto.id = existente.site_id
        CROSS JOIN solicitada
        WHERE a.guard_id = $3
+         AND ($4::uuid IS NULL OR a.id <> $4::uuid)
          AND tstzrange(
            (a.service_date + existente.starts_at) AT TIME ZONE recinto.timezone,
            (a.service_date + existente.ends_at
@@ -433,7 +612,7 @@ export class SupervisorService {
            '[)'
          ) && tstzrange(solicitada.inicio, solicitada.fin, '[)')
        LIMIT 1`,
-      [shiftId, input.serviceDate, input.guardId],
+      [shiftId, serviceDate, guardId, excludeAssignmentId ?? null],
     );
     if (conflictos.length) {
       const conflicto = conflictos[0]!;
@@ -442,17 +621,6 @@ export class SupervisorService {
       );
     }
 
-    const asignado = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `INSERT INTO shift_assignments (tenant_id, shift_id, guard_id, service_date)
-       VALUES (app_tenant_id(), $1, $2, $3)
-       ON CONFLICT (tenant_id, shift_id, guard_id, service_date) DO NOTHING
-       RETURNING id`,
-      [shiftId, input.guardId, input.serviceDate],
-    );
-    if (!asignado.length) {
-      throw new ConflictException('Ese guardia ya esta asignado a este turno en esa fecha');
-    }
-    return { id: asignado[0]!.id, shiftId, guardId: input.guardId, serviceDate: input.serviceDate };
   }
 
   /** Quien esta de servicio AHORA en el recinto: de aqui sale el escalamiento. */

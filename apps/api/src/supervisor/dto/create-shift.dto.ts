@@ -9,11 +9,14 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+
+const FECHA_CALENDARIO = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreateShiftDto {
   @IsString()
@@ -51,5 +54,17 @@ export class AssignShiftDto {
 
   /** Fecha de servicio en formato YYYY-MM-DD. */
   @IsDateString()
+  @Matches(FECHA_CALENDARIO, { message: 'serviceDate debe ser una fecha YYYY-MM-DD' })
   serviceDate!: string;
+}
+
+export class ReassignShiftDto {
+  @IsUUID()
+  guardId!: string;
+}
+
+export class WeekScheduleQueryDto {
+  @IsDateString()
+  @Matches(FECHA_CALENDARIO, { message: 'from debe ser una fecha YYYY-MM-DD' })
+  from!: string;
 }
