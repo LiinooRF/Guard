@@ -5,6 +5,7 @@ import {
   Logger,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import type { PatrolRules } from '@voxia/shared';
 import { plainToInstance, type ClassConstructor } from 'class-transformer';
 import { validate, type ValidationError } from 'class-validator';
 
@@ -13,6 +14,13 @@ import { CreateScanDto } from '../guard/dto/create-scan.dto';
 import { ReportEventDto } from '../guard/dto/report-event.dto';
 import { GuardService } from '../guard/guard.service';
 import { RulesService } from '../rules/rules.service';
+import { instanteConfiable, type MedicionDeReloj } from './device-clock';
+import { esRondaCerrada, evaluarEscaneoAtrasado } from './late-scan.policy';
+import {
+  EscaneoAtrasadoError,
+  SyncConflictsService,
+  type DatosDeAtraso,
+} from './sync-conflicts.service';
 import type { PushBatchDto, SyncOperationDto } from './dto/push-batch.dto';
 
 export type SyncOperationStatus = 'aplicado' | 'duplicado' | 'rechazado';
@@ -22,12 +30,21 @@ export interface SyncOperationResult {
   status: SyncOperationStatus;
   reason?: string;
   serverId?: string;
+  /** Marca atrasada que quedo guardada, cuando la ronda ya estaba cerrada (#73). */
+  lateScanId?: string;
 }
 
 interface Veredicto {
   status: SyncOperationStatus;
   reason?: string;
   serverId?: string;
+  lateScanId?: string;
+}
+
+/** Lo que vale para TODO el lote: el reloj del equipo y las reglas del tenant. */
+interface ContextoDeLote {
+  readonly medicion: MedicionDeReloj | null;
+  readonly reglas: PatrolRules;
 }
 
 /** Nombre fijo, nunca interpolado con datos del request. */
@@ -43,6 +60,7 @@ export class SyncService {
     private readonly tenantContext: TenantContextService,
     private readonly guard: GuardService,
     private readonly rules: RulesService,
+    private readonly conflicts: SyncConflictsService,
   ) {}
 
   /**
@@ -54,6 +72,10 @@ export class SyncService {
    *
    * No reimplementa el escaneo ni el evento: delega en GuardService, que es
    * donde viven las anomalias, el cierre de ronda y las alertas.
+   *
+   * Reloj y conflictos (#73): el desfase del reloj se mide UNA vez por lote —es
+   * del equipo, no de cada operacion— y el escaneo que llega sobre una ronda ya
+   * cerrada se guarda como marca atrasada en vez de perderse.
    */
   async pushBatch(guardId: string, input: PushBatchDto) {
     // El limite es una regla de la empresa, no un numero de este archivo.
@@ -65,6 +87,11 @@ export class SyncService {
           'chicos y reenviala: no se perdio ninguna operacion.',
       );
     }
+
+    const contexto: ContextoDeLote = {
+      reglas: rules,
+      medicion: await this.medirReloj(guardId, input, rules),
+    };
 
     // Una sola lectura para todo el lote: el reenvio completo de la cola no
     // vuelve a ejecutar nada, se responde desde la bitacora.
@@ -88,7 +115,7 @@ export class SyncService {
         continue;
       }
 
-      const veredicto = await this.procesar(guardId, operacion);
+      const veredicto = await this.procesar(guardId, operacion, contexto);
       // Un client_id repetido DENTRO del mismo lote se responde igual que un
       // reenvio: la cola del dispositivo puede traer duplicados propios.
       vistas.set(operacion.clientId, veredicto);
@@ -112,6 +139,16 @@ export class SyncService {
         rechazado: resultados.filter((r) => r.status === 'rechazado').length,
       },
       results: resultados,
+      // Que la app sepa que su reloj esta corrido, y lo diga: la correccion la
+      // hace el sistema igual, pero un telefono con la hora mala hay que
+      // arreglarlo, no compensarlo para siempre.
+      clock: contexto.medicion
+        ? {
+            offsetMs: contexto.medicion.offsetMs,
+            toleranceMs: contexto.medicion.toleranciaMs,
+            skewed: contexto.medicion.desfasado,
+          }
+        : null,
     };
   }
 
@@ -170,11 +207,57 @@ export class SyncService {
     };
   }
 
-  private async procesar(guardId: string, operacion: SyncOperationDto): Promise<Veredicto> {
-    const ejecucion = await this.enSavepoint(() => this.ejecutar(guardId, operacion));
-    const veredicto: Veredicto = ejecucion.ok
+  /**
+   * Estado del reloj del guardia, para que la app avise ANTES de la ronda (#73).
+   */
+  async clockStatus(guardId: string) {
+    const rules = await this.rules.effective();
+    return this.conflicts.estadoDelReloj(guardId, rules.clockSkewToleranceMin);
+  }
+
+  /**
+   * Mide el reloj del equipo una vez por lote. Aislado: perder la medicion
+   * degrada la observabilidad, no el trabajo del guardia.
+   */
+  private async medirReloj(
+    guardId: string,
+    input: PushBatchDto,
+    reglas: PatrolRules,
+  ): Promise<MedicionDeReloj | null> {
+    if (!input.deviceTime) return null;
+    const medicion = await this.enSavepoint(() =>
+      this.conflicts.medirReloj(
+        guardId,
+        input.deviceTime,
+        reglas.clockSkewToleranceMin,
+        input.operations.length,
+      ),
+    );
+    if (!medicion.ok) {
+      this.logger.warn(JSON.stringify({ event: 'sync_medicion_reloj_fallo' }));
+      return null;
+    }
+    return medicion.value;
+  }
+
+  private async procesar(
+    guardId: string,
+    operacion: SyncOperationDto,
+    contexto: ContextoDeLote,
+  ): Promise<Veredicto> {
+    const ejecucion = await this.enSavepoint(() => this.ejecutar(guardId, operacion, contexto));
+    const fallo = ejecucion.ok ? null : ejecucion.error;
+    let veredicto: Veredicto = ejecucion.ok
       ? ejecucion.value
-      : { status: 'rechazado', reason: motivo(ejecucion.error) };
+      : { status: 'rechazado', reason: motivo(fallo) };
+
+    // La marca que llego con la ronda ya cerrada NO se pierde (#73). Va DESPUES
+    // de soltar el savepoint por lo mismo que la bitacora: adentro, el rollback
+    // de la operacion rechazada se llevaria tambien esta fila.
+    if (fallo instanceof EscaneoAtrasadoError) {
+      const lateScanId = await this.guardarAtrasado(fallo.datos, operacion.type);
+      if (lateScanId) veredicto = { ...veredicto, lateScanId };
+    }
 
     // El registro va DESPUES de soltar el savepoint: adentro, el rollback de la
     // operacion invalida se llevaria tambien la fila que explica su rechazo.
@@ -185,6 +268,23 @@ export class SyncService {
       this.logger.warn(JSON.stringify({ event: 'sync_bitacora_fallo', kind: operacion.type }));
     }
     return veredicto;
+  }
+
+  /**
+   * Guarda la marca atrasada en su propio savepoint. Perder el anexo degrada la
+   * revision del supervisor, no el resto del lote, asi que no puede tumbarlo.
+   */
+  private async guardarAtrasado(
+    datos: DatosDeAtraso,
+    kind: SyncOperationDto['type'],
+  ): Promise<string | null> {
+    const anexo = await this.enSavepoint(() => this.conflicts.registrarAtrasado(datos));
+    if (!anexo.ok) {
+      // Sin datos de personas: solo el tipo de operacion.
+      this.logger.warn(JSON.stringify({ event: 'sync_atrasado_no_guardado', kind }));
+      return null;
+    }
+    return anexo.value;
   }
 
   /**
@@ -211,15 +311,20 @@ export class SyncService {
     }
   }
 
-  private ejecutar(guardId: string, operacion: SyncOperationDto): Promise<Veredicto> {
+  private ejecutar(
+    guardId: string,
+    operacion: SyncOperationDto,
+    contexto: ContextoDeLote,
+  ): Promise<Veredicto> {
     return operacion.type === 'scan'
-      ? this.ejecutarEscaneo(guardId, operacion)
+      ? this.ejecutarEscaneo(guardId, operacion, contexto)
       : this.ejecutarEvento(guardId, operacion);
   }
 
   private async ejecutarEscaneo(
     guardId: string,
     operacion: SyncOperationDto,
+    contexto: ContextoDeLote,
   ): Promise<Veredicto> {
     if (!operacion.patrolId) {
       throw new BadRequestException('Una operacion de tipo scan necesita patrolId');
@@ -229,13 +334,86 @@ export class SyncService {
       clientScanId: this.claveDeIdempotencia(operacion, 'clientScanId'),
     });
 
+    await this.verificarRondaCerrada(guardId, operacion.patrolId, payload, contexto);
+
     const resultado = await this.guard.registerScan(operacion.patrolId, guardId, payload);
+
+    // Reloj fuera de tolerancia: se MARCA en el escaneo, no se descarta. La
+    // hora cruda del telefono se conserva; lo que se guarda es con cuanto hay
+    // que corregirla al leer.
+    if (contexto.medicion?.desfasado) {
+      await this.conflicts.marcarRelojDesfasado(
+        operacion.patrolId,
+        payload.clientScanId,
+        contexto.medicion.offsetMs,
+      );
+    }
+
     return {
       status: resultado.replay ? 'duplicado' : 'aplicado',
       // registerScan no devuelve el id del escaneo y el dispositivo lo necesita
       // para colgarle la foto que tambien trae encolada.
       serverId: await this.idDelEscaneo(operacion.patrolId, payload.clientScanId),
     };
+  }
+
+  /**
+   * Ronda ya cerrada: quien gana lo decide late-scan.policy.ts (#73).
+   *
+   * Se consulta ANTES de delegar porque registerScan contesta 409 y no deja
+   * rastro del escaneo: el guardia perderia una ronda entera hecha en un
+   * subterraneo solo porque la ronda vencio mientras no tenia señal.
+   *
+   * Si la ronda no existe o no es de este guardia, esto no decide nada: deja
+   * que registerScan conteste su 404 y no duplica la semantica del error.
+   */
+  private async verificarRondaCerrada(
+    guardId: string,
+    patrolId: string,
+    payload: CreateScanDto,
+    contexto: ContextoDeLote,
+  ): Promise<void> {
+    const ronda = await this.conflicts.rondaDeLaOperacion(patrolId, guardId);
+    if (!ronda || !esRondaCerrada(ronda.status)) return;
+    const estado = ronda.status;
+
+    // El instante que se compara es el CORREGIDO por el desfase del reloj: con
+    // la hora cruda bastaria con atrasar el telefono para que todo escaneo
+    // pareciera hecho a tiempo.
+    const instante = instanteConfiable({
+      deviceAt: payload.scannedAt,
+      serverAt: ronda.serverNow,
+      medicion: contexto.medicion,
+    });
+
+    const veredicto = evaluarEscaneoAtrasado(
+      {
+        status: estado,
+        closedAt: ronda.closedAt,
+        scheduledEndAt: ronda.scheduledEndAt,
+      },
+      instante.at,
+      contexto.reglas.lateScanGraceMin,
+    );
+
+    throw new EscaneoAtrasadoError(veredicto, {
+      patrolId,
+      guardId,
+      clientScanId: payload.clientScanId,
+      tagUid: payload.uid.trim(),
+      method: payload.method,
+      patrolStatus: estado,
+      clasificacion: veredicto.clasificacion,
+      minutosDeAtraso: veredicto.minutosDeAtraso,
+      graciaMin: contexto.reglas.lateScanGraceMin,
+      scannedAtDevice: payload.scannedAt ?? null,
+      scannedAtEffective: instante.at,
+      fuenteDelInstante: instante.fuente,
+      clockOffsetMs: contexto.medicion ? contexto.medicion.offsetMs : null,
+      latitude: payload.latitude ?? null,
+      longitude: payload.longitude ?? null,
+      accuracyM: payload.accuracyM ?? null,
+    });
   }
 
   private async ejecutarEvento(guardId: string, operacion: SyncOperationDto): Promise<Veredicto> {
