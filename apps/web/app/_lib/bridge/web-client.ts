@@ -25,6 +25,7 @@ import {
   type ResultadoEscaneoPayload,
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
+  type EncolarSyncPayload,
 } from './protocol';
 
 /**
@@ -106,6 +107,8 @@ export interface ClientePuente {
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
   readonly guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<string>;
   readonly borrarRutaOffline: () => Promise<void>;
+  readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
+  readonly sincronizarCola: () => Promise<{ processed: number; pending: number }>;
   /** Cambios empujados por el shell. Devuelve la funcion para desuscribirse. */
   readonly alCambiarConexion: (fn: (estado: EstadoConexionPayload) => void) => () => void;
   readonly desconectar: () => void;
@@ -278,6 +281,18 @@ export function crearClientePuente(): ClientePuente {
       if (respuesta.type !== 'offline.route.cleared') {
         throw new Error('respuesta-inesperada-al-borrar-ruta');
       }
+    },
+
+    encolarSync: async (payload) => {
+      const respuesta = await pedir('sync.queue.enqueue', payload, MS_ESPERA_DEFECTO);
+      if (respuesta.type !== 'sync.queue.enqueued') throw new Error('respuesta-sync-inesperada');
+      return respuesta.payload.inserted;
+    },
+
+    sincronizarCola: async () => {
+      const respuesta = await pedir('sync.queue.flush', {}, MS_ESPERA_DEFECTO);
+      if (respuesta.type !== 'sync.queue.flushed') throw new Error('respuesta-sync-inesperada');
+      return respuesta.payload;
     },
 
     alCambiarConexion: (fn) => {

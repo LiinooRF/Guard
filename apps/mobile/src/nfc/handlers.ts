@@ -5,6 +5,7 @@ import { crearManejadoresBase } from '../bridge/default-handlers';
 import type { ManejadoresNativos } from '../bridge/native';
 import { crearLectorNfc, type PuertoNfc } from './nfc-reader';
 import { borrarRutaOffline, guardarRutaOffline } from '../offline/route-store';
+import { borrarColaSync, encolarOperacion, sincronizarCola } from '../offline/sync-queue';
 
 export function crearManejadoresNfc(puerto: PuertoNfc): ManejadoresNativos {
   const base = crearManejadoresBase();
@@ -19,6 +20,11 @@ export function crearManejadoresNfc(puerto: PuertoNfc): ManejadoresNativos {
     escanearNfc: ({ timeoutMs }) => lector.escanear(timeoutMs),
     cancelarEscaneo: lector.cancelar,
     guardarRutaOffline,
-    borrarRutaOffline,
+    borrarRutaOffline: async () => {
+      await borrarRutaOffline();
+      await borrarColaSync();
+    },
+    encolarSync: encolarOperacion,
+    sincronizarCola,
   };
 }

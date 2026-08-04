@@ -27,7 +27,7 @@ async function clave(): Promise<string> {
 
 let apertura: Promise<SQLiteDatabase> | undefined;
 
-async function abrir(): Promise<SQLiteDatabase> {
+export async function abrirBaseOperativa(): Promise<SQLiteDatabase> {
   return (apertura ??= (async () => {
     const db = await openDatabaseAsync(DATABASE_NAME);
     const key = await clave();
@@ -46,13 +46,28 @@ async function abrir(): Promise<SQLiteDatabase> {
         saved_at TEXT NOT NULL,
         payload_json TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id TEXT NOT NULL UNIQUE,
+        api_url TEXT NOT NULL,
+        portal_origin TEXT NOT NULL,
+        operation_json TEXT NOT NULL,
+        queued_at TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pendiente'
+          CHECK (state IN ('pendiente', 'rechazada')),
+        rejection_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS sync_queue_pending_order
+        ON sync_queue (state, next_attempt_at, queued_at, sequence);
     `);
     return db;
   })());
 }
 
 export async function guardarRutaOffline(ruta: RutaOfflinePayload): Promise<string> {
-  const db = await abrir();
+  const db = await abrirBaseOperativa();
   const savedAt = new Date().toISOString();
   await db.runAsync(
     `INSERT INTO active_route (
@@ -74,7 +89,7 @@ export async function guardarRutaOffline(ruta: RutaOfflinePayload): Promise<stri
 }
 
 export async function leerRutaOffline(ahora: Date = new Date()): Promise<RutaOfflineGuardada | undefined> {
-  const db = await abrir();
+  const db = await abrirBaseOperativa();
   const fila = await db.getFirstAsync<{
     payload_json: string;
     saved_at: string;
@@ -96,7 +111,6 @@ export async function leerRutaOffline(ahora: Date = new Date()): Promise<RutaOff
 }
 
 export async function borrarRutaOffline(): Promise<void> {
-  const db = await abrir();
+  const db = await abrirBaseOperativa();
   await db.runAsync('DELETE FROM active_route WHERE singleton = 1');
 }
-

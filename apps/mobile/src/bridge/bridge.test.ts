@@ -24,6 +24,7 @@ function esperarMensajes() {
 function setup() {
   const inyectados: string[] = [];
   let escaneos = 0;
+  const operaciones = new Set<string>();
   const manejadores: ManejadoresNativos = {
     capacidades: async () => ({
       tieneNfc: true, nfcActivado: true, tieneCamara: true, nivelApiAndroid: 35,
@@ -42,6 +43,12 @@ function setup() {
     estadoConexion: async () => ({ enLinea: true, tipo: 'wifi' }),
     guardarRutaOffline: async () => new Date().toISOString(),
     borrarRutaOffline: async () => undefined,
+    encolarSync: async ({ operation }) => {
+      const inserted = !operaciones.has(operation.clientId);
+      operaciones.add(operation.clientId);
+      return inserted;
+    },
+    sincronizarCola: async () => ({ procesadas: 0, pendientes: 0 }),
   };
   const puente = crearPuenteNativo({
     portalOrigen: ORIGEN,
@@ -51,7 +58,7 @@ function setup() {
     alIncompatible: () => undefined,
     msEsperaSaludo: 60_000,
   });
-  return { puente, inyectados, escaneos: () => escaneos };
+  return { puente, inyectados, escaneos: () => escaneos, operaciones };
 }
 
 test('rechaza payloads mal formados antes de llegar a los módulos nativos', () => {
@@ -151,4 +158,47 @@ test('rechaza una ruta offline vacía o de tamaño operativo absurdo', () => {
     checkpoints: [],
   });
   assert.equal(leerMensajePortal(JSON.stringify(mensaje)).ok, false);
+});
+
+test('la cola nativa conserva un solo UUID aunque el portal lo envíe tres veces', async () => {
+  const { puente, operaciones, inyectados } = setup();
+  puente.alRecibirMensaje(evento(
+    armarSobre('hello', { portalBuild: 'test', requiere: { major: 1, minMinor: 0 } }),
+  ));
+  await esperarMensajes();
+  const payload = {
+    apiUrl: 'https://api.example.test',
+    portalOrigin: 'https://control.example.test',
+    operation: {
+      type: 'scan' as const,
+      clientId: '3a0c8f7e-1111-4222-8333-444455556666',
+      patrolId: '4a0c8f7e-1111-4222-8333-444455556666',
+      payload: {
+        uid: '04AABBCC',
+        method: 'nfc',
+        clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+      },
+      queuedAt: '2026-08-04T01:00:00.000Z',
+    },
+  };
+  for (let intento = 0; intento < 3; intento += 1) {
+    puente.alRecibirMensaje(evento(armarSobre('sync.queue.enqueue', payload)));
+    await esperarMensajes();
+  }
+
+  assert.equal(operaciones.size, 1);
+  assert.match(inyectados.at(-1) ?? '', /sync\.queue\.enqueued|sync.queue.enqueued/);
+  puente.detener();
+});
+
+test('la cola rechaza API HTTP externa y claves que no sean UUID', () => {
+  const invalido = armarSobre('sync.queue.enqueue', {
+    apiUrl: 'http://api.example.test',
+    portalOrigin: 'https://control.example.test',
+    operation: {
+      type: 'scan', clientId: 'predecible', patrolId: 'tambien', payload: {},
+      queuedAt: '2026-08-04T01:00:00.000Z',
+    },
+  });
+  assert.equal(leerMensajePortal(JSON.stringify(invalido)).ok, false);
 });

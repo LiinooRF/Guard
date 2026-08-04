@@ -90,5 +90,7 @@ export function crearManejadoresBase(): ManejadoresNativos {
       throw new Error('almacenamiento-offline-no-configurado');
     },
     borrarRutaOffline: async () => undefined,
+    encolarSync: async () => false,
+    sincronizarCola: async () => ({ procesadas: 0, pendientes: 0 }),
   };
 }

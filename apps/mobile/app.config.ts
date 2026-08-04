@@ -82,6 +82,7 @@ const config: ExpoConfig = {
     'react-native-nfc-manager',
     ['expo-sqlite', { useSQLCipher: true }],
     'expo-secure-store',
+    'expo-background-task',
 
     [
       'expo-splash-screen',
@@ -279,9 +280,10 @@ const config: ExpoConfig = {
     // se pierde el formulario a medio llenar.
     predictiveBackGestureEnabled: false,
 
-    // Sin respaldo automático: la ruta vive cifrada con una clave del Keystore
-    // de ESTE dispositivo. Restaurar solo el archivo en otro teléfono lo deja
-    // ilegible y copiaría datos operativos a un equipo aún no autenticado.
+    // Sin respaldo automático: la ruta y la cola operativa viven cifradas con
+    // una clave del Keystore de ESTE dispositivo. Restaurar solo el archivo en
+    // otro teléfono lo dejaría ilegible y, peor, copiaría ubicaciones y trabajo
+    // pendiente de un guardia a un equipo que todavía no autenticó a nadie.
     allowBackup: false,
   },
 };
