@@ -223,7 +223,8 @@ casi todos son **calendario, no código**:
 | Configuración de permisos, identidad visual y perfiles de EAS | hecho (este PR) |
 | Contrato del puente versionado (`src/bridge/`) | hecho (este PR) |
 | Módulos nativos de NFC, cámara y ubicación | **falta** — carril #11 / #5 |
-| Cableado del puente en `App.tsx` | **falta** — el snippet exacto está en `src/bridge/README.md` |
+| Cableado del puente en `App.tsx` | hecho (#58): saludo, origen, compatibilidad y conectividad |
+| Autenticidad criptográfica del escaneo | **falta** — se completa en #59; `postMessage` solo no puede probar dispositivo |
 
 `App.tsx` no se toca en este PR a propósito: lo está trabajando el carril de NFC
 y dos agentes escribiendo el mismo archivo es cómo se pierde trabajo.

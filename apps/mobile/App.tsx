@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,6 +9,11 @@ import {
   View,
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
+import * as Network from 'expo-network';
+
+import { crearManejadoresBase, normalizarConexion } from './src/bridge/default-handlers';
+import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
+import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
 const APP_LIKE_DOCUMENT = `
@@ -44,6 +49,29 @@ export default function App() {
   const webView = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [bloqueo, setBloqueo] = useState<{
+    motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
+  } | null>(null);
+  const manejadores = useMemo(crearManejadoresBase, []);
+  const puente = useMemo(() => crearPuenteNativo({
+    portalOrigen: portal.origin,
+    appVersion: mobilePackage.version,
+    inyectar: (javaScript) => webView.current?.injectJavaScript(javaScript),
+    manejadores,
+    alIncompatible: (motivo, mensaje) => setBloqueo({ motivo, mensaje }),
+    alSinSaludo: () => setBloqueo({
+      motivo: 'portal-sin-puente',
+      mensaje: 'El portal no pudo conectarse con las funciones del teléfono. Avisa a soporte.',
+    }),
+  }), [manejadores, portal.origin]);
+
+  useEffect(() => puente.detener, [puente]);
+  useEffect(() => {
+    const subscription = Network.addNetworkStateListener((estado) => {
+      puente.notificarConexion(normalizarConexion(estado));
+    });
+    return () => subscription.remove();
+  }, [puente]);
 
   const allowNavigation = (navigation: WebViewNavigation) => {
     try {
@@ -54,6 +82,7 @@ export default function App() {
   };
 
   const retry = () => {
+    setBloqueo(null);
     setFailed(false);
     setLoading(true);
     webView.current?.reload();
@@ -66,8 +95,8 @@ export default function App() {
         ref={webView}
         source={{ uri: portal.href }}
         applicationNameForUserAgent="VoxIAAndroid/0.1"
-        injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT}
-        onMessage={() => undefined}
+        injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
+        onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}
         onLoadStart={() => {
@@ -117,6 +146,20 @@ export default function App() {
           >
             <Text style={styles.buttonText}>Reintentar</Text>
           </Pressable>
+        </View>
+      ) : null}
+
+      {bloqueo ? (
+        <View accessibilityRole="alert" style={styles.overlay}>
+          <Text style={styles.title}>
+            {bloqueo.motivo === 'app-antigua' ? 'Actualización necesaria' : 'Portal incompatible'}
+          </Text>
+          <Text style={styles.description}>{bloqueo.mensaje}</Text>
+          {bloqueo.motivo !== 'app-antigua' ? (
+            <Pressable accessibilityRole="button" onPress={retry} style={styles.button}>
+              <Text style={styles.buttonText}>Reintentar</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </SafeAreaView>

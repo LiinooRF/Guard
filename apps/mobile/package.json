@@ -10,6 +10,8 @@
     "config": "expo config --type public",
     "doctor": "npx expo-doctor",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "bridge:check": "cmp -s src/bridge/protocol.ts ../web/app/_lib/bridge/protocol.ts && cmp -s src/bridge/web-client.ts ../web/app/_lib/bridge/web-client.ts",
     "build:development": "npx eas-cli build --platform android --profile development",
     "build:preview": "npx eas-cli build --platform android --profile preview",
     "build:production": "npx eas-cli build --platform android --profile production",
@@ -34,6 +36,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "~19.2.2",
+    "tsx": "^4.23.5",
     "typescript": "~6.0.3"
   },
   "overrides": {
