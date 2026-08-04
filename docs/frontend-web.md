@@ -214,6 +214,27 @@ respuestas que la interfaz tiene que distinguir, porque no significan lo mismo:
 La foto de novedad va **después** de crear la novedad, con el id que devolvió el servidor — nunca en
 el mismo POST. En terreno una subida cortada se llevaría también el reporte, que es lo que importa.
 
+#### Ver una foto
+
+Los listados devuelven metadatos, **no bytes ni URLs directas**. Para mostrar una imagen:
+
+```
+GET /evidence/photos/:photoId/link        reports:read → { url, expiresAt }
+GET /evidence/photos/:photoId?exp&tenant&sig            → los bytes (firma, sin sesión)
+GET /evidence/photos/:photoId/integrity   reports:read → { estado, esperado, actual }
+```
+
+Pide el enlace y ponlo en el `src` del `<img>`. **Dura 5 minutos**: no lo guardes en estado
+persistente ni lo metas en una URL que el usuario pueda compartir. Si la vista queda abierta más de
+eso, vuelve a pedirlo — un enlace vencido responde **410**, no 403, justamente para que puedas
+distinguir "caducó, pídelo de nuevo" de "esto no es tuyo".
+
+No existe ninguna otra ruta hacia el volumen de evidencia: no hay directorio estático.
+
+`integrity` recalcula el hash del archivo y lo compara con el guardado. Devuelve `intacta`,
+`alterada` o `ausente` — y esos tres casos son distintos: el segundo es manipulación y el tercero es
+pérdida.
+
 ### Escalamiento y eventos
 
 ```
