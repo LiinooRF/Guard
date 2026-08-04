@@ -33,6 +33,13 @@ COPY --from=build --chown=node:node /app/packages/shared/dist packages/shared/di
 COPY --from=build --chown=node:node /app/apps/api/dist apps/api/dist
 RUN mkdir -p /app/storage && chown node:node /app/storage
 
+# El volumen de evidencia se monta en EVIDENCE_PATH (/data/evidence). Si esa
+# ruta NO existe en la imagen, Docker crea el volumen como root:root y el
+# proceso —que corre como node— no puede escribir: toda subida de foto muere
+# con EACCES y un 500 sin pista. Creandola aca con el dueño correcto, Docker
+# copia esa propiedad al inicializar el volumen vacio.
+RUN mkdir -p /data/evidence && chown node:node /data/evidence
+
 USER node
 EXPOSE 3001
 CMD ["node", "apps/api/dist/main.js"]

@@ -110,10 +110,15 @@ export class BrandingService {
    */
   async forDocuments() {
     const marca = await this.current();
-    const filas = await this.tenantContext.manager.query<Array<{ name: string }>>(
-      `SELECT name FROM tenants WHERE id = app_tenant_id()`,
-    );
-    const nombreLegal = filas[0]?.name ?? 'VoxIA Control';
+    // display_name y legal_name, no "name": esa columna no existe en tenants y
+    // el SELECT reventaba TODOS los informes en runtime. El test no lo vio
+    // porque el mock devolvia una columna inventada.
+    const filas = await this.tenantContext.manager.query<
+      Array<{ display_name: string | null; legal_name: string | null }>
+    >(`SELECT display_name, legal_name FROM tenants WHERE id = app_tenant_id()`);
+    // Cascada de mas comercial a mas formal: la marca configurada, el nombre
+    // con que la plataforma muestra a la empresa, y recien despues el legal.
+    const nombreLegal = filas[0]?.display_name ?? filas[0]?.legal_name ?? 'VoxIA Control';
     return {
       displayName: marca.commercialName ?? nombreLegal,
       logoUri: marca.logoUri,
