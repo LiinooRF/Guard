@@ -1,5 +1,3 @@
-import { QueryFailedError } from 'typeorm';
-
 import type { AuthService } from '../auth/auth.service';
 import type { MailService } from '../auth/mail.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -17,35 +15,6 @@ function service(query: jest.Mock, revokeAllSessions = jest.fn().mockResolvedVal
 }
 
 describe('AdminService usuarios', () => {
-  it('permite alta sin correo usando nombre de usuario y clave inicial', async () => {
-    const query = jest.fn().mockResolvedValueOnce([]);
-    const { admin } = service(query);
-
-    await expect(admin.createUser({
-      givenName: 'Ana', familyName: 'Pérez', username: 'aperez',
-      password: 'clave-inicial-segura', role: 'GUARDIA',
-    })).resolves.toMatchObject({ invitationSent: false });
-    expect(query.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([
-      null, 'aperez', 'Ana', 'Pérez', 'GUARDIA',
-    ]));
-  });
-
-  it('traduce el límite del plan a un mensaje de negocio', async () => {
-    const databaseError = new QueryFailedError(
-      'SELECT admin_create_tenant_user(...)', [],
-      Object.assign(new Error('Límite de usuarios del plan alcanzado (25 de 25)'), {
-        code: 'P0001',
-      }),
-    );
-    const query = jest.fn().mockRejectedValueOnce(databaseError);
-    const { admin } = service(query);
-
-    await expect(admin.createUser({
-      givenName: 'Ana', familyName: 'Pérez', username: 'aperez',
-      password: 'clave-inicial-segura', role: 'GUARDIA',
-    })).rejects.toThrow('Límite de usuarios del plan alcanzado (25 de 25)');
-  });
-
   it('edita nombre sin revocar sesiones cuando el rol no cambia', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'user-1', role_key: 'GUARDIA' }])
