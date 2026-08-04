@@ -182,7 +182,7 @@ describe('SupervisorService', () => {
       .mockResolvedValueOnce([{ user_id: 'guard-id' }])
       .mockResolvedValueOnce([]) // advisory lock
       .mockResolvedValueOnce([
-        { assignment_id: 'assignment-id', shift_name: 'Noche', service_date: '2026-08-03' },
+        { assignment_id: 'assignment-id', shift_name: 'Noche', service_date: '2026-08-03', visible_to_supervisor: true },
       ]);
 
     await expect(
@@ -214,6 +214,9 @@ describe('SupervisorService', () => {
     ).resolves.toMatchObject({ id: 'assignment-id' });
     expect(query.mock.calls[3]?.[0]).toContain('pg_advisory_xact_lock');
     expect(query.mock.calls[4]?.[0]).toContain("tstzrange(solicitada.inicio, solicitada.fin, '[)')");
+    expect(query.mock.calls[4]?.[1]).toEqual([
+      'shift-id', '2026-08-03', 'guard-id', null, SUPERVISOR,
+    ]);
   });
 });
 
@@ -250,11 +253,36 @@ describe('SupervisorService — calendario semanal (#96)', () => {
       .mockResolvedValueOnce([{ present: true }])
       .mockResolvedValueOnce([{ user_id: 'guard-id' }])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ assignment_id: 'a-1', shift_name: 'Día', service_date: '2026-08-03' }]);
+      .mockResolvedValueOnce([{ assignment_id: 'a-1', shift_name: 'Día', service_date: '2026-08-03', visible_to_supervisor: true }]);
     await expect(servicio(query).checkShiftConflict('shift-id', SUPERVISOR, {
       guardId: 'guard-id', serviceDate: '2026-08-03',
     })).resolves.toMatchObject({ conflict: true, message: expect.stringContaining('se solapan') });
     expect(query.mock.calls.some(([sql]) => /INSERT|UPDATE/.test(sql))).toBe(false);
+  });
+
+  it('detecta un choque ajeno sin revelar turno ni fecha de otro recinto', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ site_id: 'site-id', weekday_ok: true }])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([{ user_id: 'guard-id' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        assignment_id: 'a-externa',
+        shift_name: 'Secreto otra planta',
+        service_date: '2026-08-03',
+        visible_to_supervisor: false,
+      }]);
+
+    const result = await servicio(query).checkShiftConflict('shift-id', SUPERVISOR, {
+      guardId: 'guard-id', serviceDate: '2026-08-03',
+    });
+    expect(result).toEqual({
+      conflict: true,
+      message: 'El guardia ya tiene un turno asignado en ese horario; las ventanas se solapan',
+    });
+    expect(result.message).not.toContain('Secreto');
+    expect(result.message).not.toContain('2026-08-03');
   });
 
   it('reasigna solo una asignacion futura y excluye esa fila del control de choque', async () => {
@@ -269,7 +297,7 @@ describe('SupervisorService — calendario semanal (#96)', () => {
     await expect(servicio(query).reassignShift('assignment-id', SUPERVISOR, 'new-guard'))
       .resolves.toEqual({ id: 'assignment-id', guardId: 'new-guard' });
     expect(query.mock.calls[4]?.[1]).toEqual([
-      'shift-id', '2026-08-03', 'new-guard', 'assignment-id',
+      'shift-id', '2026-08-03', 'new-guard', 'assignment-id', SUPERVISOR,
     ]);
     expect(query.mock.calls[5]?.[0]).toContain('UPDATE shift_assignments');
   });

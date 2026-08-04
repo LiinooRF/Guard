@@ -490,7 +490,7 @@ export class SupervisorService {
     );
     if (!guardias.length) throw new NotFoundException('El guardia no existe en esta empresa');
 
-    await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate);
+    await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate, supervisorId);
 
     const asignado = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `INSERT INTO shift_assignments (tenant_id, shift_id, guard_id, service_date)
@@ -526,7 +526,7 @@ export class SupervisorService {
     );
     if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
     try {
-      await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate);
+      await this.assertNoOverlap(shiftId, input.guardId, input.serviceDate, supervisorId);
       return { conflict: false };
     } catch (error) {
       if (error instanceof ConflictException) {
@@ -560,7 +560,13 @@ export class SupervisorService {
       [guardId],
     );
     if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
-    await this.assertNoOverlap(assignment.shift_id, guardId, assignment.service_date, assignmentId);
+    await this.assertNoOverlap(
+      assignment.shift_id,
+      guardId,
+      assignment.service_date,
+      supervisorId,
+      assignmentId,
+    );
     await this.tenantContext.manager.query(
       `UPDATE shift_assignments SET guard_id = $2 WHERE id = $1`,
       [assignmentId, guardId],
@@ -572,6 +578,7 @@ export class SupervisorService {
     shiftId: string,
     guardId: string,
     serviceDate: string,
+    supervisorId: string,
     excludeAssignmentId?: string,
   ) {
     // Un lock por guardia tambien cubre turnos nocturnos en fechas adyacentes.
@@ -583,6 +590,7 @@ export class SupervisorService {
       assignment_id: string;
       shift_name: string;
       service_date: string;
+      visible_to_supervisor: boolean;
     }>>(
       `WITH solicitada AS (
          SELECT
@@ -596,7 +604,12 @@ export class SupervisorService {
          WHERE objetivo.id = $1
        )
        SELECT a.id AS assignment_id, existente.name AS shift_name,
-              a.service_date::text AS service_date
+              a.service_date::text AS service_date,
+              EXISTS (
+                SELECT 1 FROM supervisor_sites acceso
+                WHERE acceso.supervisor_id = $5
+                  AND acceso.site_id = existente.site_id
+              ) AS visible_to_supervisor
        FROM shift_assignments a
        JOIN shifts existente ON existente.id = a.shift_id
        JOIN sites recinto ON recinto.id = existente.site_id
@@ -612,13 +625,13 @@ export class SupervisorService {
            '[)'
          ) && tstzrange(solicitada.inicio, solicitada.fin, '[)')
        LIMIT 1`,
-      [shiftId, serviceDate, guardId, excludeAssignmentId ?? null],
+      [shiftId, serviceDate, guardId, excludeAssignmentId ?? null, supervisorId],
     );
     if (conflictos.length) {
       const conflicto = conflictos[0]!;
-      throw new ConflictException(
-        `El guardia ya tiene el turno ${conflicto.shift_name} el ${conflicto.service_date}; las ventanas se solapan`,
-      );
+      throw new ConflictException(conflicto.visible_to_supervisor
+        ? `El guardia ya tiene el turno ${conflicto.shift_name} el ${conflicto.service_date}; las ventanas se solapan`
+        : 'El guardia ya tiene un turno asignado en ese horario; las ventanas se solapan');
     }
 
   }
