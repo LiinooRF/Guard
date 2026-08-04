@@ -9,6 +9,7 @@ import {
 } from '@voxia/shared';
 import { QueryFailedError } from 'typeorm';
 
+import { AuditService } from '../audit/audit.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { overridesComoObjeto, sanitizeOverrides } from './rule-overrides';
 
@@ -55,7 +56,10 @@ const CASCADE_SQL = `
 export class RulesService {
   private readonly logger = new Logger(RulesService.name);
 
-  constructor(private readonly tenantContext: TenantContextService) {}
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Reglas efectivas para el contexto dado: defaults del producto + plataforma +
@@ -113,7 +117,7 @@ export class RulesService {
    * Reemplaza el set COMPLETO de overrides del tenant (no mergea con lo
    * guardado): quitar un campo del body lo devuelve a su valor heredado.
    */
-  async updateOverrides(overrides: Partial<PatrolRules>) {
+  async updateOverrides(overrides: Partial<PatrolRules>, actorId: string) {
     await this.tenantContext.manager.query(
       `INSERT INTO tenant_rules (tenant_id, overrides)
        VALUES (app_tenant_id(), $1::jsonb)
@@ -122,11 +126,12 @@ export class RulesService {
          updated_at = now()`,
       [JSON.stringify(overrides)],
     );
+    await this.recordChange(actorId, 'tenant', undefined, overrides);
     return this.adminView();
   }
 
   /** Idem para un recinto. Configurar uno no toca a los demas del tenant. */
-  async updateSiteOverrides(siteId: string, overrides: Partial<PatrolRules>) {
+  async updateSiteOverrides(siteId: string, overrides: Partial<PatrolRules>, actorId: string) {
     await this.escribir(
       `INSERT INTO site_rules (tenant_id, site_id, overrides)
        VALUES (app_tenant_id(), $1::uuid, $2::jsonb)
@@ -136,11 +141,16 @@ export class RulesService {
       [siteId, JSON.stringify(overrides)],
       'El recinto no existe',
     );
+    await this.recordChange(actorId, 'site', siteId, overrides);
     return this.siteView(siteId);
   }
 
   /** Idem para un punto de control. */
-  async updateCheckpointOverrides(checkpointId: string, overrides: Partial<PatrolRules>) {
+  async updateCheckpointOverrides(
+    checkpointId: string,
+    overrides: Partial<PatrolRules>,
+    actorId: string,
+  ) {
     await this.escribir(
       `INSERT INTO checkpoint_rules (tenant_id, checkpoint_id, overrides)
        VALUES (app_tenant_id(), $1::uuid, $2::jsonb)
@@ -150,6 +160,7 @@ export class RulesService {
       [checkpointId, JSON.stringify(overrides)],
       'El punto de control no existe',
     );
+    await this.recordChange(actorId, 'checkpoint', checkpointId, overrides);
     return this.checkpointView(checkpointId);
   }
 
@@ -220,5 +231,30 @@ export class RulesService {
       }
       throw error;
     }
+  }
+
+  private async recordChange(
+    actorId: string,
+    scope: Exclude<RuleScope, 'platform'>,
+    targetId: string | undefined,
+    overrides: Partial<PatrolRules>,
+  ): Promise<void> {
+    const actors = await this.tenantContext.manager.query<Array<{ label: string }>>(
+      `SELECT trim(given_name || ' ' || family_name) AS label FROM users WHERE id = $1`,
+      [actorId],
+    );
+    const keys = Object.keys(overrides).sort();
+    const summary = keys.length
+      ? `${scope}: ${keys.length} regla(s) configurada(s): ${keys.join(', ')}`
+      : `${scope}: se limpiaron todos los overrides`;
+    await this.audit.record({
+      actorId,
+      actorLabel: actors[0]?.label || 'usuario desconocido',
+      action: 'reglas.modificadas',
+      entityType: `${scope}_rules`,
+      entityId: targetId,
+      // Solo nombres de parametros: los valores pueden contener correos u otra PII.
+      summary,
+    });
   }
 }

@@ -66,9 +66,15 @@ export class ReportsController {
   async siteSummary(
     @Param() params: SiteParam,
     @Query() query: SiteSummaryQueryDto,
+    @Req() request: Autenticado,
     @Res({ passthrough: false }) response: Response,
   ) {
-    const informe = await this.reports.buildSiteSummary(params.siteId, query.from, query.to);
+    const informe = await this.reports.buildSiteSummary(
+      params.siteId,
+      query.from,
+      query.to,
+      request.user,
+    );
     this.responderPdf(response, informe.filename, informe.pdf);
   }
 

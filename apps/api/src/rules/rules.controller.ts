@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query, Req } from '@nestjs/common';
 import {
   DEFAULT_FEATURE_FLAGS,
   DEFAULT_PATROL_RULES,
@@ -11,14 +11,18 @@ import {
   RULE_UNIT_LABELS,
   RULE_VALUE_TYPES,
 } from '@voxia/shared';
+import type { Request } from 'express';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';
+import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { SkipTenantContext } from '../database/tenant-context/skip-tenant-context.decorator';
 import { CheckpointIdParam, EffectiveRulesQuery, SiteIdParam } from './dto/rule-context.dto';
 import { UpdateRulesPipe, type UpdateRulesDto } from './dto/update-rules.dto';
 import { RulesService } from './rules.service';
+
+type Autenticado = Request & { user: AuthenticatedUser };
 
 /**
  * Sin decoradores a nivel de clase, a proposito: `defaults` y `catalog` son
@@ -98,8 +102,11 @@ export class RulesController {
   @Put('admin')
   @Permissions('tenant:rules:manage')
   @TenantScope()
-  updateTenantRules(@Body(new UpdateRulesPipe('tenant')) input: UpdateRulesDto) {
-    return this.rules.updateOverrides(input);
+  updateTenantRules(
+    @Body(new UpdateRulesPipe('tenant')) input: UpdateRulesDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.rules.updateOverrides(input, request.user.sub);
   }
 
   @Get('admin/sites/:siteId')
@@ -116,8 +123,9 @@ export class RulesController {
   updateSiteRules(
     @Param() params: SiteIdParam,
     @Body(new UpdateRulesPipe('site')) input: UpdateRulesDto,
+    @Req() request: Autenticado,
   ) {
-    return this.rules.updateSiteOverrides(params.siteId, input);
+    return this.rules.updateSiteOverrides(params.siteId, input, request.user.sub);
   }
 
   @Get('admin/checkpoints/:checkpointId')
@@ -133,7 +141,8 @@ export class RulesController {
   updateCheckpointRules(
     @Param() params: CheckpointIdParam,
     @Body(new UpdateRulesPipe('checkpoint')) input: UpdateRulesDto,
+    @Req() request: Autenticado,
   ) {
-    return this.rules.updateCheckpointOverrides(params.checkpointId, input);
+    return this.rules.updateCheckpointOverrides(params.checkpointId, input, request.user.sub);
   }
 }
