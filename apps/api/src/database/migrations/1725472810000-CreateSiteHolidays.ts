@@ -7,8 +7,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * legal y cerrar otro dia por mantenimiento. La fecha se interpreta en la zona
  * horaria del recinto y una fila siempre significa "dia no habil".
  */
-export class CreateSiteHolidays1725462000000 implements MigrationInterface {
-  name = 'CreateSiteHolidays1725462000000';
+export class CreateSiteHolidays1725472810000 implements MigrationInterface {
+  name = 'CreateSiteHolidays1725472810000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
