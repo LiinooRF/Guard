@@ -16,6 +16,7 @@ import { GuardController } from '../guard/guard.controller';
 import { HealthController } from '../health/health.controller';
 import { EscalationController } from '../escalation/escalation.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
+import { PhotoServingController } from '../evidence/photo-serving.controller';
 import { GeoController } from '../geo/geo.controller';
 import { PlatformController } from '../platform/platform.controller';
 import { SupportAccessController } from '../platform-data/support-access.controller';
@@ -158,6 +159,12 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(EvidenceController, 'listPatrolPhotos', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(EvidenceController, 'uploadEventPhoto', ['patrols:execute'], ['GUARDIA'], true),
   secured(EvidenceController, 'listEventPhotos', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(EvidenceController, 'issuePhotoLink', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(EvidenceController, 'verifyPhotoIntegrity', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  // Los bytes de la foto los autoriza la FIRMA del enlace, no la sesion: por eso
+  // vive en su propio controlador, publico y fuera del @TenantScope() del resto
+  // del modulo. Ver photo-links.ts.
+  publicEndpoint(PhotoServingController, 'servePhoto'),
 
   secured(TenantDataController, 'pendingDeletions', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(TenantDataController, 'exportTenant', ['platform:tenants:manage'], ['SUPERADMIN']),
@@ -233,6 +240,7 @@ const CONTROLLERS = [
   SupervisorController,
   ReportsController,
   EvidenceController,
+  PhotoServingController,
   TenantDataController,
   SupportAccessController,
   AuditController,
