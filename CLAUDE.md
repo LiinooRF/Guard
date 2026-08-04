@@ -277,8 +277,30 @@ Están documentadas dentro de sus issues, con opciones y trade-offs. **No las ci
 |---|---|
 | Proveedor de correo | #9 |
 | Modelo de licencias por tenant | #2 |
-| Routing de dominio white-label (incluye cómo resuelve el tenant la app móvil, que no tiene barra de direcciones) | #19 |
 | Si el control de acceso de visitantes entra al producto | #139 |
+
+### Cerrada: un solo dominio para todas las empresas (#19, #119)
+
+**Decisión del equipo, 2026-08-04.** No hay subdominio ni dominio propio por cliente: todas las
+empresas entran por el mismo host y **el tenant se resuelve desde la sesión**, no desde la URL.
+
+Ya funcionaba así: `TenantContextInterceptor` lee `request.user.tenant_id` del token y lo pone en
+`app.tenant_id`. No hay que construir nada — pero sí hay que **no** construir lo otro: si alguien
+propone resolver el tenant por `Host`, es una decisión revertida, no una mejora.
+
+Tres consecuencias que conviene tener presentes:
+
+1. **Desaparece el problema que hacía difícil esta decisión.** La app móvil no tiene barra de
+   direcciones, así que con dominio por tenant había que inventarle un mecanismo (código de empresa
+   al instalar, deep link, QR de alta). Con un solo dominio, el guardia solo inicia sesión.
+2. **El white-label sigue completo**: nombre comercial, logo y colores se sirven por tenant después
+   del login (`tenant_branding`). Lo que se pierde es que un cliente tenga `rondas.suempresa.cl` —
+   la competencia cobra +15% por white-label, así que si comercial lo promete alguna vez, eso es un
+   proyecto nuevo y no un ajuste de configuración.
+3. **El aislamiento descansa entero en la sesión y en RLS**, no en la separación de dominios. Es
+   donde ya descansaba —el dominio nunca fue un control de acceso—, pero conviene decirlo: la cookie
+   es del host, y lo único que limita a una empresa es el `tenant_id` de adentro del token y la
+   política de PostgreSQL. Por eso esas dos cosas no se tocan a la ligera.
 
 ### Cerrada: cómo entra el `SUPERADMIN` a un tenant (#109)
 
