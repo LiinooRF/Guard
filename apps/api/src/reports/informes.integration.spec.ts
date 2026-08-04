@@ -85,12 +85,14 @@ describeDatabase('camino de informes (esquema real)', () => {
    * en el primer informe que pida un cliente.
    */
   it('tenants conserva las columnas que el codigo consulta por nombre', async () => {
-    const filas = await enTenant(async (_c, runner) =>
-      runner.query<Array<{ column_name: string }>>(
+    // QueryRunner.query no acepta parametro de tipo (a diferencia del
+    // EntityManager), de ahi el cast.
+    const filas = (await enTenant(async (_c, runner) =>
+      runner.query(
         `SELECT column_name FROM information_schema.columns
          WHERE table_name = 'tenants' AND table_schema = 'public'`,
       ),
-    );
+    )) as Array<{ column_name: string }>;
     const columnas = new Set(filas.map((f) => f.column_name));
     for (const esperada of ['id', 'slug', 'legal_name', 'display_name', 'status']) {
       expect(columnas.has(esperada)).toBe(true);
