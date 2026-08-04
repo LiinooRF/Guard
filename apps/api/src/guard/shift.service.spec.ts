@@ -1,4 +1,5 @@
 import type { GpsPolicyService } from '../geo/gps-policy.service';
+import type { EnvioInformeService } from '../reports/envio-informe.service';
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EscalationService } from '../escalation/escalation.service';
@@ -16,6 +17,14 @@ const sinReglas = () =>
  * solo tiene que dejar pasar: si estos tests dependieran de su veredicto,
  * probarian dos cosas a la vez y fallarian por el motivo equivocado.
  */
+/**
+ * El envio del informe se prueba entero en el carril de #86. Aca solo tiene que
+ * dejarse llamar: si estos tests dependieran de que encole, probarian dos cosas
+ * a la vez y fallarian por el motivo equivocado.
+ */
+const sinEnvioInforme = () =>
+  ({ alCerrarRonda: jest.fn().mockResolvedValue({ jobId: 'job' }) }) as unknown as EnvioInformeService;
+
 const sinPuertaGps = () =>
   ({ assertPatrolStartAllowed: jest.fn().mockResolvedValue(undefined) }) as unknown as GpsPolicyService;
 
@@ -23,7 +32,7 @@ const sinEscalamiento = (notificados = 0) =>
   ({ notify: jest.fn().mockResolvedValue(notificados) }) as unknown as EscalationService;
 
 function servicio(query: jest.Mock) {
-  return new GuardService({ manager: { query } } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps());
+  return new GuardService({ manager: { query } } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
 }
 
 describe('GuardService — jornada (#131)', () => {

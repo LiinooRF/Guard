@@ -6,26 +6,12 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import { EscalationService } from '../escalation/escalation.service';
 import { GpsPolicyService } from '../geo/gps-policy.service';
 import { MailQueueService } from '../mail/mail-queue.service';
+import { EnvioInformeService } from '../reports/envio-informe.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 import type { ShiftMarkDto } from './dto/shift-mark.dto';
 import { DeviceSignatureService } from './device-signature.service';
-
-/**
- * La regla que dio origen al producto: si el cumplimiento queda bajo el
- * umbral, la alerta va DIRECTO al admin de la empresa. Ver issue #64.
- */
-const ALERTA_BAJO_UMBRAL = {
-  subject: 'Cumplimiento bajo el umbral: {{route}} en {{site}} ({{pct}}%)',
-  text:
-    'La ronda "{{route}}" del recinto {{site}} cerró con {{pct}}% de cumplimiento, ' +
-    'bajo el umbral de {{threshold}}%.\n\n' +
-    'Guardia: {{guard}}\n' +
-    'Puntos escaneados: {{scanned}} de {{expected}}\n' +
-    'Puntos sin escanear: {{missed}}\n\n' +
-    'Revisa el detalle en el panel de VoxIA Control.',
-} as const;
 
 interface PatrolRow {
   id: string;
@@ -55,6 +41,8 @@ export class GuardService {
     private readonly rules: RulesService,
     private readonly escalation: EscalationService,
     private readonly gpsPolicy: GpsPolicyService,
+    private readonly envioInforme: EnvioInformeService,
+    // Va al final y opcional: varios specs construyen el servicio por posicion.
     private readonly signatures?: DeviceSignatureService,
   ) {}
 
@@ -307,8 +295,33 @@ export class GuardService {
       );
       closed = true;
 
-      if (compliance.belowThreshold) {
-        await this.alertarBajoUmbral(patrolId, compliance, rules.complianceThreshold);
+      /*
+       * Aca se dispara el informe automatico (#86). Estaba TODO construido y
+       * nadie lo llamaba: el criterio "cerrar la ronda deja el PDF en el correo
+       * sin accion manual" se cumplia solo por el barrido de rezagadas, o sea
+       * entre 15 y 25 minutos tarde.
+       *
+       * alCerrarRonda() solo ENCOLA: el escaneo responde enseguida y el guardia
+       * no espera parado frente a la puerta a que se dibuje un PDF.
+       *
+       * Reemplaza a alertarBajoUmbral(), que mandaba un aviso en texto plano,
+       * sin PDF y sin quedar en la bitacora de envios. El carril nuevo manda las
+       * dos cosas —informe a los destinatarios y alerta con OTRO asunto a los
+       * administradores— con el mismo PDF adjunto. Dejar los dos daba DOS
+       * correos por la misma ronda mala.
+       */
+      try {
+        await this.envioInforme.alCerrarRonda(patrolId);
+      } catch (error) {
+        // Fallar al encolar no puede tumbar el escaneo: la ronda ya esta cerrada
+        // con su cumplimiento persistido, y el barrido de rezagadas la recoge.
+        this.logger.warn(
+          JSON.stringify({
+            event: 'envio_informe_no_encolado',
+            patrol_id: patrolId,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
       }
     }
 
@@ -589,74 +602,6 @@ export class GuardService {
     }
   }
 
-  /**
-   * Un fallo de correo JAMAS puede romper el escaneo: el guardia esta en
-   * terreno y su registro vale mas que la notificacion. Se avisa en el log y
-   * la ronda queda cerrada igual, con su porcentaje persistido.
-   */
-  private async alertarBajoUmbral(
-    patrolId: string,
-    compliance: { pct: number; scanned: number; expected: number; missedCheckpointIds: readonly string[] },
-    threshold: number,
-  ) {
-    try {
-      const contexto = await this.tenantContext.manager.query<Array<{
-        tenant_id: string;
-        site_name: string;
-        route_name: string;
-        guard_name: string;
-      }>>(
-        `SELECT p.tenant_id, s.name AS site_name, r.name AS route_name,
-                (u.given_name || ' ' || u.family_name) AS guard_name
-         FROM patrols p
-         JOIN sites s ON s.id = p.site_id
-         JOIN routes r ON r.id = p.route_id
-         JOIN users u ON u.id = p.guard_id
-         WHERE p.id = $1`,
-        [patrolId],
-      );
-      const info = contexto[0];
-      if (!info) return;
-
-      const admins = await this.tenantContext.manager.query<Array<{ id: string; email: string }>>(
-        `SELECT u.id, u.email
-         FROM memberships m
-         JOIN users u ON u.id = m.user_id
-         WHERE m.role_key = 'ADMIN' AND u.is_active AND u.email IS NOT NULL`,
-      );
-      if (!admins.length) {
-        this.logger.warn(
-          JSON.stringify({ event: 'umbral_sin_destinatarios', patrol_id: patrolId }),
-        );
-        return;
-      }
-
-      const vars = {
-        site: info.site_name,
-        route: info.route_name,
-        guard: info.guard_name,
-        pct: compliance.pct,
-        threshold,
-        scanned: compliance.scanned,
-        expected: compliance.expected,
-        missed: compliance.missedCheckpointIds.length,
-      };
-      for (const admin of admins) {
-        await this.mail.enqueue(
-          { to: admin.email, template: ALERTA_BAJO_UMBRAL, variables: vars, tenantId: info.tenant_id },
-          { idempotencyKey: `patrol-low-compliance:${patrolId}:${admin.id}` },
-        );
-      }
-    } catch (error) {
-      this.logger.warn(
-        JSON.stringify({
-          event: 'alerta_umbral_fallo',
-          patrol_id: patrolId,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
-  }
 }
 
 /** Distancia en metros entre dos coordenadas (formula de haversine). */
