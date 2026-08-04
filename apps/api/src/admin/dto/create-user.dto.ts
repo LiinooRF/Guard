@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsIn,
@@ -38,4 +39,21 @@ export class CreateTenantUserDto {
   @MinLength(12)
   @MaxLength(128)
   password?: string;
+}
+
+export class UpdateTenantUserDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  givenName!: string;
+
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  familyName!: string;
+
+  @IsIn(['SUPERVISOR', 'GUARDIA'])
+  role!: 'SUPERVISOR' | 'GUARDIA';
 }

@@ -6,7 +6,7 @@ import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { AdminService } from './admin.service';
 import { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import { CreateSiteDto } from './dto/create-site.dto';
-import { CreateTenantUserDto } from './dto/create-user.dto';
+import { CreateTenantUserDto, UpdateTenantUserDto } from './dto/create-user.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
 import { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import { RegisterTagDto, ResolveTagQuery } from './dto/register-tag.dto';
@@ -75,6 +75,12 @@ export class AdminController {
   @Permissions('tenant:users:manage')
   createUser(@Body() input: CreateTenantUserDto) {
     return this.admin.createUser(input);
+  }
+
+  @Patch('users/:userId')
+  @Permissions('tenant:users:manage')
+  updateUser(@Param() params: UserParam, @Body() input: UpdateTenantUserDto) {
+    return this.admin.updateUser(params.userId, input);
   }
 
   @Patch('users/:userId/active')

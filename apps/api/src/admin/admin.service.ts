@@ -15,7 +15,7 @@ import { MailService } from '../auth/mail.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
-import type { CreateTenantUserDto } from './dto/create-user.dto';
+import type { CreateTenantUserDto, UpdateTenantUserDto } from './dto/create-user.dto';
 import type { RegisterTagDto } from './dto/register-tag.dto';
 import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import type { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
@@ -256,6 +256,69 @@ export class AdminService {
     if (!result.length) throw new NotFoundException('Usuario administrable no encontrado');
     const revokedSessions = isActive ? 0 : await this.auth.revokeAllSessions(userId);
     return { id: userId, isActive, revokedSessions };
+  }
+
+  async updateUser(userId: string, input: UpdateTenantUserDto) {
+    const current = await this.tenantContext.manager.query<Array<{
+      id: string;
+      role_key: 'SUPERVISOR' | 'GUARDIA';
+    }>>(
+      `SELECT users.id, memberships.role_key
+       FROM users
+       JOIN memberships ON memberships.user_id = users.id
+       WHERE users.id = $1
+         AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')`,
+      [userId],
+    );
+    const user = current[0];
+    if (!user) throw new NotFoundException('Usuario administrable no encontrado');
+
+    const roleChanged = user.role_key !== input.role;
+    let removedSiteAssignments = 0;
+    if (roleChanged && input.role === 'GUARDIA') {
+      // La asignacion referencia la membresia SUPERVISOR. Se retira antes de
+      // cambiar el rol para no dejar recintos asignados a un guardia.
+      const removed = await this.tenantContext.manager.query<Array<{ removed: number }>>(
+        `WITH deleted AS (
+           DELETE FROM supervisor_sites WHERE supervisor_id = $1 RETURNING 1
+         )
+         SELECT count(*)::int AS removed FROM deleted`,
+        [userId],
+      );
+      removedSiteAssignments = Number(removed[0]?.removed ?? 0);
+    }
+    if (roleChanged) {
+      await this.tenantContext.manager.query(
+        `UPDATE memberships SET role_key = $2 WHERE user_id = $1`,
+        [userId, input.role],
+      );
+    }
+
+    const updated = await this.tenantContext.manager.query<Array<{
+      id: string;
+      given_name: string;
+      family_name: string;
+    }>>(
+      `WITH changed AS (
+         UPDATE users
+         SET given_name = $2, family_name = $3, updated_at = now()
+         WHERE id = $1
+         RETURNING id, given_name, family_name
+       )
+       SELECT id, given_name, family_name FROM changed`,
+      [userId, input.givenName.trim(), input.familyName.trim()],
+    );
+    if (!updated.length) throw new NotFoundException('Usuario administrable no encontrado');
+
+    const revokedSessions = roleChanged ? await this.auth.revokeAllSessions(userId) : 0;
+    return {
+      id: userId,
+      givenName: updated[0]!.given_name,
+      familyName: updated[0]!.family_name,
+      role: input.role,
+      revokedSessions,
+      removedSiteAssignments,
+    };
   }
 
   async revokeUserSessions(userId: string) {

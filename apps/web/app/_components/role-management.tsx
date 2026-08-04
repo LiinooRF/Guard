@@ -270,6 +270,19 @@ export function AdminManagement({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userQuery, setUserQuery] = useState('');
+  const [userRole, setUserRole] = useState<'all' | TenantUser['role']>('all');
+  const deferredUserQuery = useDeferredValue(userQuery.trim().toLocaleLowerCase('es'));
+  const visibleUsers = useMemo(
+    () => users.filter((user) => {
+      const identity = `${user.givenName} ${user.familyName} ${user.email ?? ''} ${user.username ?? ''}`
+        .toLocaleLowerCase('es');
+      return (!deferredUserQuery || identity.includes(deferredUserQuery))
+        && (userRole === 'all' || user.role === userRole);
+    }),
+    [deferredUserQuery, userRole, users],
+  );
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -314,6 +327,38 @@ export function AdminManagement({
       isActive: !user.isActive,
     });
     if (!response.ok) return setMessage(await responseMessage(response));
+    startTransition(() => router.refresh());
+  }
+
+  async function updateUser(event: FormEvent<HTMLFormElement>, user: TenantUser) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const nextRole = data.get('role');
+    if (
+      user.role === 'SUPERVISOR'
+      && nextRole === 'GUARDIA'
+      && user.siteIds.length > 0
+      && !window.confirm(
+        `Este cambio retirará ${user.siteIds.length} asignación(es) de recinto y cerrará sus sesiones. ¿Continuar?`,
+      )
+    ) return;
+    setMessage(null);
+    const response = await apiRequest(`${apiUrl}/admin/users/${user.id}`, 'PATCH', {
+      givenName: data.get('givenName'),
+      familyName: data.get('familyName'),
+      role: data.get('role'),
+    });
+    if (!response.ok) return setMessage(await responseMessage(response));
+    const result = (await response.json()) as {
+      revokedSessions: number;
+      removedSiteAssignments: number;
+    };
+    setEditingUserId(null);
+    setMessage(
+      result.revokedSessions || result.removedSiteAssignments
+        ? `Usuario actualizado. Se cerraron ${result.revokedSessions} sesión(es) y se retiraron ${result.removedSiteAssignments} asignación(es) de recinto.`
+        : 'Usuario actualizado correctamente.',
+    );
     startTransition(() => router.refresh());
   }
 
@@ -387,14 +432,46 @@ export function AdminManagement({
         </section>
       </div>
       <section className="management-card management-wide" id="usuarios">
-        <div className="card-heading"><div><span className="eyebrow">Accesos</span><h2>Usuarios del tenant</h2></div><span className="status-pill">{users.length}</span></div>
+        <div className="card-heading"><div><span className="eyebrow">Accesos</span><h2>Usuarios de la empresa</h2></div><span className="status-pill">{visibleUsers.length} de {users.length}</span></div>
+        <div className="tenant-filters user-filters">
+          <label>
+            <span>Buscar</span>
+            <input
+              value={userQuery}
+              onChange={(event) => setUserQuery(event.target.value)}
+              placeholder="Nombre, correo o usuario"
+            />
+          </label>
+          <label>
+            <span>Rol</span>
+            <select value={userRole} onChange={(event) => setUserRole(event.target.value as typeof userRole)}>
+              <option value="all">Todos</option>
+              <option value="SUPERVISOR">Supervisores</option>
+              <option value="GUARDIA">Guardias</option>
+              <option value="ADMIN">Administradores</option>
+            </select>
+          </label>
+        </div>
         <div className="management-list">
-          {users.map((user) => (
+          {visibleUsers.map((user) => (
             <article className="management-row user-row" key={user.id}>
-              <div><strong>{user.givenName} {user.familyName}</strong><small>{user.email ?? user.username} · {user.role}</small></div>
+              {editingUserId === user.id ? (
+                <form className="user-edit-form" onSubmit={(event) => updateUser(event, user)}>
+                  <label>Nombre<input name="givenName" defaultValue={user.givenName} required minLength={2} /></label>
+                  <label>Apellido<input name="familyName" defaultValue={user.familyName} required minLength={2} /></label>
+                  <label>Rol<select name="role" defaultValue={user.role}><option value="GUARDIA">Guardia</option><option value="SUPERVISOR">Supervisor</option></select></label>
+                  <div className="row-actions">
+                    <button className="primary-button" disabled={pending}>Guardar</button>
+                    <button className="secondary-button" type="button" onClick={() => setEditingUserId(null)}>Cancelar</button>
+                  </div>
+                </form>
+              ) : (
+                <div><strong>{user.givenName} {user.familyName}</strong><small>{user.email ?? user.username} · {user.role}</small></div>
+              )}
               <span className={`state-chip ${user.isActive ? 'active' : 'suspended'}`}>{user.isActive ? 'Activo' : 'Inactivo'}</span>
               {user.role !== 'ADMIN' ? (
                 <div className="row-actions">
+                  <button className="secondary-button" onClick={() => setEditingUserId(user.id)} disabled={pending || editingUserId === user.id}>Editar</button>
                   <button className="secondary-button" onClick={() => revokeUserSessions(user)} disabled={pending}>Cerrar sesiones</button>
                   <button className="secondary-button" onClick={() => toggleUser(user)} disabled={pending}>{user.isActive ? 'Desactivar' : 'Activar'}</button>
                 </div>
@@ -411,6 +488,7 @@ export function AdminManagement({
               )}
             </article>
           ))}
+          {!visibleUsers.length ? <div className="dashboard-empty"><strong>Sin resultados</strong><span>Ajusta la búsqueda o el filtro de rol.</span></div> : null}
         </div>
       </section>
       <section className="management-card management-wide" id="recintos">
