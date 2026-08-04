@@ -26,6 +26,7 @@ import {
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
   type EncolarSyncPayload,
+  type RegistrarFirmaPayload,
 } from './protocol';
 
 /**
@@ -109,6 +110,7 @@ export interface ClientePuente {
   readonly borrarRutaOffline: () => Promise<void>;
   readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
   readonly sincronizarCola: () => Promise<{ processed: number; pending: number }>;
+  readonly registrarFirma: (payload: RegistrarFirmaPayload) => Promise<string>;
   /** Cambios empujados por el shell. Devuelve la funcion para desuscribirse. */
   readonly alCambiarConexion: (fn: (estado: EstadoConexionPayload) => void) => () => void;
   readonly desconectar: () => void;
@@ -293,6 +295,14 @@ export function crearClientePuente(): ClientePuente {
       const respuesta = await pedir('sync.queue.flush', {}, MS_ESPERA_DEFECTO);
       if (respuesta.type !== 'sync.queue.flushed') throw new Error('respuesta-sync-inesperada');
       return respuesta.payload;
+    },
+
+    registrarFirma: async (payload) => {
+      const respuesta = await pedir('device.signature.register', payload, MS_ESPERA_DEFECTO);
+      if (respuesta.type !== 'device.signature.registered') {
+        throw new Error('respuesta-firma-inesperada');
+      }
+      return respuesta.payload.deviceId;
     },
 
     alCambiarConexion: (fn) => {

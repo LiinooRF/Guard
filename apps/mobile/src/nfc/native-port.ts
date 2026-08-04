@@ -3,6 +3,7 @@ import { Vibration } from 'react-native';
 import NfcManager, { NfcError, NfcTech } from 'react-native-nfc-manager';
 
 import type { FalloNfcNativo, PuertoNfc } from './nfc-reader';
+import { firmarEscaneo } from '../security/device-signature';
 
 function clasificarError(causa: unknown): FalloNfcNativo {
   if (causa instanceof NfcError.RadioDisabled) return 'radio-apagada';
@@ -43,5 +44,6 @@ export const puertoNfcAndroid: PuertoNfc = {
     };
   },
   confirmar: () => Vibration.vibrate(80),
+  firmar: firmarEscaneo,
   clasificarError,
 };

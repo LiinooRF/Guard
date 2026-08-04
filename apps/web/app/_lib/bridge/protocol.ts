@@ -48,7 +48,7 @@ export const PUENTE = 'voxia.bridge' as const;
 
 /** Version que habla ESTE build del shell. */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 2;
+export const PROTOCOLO_MINOR = 3;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -157,6 +157,11 @@ export interface EncolarSyncPayload {
   };
 }
 
+export interface RegistrarFirmaPayload {
+  readonly apiUrl: string;
+  readonly portalOrigin: string;
+}
+
 export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
@@ -167,6 +172,7 @@ export type MensajePortal =
   | Sobre<'offline.route.clear', Record<string, never>>
   | Sobre<'sync.queue.enqueue', EncolarSyncPayload>
   | Sobre<'sync.queue.flush', Record<string, never>>
+  | Sobre<'device.signature.register', RegistrarFirmaPayload>
   | Sobre<'connectivity.query', Record<string, never>>;
 
 export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
@@ -179,6 +185,7 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'offline.route.clear',
   'sync.queue.enqueue',
   'sync.queue.flush',
+  'device.signature.register',
   'connectivity.query',
 ];
 
@@ -227,6 +234,9 @@ export interface ResultadoEscaneoPayload {
   readonly latitude?: number;
   readonly longitude?: number;
   readonly accuracyM?: number;
+  readonly clientScanId?: string;
+  readonly deviceId?: string;
+  readonly signature?: string;
 }
 
 /**
@@ -298,6 +308,7 @@ export type MensajeShell =
   | Sobre<'offline.route.cleared', Record<string, never>>
   | Sobre<'sync.queue.enqueued', { readonly clientId: string; readonly inserted: boolean }>
   | Sobre<'sync.queue.flushed', { readonly processed: number; readonly pending: number }>
+  | Sobre<'device.signature.registered', { readonly deviceId: string }>
   | Sobre<'connectivity.state', EstadoConexionPayload>
   | Sobre<'error', ErrorPuentePayload>;
 
@@ -311,6 +322,7 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'offline.route.cleared',
   'sync.queue.enqueued',
   'sync.queue.flushed',
+  'device.signature.registered',
   'connectivity.state',
   'error',
 ];
@@ -502,6 +514,10 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
         (operacion['type'] !== 'scan' || esUuid(operacion['patrolId'])) &&
         esRegistro(operacion['payload']) && esFecha(operacion['queuedAt']);
     }
+    case 'device.signature.register':
+      return clavesPermitidas(payload, ['apiUrl', 'portalOrigin']) &&
+        typeof payload['apiUrl'] === 'string' && esApiUrl(payload['apiUrl']) &&
+        typeof payload['portalOrigin'] === 'string' && esPortalOrigin(payload['portalOrigin']);
     default:
       return false;
   }
@@ -524,6 +540,10 @@ function payloadShellValido(type: string, payload: unknown): boolean {
       return typeof payload['uid'] === 'string' && /^[0-9A-F]{4,64}$/.test(payload['uid']) &&
         payload['tech'] === 'nfc' && typeof payload['scannedAt'] === 'string' &&
         !Number.isNaN(Date.parse(payload['scannedAt'])) &&
+        ((payload['clientScanId'] === undefined && payload['deviceId'] === undefined &&
+          payload['signature'] === undefined) ||
+         (esUuid(payload['clientScanId']) && esUuid(payload['deviceId']) &&
+          typeof payload['signature'] === 'string' && /^[0-9a-f]{64}$/.test(payload['signature']))) &&
         (payload['latitude'] === undefined ||
           (typeof payload['latitude'] === 'number' && payload['latitude'] >= -90 && payload['latitude'] <= 90)) &&
         (payload['longitude'] === undefined ||
@@ -546,6 +566,8 @@ function payloadShellValido(type: string, payload: unknown): boolean {
     case 'sync.queue.flushed':
       return Number.isInteger(payload['processed']) && Number(payload['processed']) >= 0 &&
         Number.isInteger(payload['pending']) && Number(payload['pending']) >= 0;
+    case 'device.signature.registered':
+      return esUuid(payload['deviceId']);
     case 'connectivity.state':
       return typeof payload['enLinea'] === 'boolean' &&
         TIPOS_CONEXION.includes(payload['tipo'] as TipoConexion);

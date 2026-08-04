@@ -7,6 +7,8 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Length,
+  Matches,
   MaxLength,
   Min,
   MinLength,
@@ -46,4 +48,14 @@ export class CreateScanDto {
   @IsNumber()
   @Min(0)
   accuracyM?: number;
+
+  @IsOptional()
+  @IsUUID()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(64, 64)
+  @Matches(/^[0-9a-f]{64}$/)
+  signature?: string;
 }

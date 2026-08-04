@@ -29,6 +29,7 @@ import {
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
   type EncolarSyncPayload,
+  type RegistrarFirmaPayload,
 } from './protocol';
 
 /**
@@ -61,6 +62,7 @@ export interface ManejadoresNativos {
   readonly borrarRutaOffline: () => Promise<void>;
   readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
   readonly sincronizarCola: () => Promise<{ procesadas: number; pendientes: number }>;
+  readonly registrarFirma: (payload: RegistrarFirmaPayload) => Promise<string>;
 }
 
 export interface OpcionesPuente {
@@ -382,6 +384,13 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
             'sync.queue.flushed',
             { processed: resultado.procesadas, pending: resultado.pendientes },
             { replyTo: mensaje.id, prefijo: 'syn' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
+        return;
+      case 'device.signature.register':
+        void manejadores.registrarFirma(mensaje.payload)
+          .then((deviceId) => enviar(armarSobre(
+            'device.signature.registered', { deviceId }, { replyTo: mensaje.id, prefijo: 'sig' },
           )))
           .catch(() => responderErrorPuente(mensaje.id));
         return;

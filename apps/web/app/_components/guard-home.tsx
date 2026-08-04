@@ -39,7 +39,7 @@ const time = new Intl.DateTimeFormat('es-CL', {
 
 export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: string }) {
   const router = useRouter();
-  const puente = useGuardBridge();
+  const puente = useGuardBridge(apiUrl);
   const guardarRutaOffline = puente.guardarRutaOffline;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();

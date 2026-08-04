@@ -104,6 +104,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
     true,
   ),
   secured(GuardController, 'home', ['patrols:execute'], ['GUARDIA'], true),
+  secured(GuardController, 'enrollDeviceKey', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'start', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'scan', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'reportEvent', ['patrols:execute'], ['GUARDIA'], true),
