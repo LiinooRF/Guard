@@ -364,6 +364,22 @@ tocar un componente.
 
 ## Cómo verificar tu trabajo
 
+> **Los tests unitarios no alcanzan, y ya nos costó caro.** Dos bugs llegaron a staging con CI en
+> verde y 729 tests pasando: un `SELECT` de una columna que no existe (el mock devolvía una columna
+> inventada, así que el test confirmaba lo que el autor ya creía) y un volumen que el proceso no
+> podía escribir (solo aparece con el contenedor de verdad). Ninguno de los dos es detectable con
+> mocks.
+>
+> Por eso existe **`scripts/humo-e2e.py`**: habla con la API desplegada, sin mockear nada.
+> Córrelo después de desplegar, no antes:
+>
+> ```bash
+> python scripts/humo-e2e.py          # contra staging
+> ```
+>
+> Si tocaste una consulta SQL, **verifica los nombres de columna contra la migración**, no contra el
+> mock del test.
+
 Antes de abrir el PR:
 
 1. `npm run typecheck` y `npm run build` pasan.
