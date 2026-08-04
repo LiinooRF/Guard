@@ -1,24 +1,38 @@
-# Prueba de restore de los respaldos (issue #24).
+# Prueba de respaldo y restore (issue #24).
 #
 # "Un backup que nunca se restauro no es un backup". Esto lo convierte en algo
-# que corre solo: levanta un Postgres limpio, aplica TODAS las migraciones y el
-# seed, toma un dump con el mismo comando del servicio postgres-backup, lo
-# restaura en una base vacia distinta y verifica que el resultado SIRVE
-# —conteos, RLS, funciones y filas—, no solo que el comando no dio error.
+# que corre solo. La cadena completa, sin mocks:
 #
-# La logica vive en docker/postgres/backup/verificar-restore.sh, no aca: el
-# mismo procedimiento tiene que poder correrse a mano contra el VPS. Este
-# workflow solo prepara la base y llama al script.
+#   base con migraciones y seed
+#     -> respaldar-una-vez.sh          (EL script del servicio, no una copia)
+#     -> copia FUERA del VPS           (destino rclone)
+#     -> se BAJA el dump desde alla    (lo unico que prueba que la copia sirve)
+#     -> restore.sh restaura ESE archivo
+#     -> verificacion de contenido     (esquema, RLS, politicas, filas, GRANT)
+#     -> restore de la evidencia fotografica y comparacion byte a byte
+#     -> LA API ARRANCA CONTRA LA BASE RESTAURADA y se hace login de verdad
 #
-# Lo que esta prueba SI prueba: que el dump que produce el servicio de backup se
-# puede restaurar y queda utilizable, y que el procedimiento de restore funciona.
-# Lo que NO prueba: el restore del VPS real (otro disco, otro volumen, otros
-# datos y otro hardware). Ver docs/respaldos.md, seccion "Que NO cubre".
+# El ultimo paso es el criterio del issue que faltaba: hasta ahora se probaba
+# que el dump se podia restaurar, no que la aplicacion funcionara encima.
+#
+# La logica vive en docker/postgres/backup/, no aca: el mismo procedimiento
+# tiene que poder correrse a mano contra el VPS. Este workflow prepara el
+# entorno y llama a los scripts.
+#
+# Lo que esta prueba SI prueba: que el respaldo produce un archivo restaurable,
+# que la copia de fuera del VPS es restaurable, que lo restaurado conserva
+# esquema, datos, RLS y permisos, y que la API arranca contra eso.
+# Lo que NO prueba: el VPS real (otro disco, otro volumen, otros datos, otro
+# hardware) ni el proveedor de nube que se elija. Ver docs/respaldos.md,
+# seccion "Que NO cubre".
 
 name: Prueba de restore
 
-# Semanal y a mano, NUNCA en cada push: tarda varios minutos y su resultado no
-# cambia commit a commit. En cada push solo gastaria minutos de Actions.
+# Semanal, a mano, y en los PR que toquen los scripts de respaldo.
+#
+# En los PR corre SOLO el job liviano (sintaxis, pruebas de comun.sh e imagen):
+# un error de tipeo en un script de respaldo no puede esperar hasta el lunes,
+# pero la cadena completa tarda varios minutos y no cambia commit a commit.
 #
 # OJO: GitHub deshabilita los workflows programados en repos sin actividad por
 # 60 dias, y no avisa. Si el repo se queda quieto, revisar en la pestaña Actions
@@ -28,19 +42,93 @@ on:
     # Lunes 06:17 UTC = 02:17 (verano) / 03:17 (invierno) en America/Santiago.
     - cron: '17 6 * * 1'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docker/postgres/backup/**'
+      - '.github/workflows/backup-restore.yml'
+      - 'docker-compose.dokploy.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: backup-restore
+  group: backup-restore-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  restore:
-    name: dump, restore y verificacion
+  # ---------------------------------------------------------------------------
+  # Liviano: corre siempre, incluso en PR. Es el que caza el error de tipeo.
+  # ---------------------------------------------------------------------------
+  scripts:
+    name: scripts e imagen de respaldo
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Postgres rechaza un parentesis de mas SIEMPRE, pero un `if` sin `fi` en
+      # un script de respaldo solo se descubre la noche que toca respaldar.
+      - name: Sintaxis de los scripts
+        run: |
+          set -eu
+          for archivo in docker/postgres/backup/*.sh; do
+            sh -n "$archivo"
+            echo "ok  $archivo"
+          done
+
+      # -S error: solo lo que rompe, no discusiones de estilo. Los runners de
+      # ubuntu ya traen shellcheck.
+      - name: ShellCheck
+        run: shellcheck -s sh -S error docker/postgres/backup/*.sh
+
+      - name: Construir la imagen del servicio de respaldo
+        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+
+      # Estas pruebas solo significan algo adentro de la imagen: prueban busybox
+      # ash y la base de zonas horarias, que es lo que no existe en el portatil
+      # de quien las escribio.
+      - name: Pruebas de comun.sh dentro de la imagen
+        run: |
+          docker run --rm \
+            -e TZ=America/Santiago \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            voxia-backup:ci sh /scripts/pruebas-comun.sh
+
+      - name: La imagen trae lo que el respaldo necesita
+        run: |
+          docker run --rm voxia-backup:ci sh -c 'pg_dump --version && rclone version | head -1'
+
+      # La prueba vale solo si respalda igual que el servicio. Si alguien cambia
+      # el comando y no el otro, la prueba pasa a verificar otra cosa y nadie se
+      # entera.
+      - name: El dump de la prueba y el del servicio siguen siendo el mismo
+        run: |
+          set -eu
+          for archivo in docker/postgres/backup/respaldar-una-vez.sh docker/postgres/backup/verificar-restore.sh; do
+            if ! grep -q 'pg_dump -Fc -f' "$archivo"; then
+              echo "::error file=$archivo::ya no usa 'pg_dump -Fc -f'; la prueba de restore dejo de reflejar al servicio postgres-backup"
+              exit 1
+            fi
+          done
+          if grep -q 'respaldo-diario.sh' docker-compose.dokploy.yml; then
+            echo "el compose delega el respaldo en respaldo-diario.sh"
+          elif grep -q 'pg_dump -Fc -f' docker-compose.dokploy.yml; then
+            echo "::warning file=docker-compose.dokploy.yml::el compose todavia trae el loop de respaldo escrito adentro; falta aplicar el cambio de INTEGRACION.md (#24)"
+          else
+            echo "::error file=docker-compose.dokploy.yml::el servicio de respaldo no llama a respaldo-diario.sh ni corre pg_dump"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # La cadena completa. No corre en PR: tarda y su resultado no cambia commit a
+  # commit.
+  # ---------------------------------------------------------------------------
+  restore:
+    name: respaldo, restore y arranque de la API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request'
 
     services:
       # Postgres limpio y descartable: nace vacio con el job y muere con el.
@@ -57,6 +145,17 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # La API no arranca sin Redis: /ready lo comprueba y el login guarda ahi
+      # la sesion. Sin este servicio no se puede probar que la app levanta.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       POSTGRES_USER: voxia
@@ -68,6 +167,7 @@ jobs:
       DATABASE_MIGRATION_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_ADMIN_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
       DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
+      REDIS_URL: redis://localhost:6379
       # Datos efimeros: la base del runner se destruye al terminar el job.
       DEMO_PASSWORD: DemoGuardia2026!
       BASE_VERIFICACION: voxia_verificacion_restore
@@ -110,33 +210,82 @@ jobs:
       - name: Cargar el seed
         run: npm run seed --workspace @voxia/api
 
-      # La prueba vale solo si dumpea igual que el servicio de backup. Si alguien
-      # cambia el comando en el compose y no aca, la prueba pasa a verificar otra
-      # cosa y nadie se entera.
-      - name: Verificar que el dump sigue siendo el del servicio de backup
+      # Hace de volumen evidence_data. El respaldo de la base no cubre las
+      # fotos, y una base restaurada que apunta a fotos que no existen entrega
+      # informes con la evidencia rota.
+      - name: Inventar evidencia fotografica
         run: |
           set -eu
-          for archivo in docker-compose.dokploy.yml docker/postgres/backup/verificar-restore.sh; do
-            if ! grep -q 'pg_dump -Fc -f' "$archivo"; then
-              echo "::error file=$archivo::ya no usa 'pg_dump -Fc -f'; la prueba de restore dejo de reflejar al servicio postgres-backup"
-              exit 1
-            fi
+          RAIZ="$RUNNER_TEMP/evidencia"
+          mkdir -p "$RAIZ/a0000000-0000-4000-8000-000000000001/ronda-1" \
+                   "$RAIZ/b0000000-0000-4000-8000-000000000001/ronda-1"
+          for n in 1 2 3; do
+            head -c 40000 /dev/urandom > "$RAIZ/a0000000-0000-4000-8000-000000000001/ronda-1/punto-$n.jpg"
+            head -c 25000 /dev/urandom > "$RAIZ/b0000000-0000-4000-8000-000000000001/ronda-1/punto-$n.jpg"
           done
-          echo "el dump de la prueba y el del servicio postgres-backup coinciden"
+          echo "fotos de prueba: $(find "$RAIZ" -type f | wc -l)"
 
-      # Corre DENTRO de postgres:17-alpine —la misma imagen del servicio de
-      # backup— por dos razones: pg_dump se niega a dumpear un servidor mas nuevo
-      # que el cliente (el runner trae 16), y asi el dump lo produce exactamente
-      # el mismo binario que en el VPS. Monta la carpeta en /scripts igual que el
-      # compose, para probar tambien esa ruta. --network host alcanza el puerto
-      # publicado por el service container.
-      - name: Dump, restore y verificacion
+      - name: Construir la imagen del servicio de respaldo
+        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+
+      # EL respaldo, con el script del servicio. El "fuera del VPS" es aca un
+      # directorio aparte: prueba el camino completo de rclone (copia, listado y
+      # verificacion de tamaño) sin depender de credenciales de nube. El destino
+      # S3 de verdad se prueba en el job copia-fuera-del-vps.
+      - name: Respaldar con el script del servicio
         run: |
           set -eu
-          mkdir -p "$RUNNER_TEMP/salida"
+          mkdir -p "$RUNNER_TEMP/backups" "$RUNNER_TEMP/remoto"
           docker run --rm --network host \
             -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/backups:/backups" \
+            -v "$RUNNER_TEMP/evidencia:/evidencia:ro" \
+            -v "$RUNNER_TEMP/remoto:/remoto" \
+            -e TZ=America/Santiago \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER="$POSTGRES_USER" \
+            -e PGPASSWORD="$POSTGRES_PASSWORD" \
+            -e PGDATABASE="$POSTGRES_DB" \
+            -e BACKUP_REMOTE=/remoto \
+            voxia-backup:ci \
+            sh /scripts/respaldar-una-vez.sh
+
+      # La fecha se calcula DENTRO del contenedor (comillas simples), no en la
+      # shell del runner: el runner corre en UTC y el dump se nombro con la
+      # fecha de America/Santiago. Entre las 00:00 y las 04:00 UTC —21:00 a
+      # 24:00 en Chile— el runner pediria el dump de mañana y este paso fallaria
+      # con "NO existe el respaldo": la alarma mas alarmante posible, y falsa.
+      - name: ¿Hay respaldo fuera del VPS?
+        run: |
+          set -eu
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/backups:/backups" \
+            -v "$RUNNER_TEMP/remoto:/remoto" \
+            -e TZ=America/Santiago \
+            -e BACKUP_REMOTE=/remoto \
+            voxia-backup:ci \
+            sh -c 'sh /scripts/verificar-copia-remota.sh "$(date +%F)"'
+
+      # Se BAJA el dump desde el destino remoto y se restaura ESE archivo. Es la
+      # diferencia entre "el respaldo se puede restaurar" y "la copia que esta
+      # fuera del VPS se puede restaurar", que es la que importa el dia malo.
+      #
+      # Corre dentro de la imagen del servicio: pg_dump se niega a hablar con un
+      # servidor mas nuevo que el cliente (el runner trae 16) y asi ademas el
+      # dump lo produce el mismo binario que en el VPS. Monta la carpeta en
+      # /scripts igual que el compose, para probar tambien esa ruta.
+      - name: Bajar el dump de afuera, restaurarlo y verificar el contenido
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/salida" "$RUNNER_TEMP/bajado"
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/remoto:/remoto:ro" \
+            -v "$RUNNER_TEMP/bajado:/bajado" \
             -v "$RUNNER_TEMP/salida:/salida" \
+            -e TZ=America/Santiago \
             -e PGHOST=127.0.0.1 \
             -e PGPORT=5432 \
             -e PGUSER="$POSTGRES_USER" \
@@ -144,8 +293,163 @@ jobs:
             -e PGDATABASE="$POSTGRES_DB" \
             -e DATABASE_APP_USER="$DATABASE_APP_USER" \
             -e RESUMEN_ARCHIVO=/salida/resumen.md \
-            postgres:17-alpine \
-            sh /scripts/verificar-restore.sh "$BASE_VERIFICACION"
+            -e CONSERVAR=si \
+            -e BASE_VERIFICACION="$BASE_VERIFICACION" \
+            voxia-backup:ci \
+            sh -c '
+              set -eu
+              FECHA=$(date +%F)
+              rclone copy "/remoto/postgres/voxia-$FECHA.dump" /bajado/
+              ls -l /bajado
+              DUMP_EXISTENTE="/bajado/voxia-$FECHA.dump" \
+                sh /scripts/verificar-restore.sh "$BASE_VERIFICACION"
+            '
+
+      # La otra mitad del restore: sin las fotos, la base restaurada apunta a
+      # evidencia que no existe.
+      - name: Restaurar la evidencia y compararla con la original
+        run: |
+          set -eu
+          docker run --rm \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/remoto:/remoto:ro" \
+            -v "$RUNNER_TEMP/evidencia-restaurada:/destino" \
+            -e BACKUP_REMOTE=/remoto \
+            voxia-backup:ci \
+            sh /scripts/restaurar-evidencia.sh /destino
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/evidencia-restaurada"
+          ( cd "$RUNNER_TEMP/evidencia" && find . -type f | sort | xargs -r sha256sum ) > "$RUNNER_TEMP/fotos-original.txt"
+          ( cd "$RUNNER_TEMP/evidencia-restaurada" && find . -type f | sort | xargs -r sha256sum ) > "$RUNNER_TEMP/fotos-restaurada.txt"
+          # Sin este freno, dos listas vacias "coinciden" y la prueba pasa sin
+          # haber restaurado una sola foto.
+          FOTOS=$(wc -l < "$RUNNER_TEMP/fotos-original.txt")
+          if [ "$FOTOS" -eq 0 ]; then
+            echo "::error::no habia fotos que respaldar; la comparacion no probaria nada"
+            exit 1
+          fi
+          if diff -u "$RUNNER_TEMP/fotos-original.txt" "$RUNNER_TEMP/fotos-restaurada.txt"; then
+            echo "las $FOTOS fotos restauradas son identicas a las originales"
+          else
+            echo "::error::la evidencia restaurada no coincide con la original"
+            exit 1
+          fi
+
+      # La retencion, en el caso que la rompia: TODOS los dumps vencidos a la
+      # vez (el servicio estuvo caido un mes). El freno del minimo tiene que
+      # dejar BACKUP_MINIMO_LOCAL dumps, no uno solo. Corre el script del
+      # servicio de verdad, no una copia de la logica.
+      - name: La retencion nunca deja el VPS por debajo del minimo
+        run: |
+          set -eu
+          for DIAS in 40 80 120 160 200; do
+            ARCHIVO="$RUNNER_TEMP/backups/voxia-$(date -u -d "-$DIAS days" +%F).dump"
+            echo "dump viejo de mentira" > "$ARCHIVO"
+            touch -d "-$DIAS days" "$ARCHIVO"
+          done
+          echo "antes: $(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | wc -l) dumps"
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/backups:/backups" \
+            -v "$RUNNER_TEMP/remoto:/remoto" \
+            -e TZ=America/Santiago \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER="$POSTGRES_USER" \
+            -e PGPASSWORD="$POSTGRES_PASSWORD" \
+            -e PGDATABASE="$POSTGRES_DB" \
+            -e BACKUP_REMOTE=/remoto \
+            -e BACKUP_COPIAR_EVIDENCIA=no \
+            -e BACKUP_RETENTION_DAYS=1 \
+            -e BACKUP_MINIMO_LOCAL=3 \
+            voxia-backup:ci \
+            sh /scripts/respaldar-una-vez.sh
+          QUEDAN=$(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | wc -l)
+          find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | sort
+          if [ "$QUEDAN" -ne 3 ]; then
+            echo "::error::la retencion dejo $QUEDAN dump(s) y el minimo declarado es 3"
+            exit 1
+          fi
+          # Y el de hoy tiene que ser uno de los tres: un minimo que se cumple
+          # conservando solo dumps viejos no sirve de nada.
+          if [ ! -f "$RUNNER_TEMP/backups/voxia-$(TZ=America/Santiago date +%F).dump" ]; then
+            echo "::error::la retencion se llevo el dump de hoy"
+            exit 1
+          fi
+          echo "con todos los dumps vencidos, la retencion freno en 3 y conservo el de hoy"
+
+      - name: Compilar la API
+        run: |
+          npm run build --workspace @voxia/shared
+          npm run build --workspace @voxia/api
+
+      # EL criterio que faltaba del issue: "el restore se ejecuto de punta a
+      # punta y la app arranco contra el".
+      #
+      # La API se conecta como voxia_app —el rol restringido, sin BYPASSRLS— a
+      # la base RESTAURADA, no a la original. Si el restore hubiera perdido los
+      # GRANT o las politicas, /ready o el login se caen aca.
+      - name: Arrancar la API contra la base restaurada
+        env:
+          NODE_ENV: staging
+          API_PORT: 3001
+          DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia_verificacion_restore
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
+          MAIL_DRIVER: mailpit
+          WEB_PUBLIC_URL: http://localhost:3000
+        run: |
+          set -eu
+          export EVIDENCE_PATH="$RUNNER_TEMP/evidencia-restaurada"
+          node apps/api/dist/main.js > "$RUNNER_TEMP/api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/api.pid"
+
+          ARRIBA=no
+          for _ in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:3001/health > /dev/null 2>&1; then
+              ARRIBA=si
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ARRIBA" != "si" ]; then
+            echo "::error::la API no arranco contra la base restaurada"
+            exit 1
+          fi
+          echo "/health responde"
+
+          # /ready consulta PostgreSQL y Redis de verdad, no es un ping.
+          CODIGO=$(curl -s -o "$RUNNER_TEMP/ready.json" -w '%{http_code}' http://127.0.0.1:3001/ready)
+          cat "$RUNNER_TEMP/ready.json"
+          echo ""
+          if [ "$CODIGO" != "200" ]; then
+            echo "::error::/ready devolvio $CODIGO contra la base restaurada"
+            exit 1
+          fi
+          echo "/ready responde 200: la API habla con la base restaurada"
+
+          # Y ahora datos: un login real contra los usuarios que vinieron en el
+          # respaldo. Es lo que separa "la API levanta" de "el respaldo sirve".
+          CODIGO=$(curl -s -o "$RUNNER_TEMP/login.json" -w '%{http_code}' \
+            -X POST http://127.0.0.1:3001/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -H "Origin: $WEB_PUBLIC_URL" \
+            -d "{\"identity\":\"admin@demo-andina.test\",\"password\":\"$DEMO_PASSWORD\"}")
+          if [ "$CODIGO" != "200" ] && [ "$CODIGO" != "201" ]; then
+            echo "::error::el login contra la base restaurada devolvio $CODIGO"
+            head -c 500 "$RUNNER_TEMP/login.json" || true
+            exit 1
+          fi
+          echo "login OK contra la base restaurada (HTTP $CODIGO)"
+          echo "APP_ARRANCO=si" >> "$GITHUB_ENV"
+
+      - name: Apagar la API
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/api.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/api.pid")" 2> /dev/null || true
+          fi
+          echo "--- log de la API ---"
+          tail -n 60 "$RUNNER_TEMP/api.log" 2> /dev/null || echo "(sin log)"
 
       # El tiempo de restore es criterio del issue: queda en el resumen del run,
       # no enterrado en el log.
@@ -159,3 +463,152 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "El job murio antes de terminar el restore. Revisar el log del paso que fallo." >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${APP_ARRANCO:-no}" = "si" ]; then
+            echo "**La API arrancó contra la base restaurada: sí** — \`/health\`, \`/ready\` (consulta real a PostgreSQL y Redis) y un login con los usuarios que venían en el respaldo." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**La API NO arrancó contra la base restaurada.** El respaldo se restauró, pero la aplicación no funcionó encima: revisar el log de la API en el paso \"Apagar la API\"." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # El destino de verdad: un S3. Va aparte del job de arriba a proposito, para
+  # que un problema del almacenamiento no tape el resultado de la prueba de
+  # restore, que es la que no puede quedar sin respuesta.
+  #
+  # MinIO habla el protocolo de S3, asi que prueba el mismo camino que usaria
+  # Backblaze B2, Cloudflare R2 o AWS S3. Lo que NO prueba es el proveedor
+  # elegido: sus credenciales, su latencia y su factura son otra cosa.
+  # ---------------------------------------------------------------------------
+  copia-fuera-del-vps:
+    name: copia a un S3 y vuelta
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voxia
+          POSTGRES_PASSWORD: cambiar_en_ci
+          POSTGRES_DB: voxia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Construir la imagen del servicio de respaldo
+        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+
+      # La clave se genera en el momento y se enmascara: no hay ninguna
+      # credencial escrita en el repositorio, ni siquiera de mentira.
+      - name: Levantar un S3 de prueba (MinIO)
+        run: |
+          set -eu
+          CLAVE=$(openssl rand -hex 16)
+          echo "::add-mask::$CLAVE"
+          echo "MINIO_CLAVE=$CLAVE" >> "$GITHUB_ENV"
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=voxiaci \
+            -e MINIO_ROOT_PASSWORD="$CLAVE" \
+            minio/minio:latest server /data
+          for _ in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:9000/minio/health/live > /dev/null 2>&1; then
+              echo "MinIO arriba"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MinIO no arranco"
+          docker logs minio || true
+          exit 1
+
+      - name: Preparar evidencia de prueba
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/backups" "$RUNNER_TEMP/evidencia/tenant-a/ronda-1"
+          for n in 1 2 3 4; do
+            head -c 30000 /dev/urandom > "$RUNNER_TEMP/evidencia/tenant-a/ronda-1/punto-$n.jpg"
+          done
+
+      # rclone se configura entero por variables de entorno: asi es como van a
+      # viajar las credenciales reales desde el gestor de secretos de Dokploy,
+      # sin archivo de configuracion ni credenciales dentro de BACKUP_REMOTE.
+      - name: Respaldar contra el S3
+        run: |
+          set -eu
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/backups:/backups" \
+            -v "$RUNNER_TEMP/evidencia:/evidencia:ro" \
+            -e TZ=America/Santiago \
+            -e PGHOST=127.0.0.1 \
+            -e PGPORT=5432 \
+            -e PGUSER=voxia \
+            -e PGPASSWORD=cambiar_en_ci \
+            -e PGDATABASE=voxia \
+            -e BACKUP_REMOTE=s3ci:voxia-respaldos \
+            -e RCLONE_CONFIG_S3CI_TYPE=s3 \
+            -e RCLONE_CONFIG_S3CI_PROVIDER=Minio \
+            -e RCLONE_CONFIG_S3CI_ENDPOINT=http://127.0.0.1:9000 \
+            -e RCLONE_CONFIG_S3CI_REGION=us-east-1 \
+            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=voxiaci \
+            -e RCLONE_CONFIG_S3CI_SECRET_ACCESS_KEY="$MINIO_CLAVE" \
+            voxia-backup:ci \
+            sh /scripts/respaldar-una-vez.sh
+
+      - name: Comprobar el respaldo en el S3 y traer la evidencia de vuelta
+        run: |
+          set -eu
+          docker run --rm --network host \
+            -v "$PWD/docker/postgres/backup:/scripts:ro" \
+            -v "$RUNNER_TEMP/backups:/backups" \
+            -v "$RUNNER_TEMP/evidencia:/evidencia:ro" \
+            -v "$RUNNER_TEMP/desde-s3:/destino" \
+            -e TZ=America/Santiago \
+            -e BACKUP_REMOTE=s3ci:voxia-respaldos \
+            -e VERIFICAR_EVIDENCIA=si \
+            -e RCLONE_CONFIG_S3CI_TYPE=s3 \
+            -e RCLONE_CONFIG_S3CI_PROVIDER=Minio \
+            -e RCLONE_CONFIG_S3CI_ENDPOINT=http://127.0.0.1:9000 \
+            -e RCLONE_CONFIG_S3CI_REGION=us-east-1 \
+            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=voxiaci \
+            -e RCLONE_CONFIG_S3CI_SECRET_ACCESS_KEY="$MINIO_CLAVE" \
+            voxia-backup:ci \
+            sh -c '
+              set -eu
+              sh /scripts/verificar-copia-remota.sh "$(date +%F)"
+              sh /scripts/restaurar-evidencia.sh /destino
+            '
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/desde-s3"
+          ( cd "$RUNNER_TEMP/evidencia" && find . -type f | sort | xargs -r sha256sum ) > "$RUNNER_TEMP/o.txt"
+          ( cd "$RUNNER_TEMP/desde-s3" && find . -type f | sort | xargs -r sha256sum ) > "$RUNNER_TEMP/r.txt"
+          if [ "$(wc -l < "$RUNNER_TEMP/o.txt")" -eq 0 ]; then
+            echo "::error::no habia fotos que comparar"
+            exit 1
+          fi
+          diff -u "$RUNNER_TEMP/o.txt" "$RUNNER_TEMP/r.txt"
+          echo "la evidencia volvio identica desde el S3"
+
+      # Que el respaldo no pueda BORRAR en el destino es una decision de
+      # seguridad, no un olvido: si el contenedor del VPS pudiera borrar alla,
+      # quien entre al VPS se lleva tambien los respaldos. La retencion remota
+      # se configura como regla de ciclo de vida del proveedor.
+      - name: El respaldo no borra nada en el destino remoto
+        run: |
+          set -eu
+          if grep -REn '^[^#]*\b(rclone|ejecutar_rclone) +(sync|delete|purge|rmdir)\b' docker/postgres/backup/*.sh; then
+            echo "::error::algun script de respaldo borra en el destino remoto; ver docs/respaldos.md"
+            exit 1
+          fi
+          echo "ningun script borra en el destino remoto"
+
+      - name: Apagar MinIO
+        if: always()
+        run: docker rm -f minio || true

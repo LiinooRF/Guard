@@ -1,0 +1,416 @@
+# Presupuesto de tamano de la app Android (issue #137).
+#
+# POR QUE EXISTE
+#
+# El tamano de descarga es argumento comercial en este rubro, no un detalle
+# tecnico: los telefonos los entrega la empresa de seguridad y son de gama baja,
+# con 32 GB de almacenamiento y la mitad ocupada. La competencia (Control Guard)
+# publica "11 MB" en su ficha y lo usa como argumento de venta. Un shell de Expo
+# con WebView parte mas pesado, asi que el numero hay que vigilarlo desde el
+# principio: cuando se descubre al subir a Play, la dependencia que lo engordo
+# ya lleva tres meses adentro.
+#
+# El presupuesto acordado, su justificacion y como se mide a mano estan en
+# docs/tamano-apk-y-arranque.md. Este workflow solo lo verifica.
+#
+# DOS JOBS, Y NO MIDEN LO MISMO
+#
+#   bundle    Rapido (~3 min). Corre en los PR que tocan apps/mobile. Mide el
+#             payload de JavaScript que exporta Metro. NO es el tamano del APK:
+#             las librerias nativas pesan mas que el JS. Sirve para cazar barato
+#             una regresion de JS. HOY AVISA PERO NO FALLA: el umbral todavia no
+#             esta medido (ver el comentario del job).
+#
+#   descarga  Lento (~20 min). NO corre en PRs. Construye el AAB de verdad y le
+#             pregunta a bundletool cuanto descarga un telefono. Este si es el
+#             numero que se le promete al cliente.
+#
+# El job lento no corre en PRs a proposito: tarda mas que todo el resto de la CI
+# junta y su resultado no cambia commit a commit.
+#
+# COMO SE DISPARA HOY, Y COMO NO
+#
+# GitHub solo expone `workflow_dispatch` y `schedule` de los workflows que YA
+# estan en la rama por defecto, que en este repo es `main` (el flujo es
+# feature -> staging -> main). Mientras este archivo no llegue a `main`:
+#
+#   - `gh workflow run mobile-size.yml --ref feature/<n>-<slug>` responde 404,
+#     aunque el archivo exista en esa rama;
+#   - el cron semanal no dispara nunca.
+#
+# O sea que el primer numero real lo produce el `push` a `staging`, DESPUES de
+# mergear. Si tu PR agrega una dependencia NATIVA (cualquier cosa con carpeta
+# android/) y necesitas el numero ANTES de mergear, agrega temporalmente en tu
+# rama:
+#
+#   push:
+#     branches: ['feature/**']
+#
+# mira el resultado y sacalo antes de pedir revision. Cuando el archivo llegue a
+# `main`, `gh workflow run mobile-size.yml --ref <rama>` empieza a funcionar y
+# esta gimnasia deja de hacer falta.
+#
+# TRAMPA DE BRANCH PROTECTION: hoy no marques NINGUNO de los dos como check
+# requerido.
+#
+#   - `descarga` no corre en PRs: un check requerido que nunca arranca deja el
+#     PR bloqueado para siempre esperando un resultado que no va a llegar.
+#   - `bundle` tiene filtro de `paths`: en los PR que no tocan apps/mobile ni
+#     este archivo no se encola, y un check requerido que no se encola queda
+#     pendiente para siempre por exactamente la misma razon. Si algun dia se
+#     quiere requerido, primero hay que sacarle el filtro.
+
+name: Tamano de la app Android
+
+on:
+  # El payload de JavaScript solo puede cambiar por cambios en apps/mobile. Sin
+  # este filtro, cada PR de apps/api, apps/web, packages/shared o docs/ pagaria
+  # `npm ci` + `expo export` (~3 min) para volver a medir el mismo numero.
+  #
+  # El precio del filtro esta en el encabezado: con `paths`, `bundle` no se
+  # puede marcar como check requerido.
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile-size.yml'
+  # El push va SIN filtro de paths a proposito: es el unico trigger que funciona
+  # antes de que el archivo llegue a `main`, y es el que tiene que producir el
+  # primer numero medido si o si.
+  push:
+    branches: [main, staging]
+  # Martes 06:41 UTC = 03:41 (verano, UTC-3) / 02:41 (invierno, UTC-4) en
+  # America/Santiago.
+  # OJO: GitHub deshabilita los workflows programados en repos sin actividad por
+  # 60 dias y no avisa. Y no dispara hasta que el archivo este en `main`.
+  schedule:
+    - cron: '41 6 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# La concurrencia va por job, no a nivel de workflow: los dos jobs tienen
+# duraciones y necesidades opuestas y un solo grupo comun cancelaria el lento.
+# Ver el comentario de cada uno.
+
+# LOS PRESUPUESTOS VIVEN ACA, UNA SOLA VEZ.
+#
+# Son limites de ingenieria del artefacto que se publica, iguales para todos los
+# tenants: no son reglas de negocio y por eso NO van a packages/shared/rules.ts,
+# que resuelve configuracion por tenant/recinto/punto y la edita un ADMIN. Un
+# ADMIN no puede cambiar cuanto pesa el APK.
+#
+# COMO SE BAJAN: cuando una medicion quede muy por debajo del limite, se baja el
+# limite en el mismo PR. Un presupuesto que nunca se ajusta deja de presionar.
+# Subirlos se discute en el PR con el numero medido a la vista, no se hace para
+# que pase la CI.
+env:
+  # Payload de JavaScript exportado por Metro (bundle + assets, sin sourcemaps).
+  # ESTE NUMERO NO ESTA MEDIDO: es una estimacion a la espera de la primera
+  # corrida. Por eso el job `bundle` avisa pero no falla (ver su comentario).
+  LIMITE_BUNDLE_KIB: 4096
+  # Descarga estimada por bundletool para la peor configuracion de dispositivo.
+  OBJETIVO_DESCARGA_KIB: 18432
+  LIMITE_DESCARGA_KIB: 25600
+
+jobs:
+  bundle:
+    name: presupuesto del bundle JS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # PROVISIONAL — se saca cuando exista el primer numero medido.
+    #
+    # Ni `npx expo export` sobre este proyecto ni el valor de LIMITE_BUNDLE_KIB
+    # se probaron nunca. Este job en modo bloqueante, el dia que se mergee a
+    # staging, pondria en rojo TODOS los PR abiertos a la vez —incluidos los del
+    # carril movil— por un umbral que nadie midio o por un comando que nunca se
+    # ejecuto. Rojo por sospecha, no por regresion.
+    #
+    # COMO SE CIERRA, en este orden:
+    #   1. primera corrida verde -> anotar el numero en
+    #      docs/tamano-apk-y-arranque.md seccion 3;
+    #   2. fijar LIMITE_BUNDLE_KIB a partir de ese numero;
+    #   3. borrar este `continue-on-error` y devolver el `exit 1` del paso de
+    #      medicion, que esta marcado con PROVISIONAL tambien.
+    continue-on-error: true
+
+    # Los PR se atropellan solos: si llegan tres commits seguidos, solo importa
+    # la medicion del ultimo.
+    concurrency:
+      group: mobile-size-bundle-${{ github.ref }}
+      cancel-in-progress: true
+
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      # apps/mobile esta fuera de los workspaces de npm a proposito (Metro y el
+      # hoisting no se llevan). Se instala aparte, como el job `shell Android`.
+      - name: Instalar dependencias aisladas
+        run: npm ci
+
+      # NODE_ENV=production hace que app.config.ts resuelva como build de
+      # tienda (trafico en claro deshabilitado). EXPO_PUBLIC_WEB_URL se hornea
+      # en el bundle y por eso tiene que ser HTTPS: el shell se niega a arrancar
+      # contra HTTP fuera de desarrollo local. Es publica por definicion, nunca
+      # lleva secretos.
+      - name: Exportar el bundle de Android
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_WEB_URL: https://control.example.test
+        run: npx expo export --platform android --output-dir dist --clear
+
+      - name: Medir y comparar con el presupuesto
+        run: |
+          set -eu
+
+          if [ ! -d dist ]; then
+            echo "::error::expo export no genero dist/. No hay nada que medir."
+            exit 1
+          fi
+
+          # Los sourcemaps no viajan en el APK: se excluyen o el numero miente.
+          bytes=$(find dist -type f ! -name '*.map' -printf '%s\n' | awk '{s+=$1} END {print s+0}')
+          kib=$(( bytes / 1024 ))
+
+          echo "Payload de JavaScript exportado: ${kib} KiB (limite ${LIMITE_BUNDLE_KIB} KiB)"
+          echo
+          echo "Los 15 archivos mas pesados:"
+          find dist -type f ! -name '*.map' -printf '%s\t%p\n' \
+            | sort -rn | head -15 \
+            | awk -F'\t' '{ printf "  %8.1f KiB  %s\n", $1/1024, $2 }'
+
+          {
+            echo "### Bundle JS de Android"
+            echo
+            echo "**${kib} KiB** exportados (limite **${LIMITE_BUNDLE_KIB} KiB**,"
+            echo "estimado, todavia no medido: hoy avisa, no bloquea)."
+            echo
+            echo "Proxy barato, no es el tamano del APK. El numero que se le"
+            echo "promete al cliente sale del job \`descarga\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$kib" -gt "$LIMITE_BUNDLE_KIB" ]; then
+            # PROVISIONAL: esto era `::error::` mas `exit 1`. Vuelve a serlo
+            # cuando LIMITE_BUNDLE_KIB salga de una medicion y no de una
+            # estimacion. Ver el comentario del job.
+            echo "::warning::El payload de JavaScript ($kib KiB) supera el presupuesto estimado ($LIMITE_BUNDLE_KIB KiB). Ver docs/tamano-apk-y-arranque.md."
+          fi
+
+  descarga:
+    name: descarga real del AAB
+    # No corre en PRs: ver el encabezado.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # SIN cancelacion, igual que backup-restore.yml y por el mismo motivo: son
+    # ~20 minutos de Gradle y hoy el unico trigger que funciona es el push a
+    # `staging`. Con cancel-in-progress: true, dos merges seguidos a staging
+    # —lo normal con 10 PR abiertos— cancelan la medicion a medio hacer y el
+    # numero no se produce nunca. Que la segunda espere a la primera cuesta 20
+    # minutos de reloj; cancelarla cuesta el numero.
+    #
+    # El grupo va sin `github.ref` a proposito: una sola medicion a la vez
+    # alcanza, sea de la rama que sea.
+    concurrency:
+      group: mobile-size-descarga
+      cancel-in-progress: false
+
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias aisladas
+        run: npm ci
+
+      # android/ esta en .gitignore a proposito: el flujo es CNG y la fuente de
+      # verdad es app.config.ts. Se regenera aca en cada corrida.
+      #
+      # --no-install porque las dependencias ya se instalaron con npm ci.
+      #
+      # Se setea NODE_ENV pero NO EAS_BUILD_PROFILE: con perfil de tienda,
+      # app.config.ts se cae a proposito si faltan los PNG de icono y splash, y
+      # hoy no estan commiteados (solo los SVG maestros). Con NODE_ENV solo,
+      # avisa y sigue. Consecuencia honesta: el numero de este job es un PISO,
+      # le faltan los recursos graficos. Hay que volver a medir cuando los PNG
+      # entren al repositorio.
+      - name: Generar el proyecto Android
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_WEB_URL: https://control.example.test
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # La plantilla de Expo firma el buildType `release` con la clave de
+      # DEPURACION. Por eso este job construye sin tocar credenciales.
+      #
+      # El AAB que sale de aca NO es distribuible y no se sube a ninguna parte:
+      # existe unicamente para pesarlo. La clave de firma real la administra EAS
+      # y su respaldo esta descrito en apps/mobile/README.md.
+      - name: Construir el AAB de release
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:bundleRelease --no-daemon --console=plain
+
+      - name: Preparar bundletool
+        run: |
+          set -eu
+
+          # bundletool es la unica forma soportada de estimar el tamano de
+          # DESCARGA a partir de un AAB. Se resuelve la ultima version en vez de
+          # fijar un numero: un tag inventado es un 404 y un job rojo por nada.
+          # Cuando el equipo quiera reproducibilidad exacta, pinear la version
+          # que quede impresa en este paso.
+          url=$(curl -sSfL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/google/bundletool/releases/latest \
+            | grep -o 'https://github.com/google/bundletool/releases/download/[^"]*/bundletool-all-[^"]*\.jar' \
+            | head -1)
+
+          if [ -z "$url" ]; then
+            echo "::error::No se pudo resolver la ultima version de bundletool."
+            exit 1
+          fi
+
+          echo "bundletool: $url"
+          curl -sSfL -o "$RUNNER_TEMP/bundletool.jar" "$url"
+
+          # bundletool firma los APKs que genera con la clave de depuracion del
+          # usuario. En un runner limpio ese archivo no existe. Es una clave
+          # desechable de un runner efimero, no tiene nada que ver con la clave
+          # de firma de la app.
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" >/dev/null
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Medir la descarga y comparar con el presupuesto
+        run: |
+          set -eu
+
+          aab=$(find android/app/build/outputs/bundle -name '*.aab' | head -1)
+          if [ -z "$aab" ]; then
+            echo "::error::No se encontro el AAB. Reviso el paso de gradle."
+            exit 1
+          fi
+
+          aab_kib=$(( $(stat -c %s "$aab") / 1024 ))
+          echo "AAB: $aab (${aab_kib} KiB)"
+          echo
+          echo "OJO: el AAB NO es lo que descarga el telefono. Contiene TODAS las"
+          echo "ABI, densidades e idiomas; Play le manda a cada equipo solo su"
+          echo "porcion. Comparar el AAB contra los 11 MB de la competencia es"
+          echo "comparar cosas distintas."
+          echo
+
+          apks="$RUNNER_TEMP/app.apks"
+          rm -f "$apks"
+          java -jar "$RUNNER_TEMP/bundletool.jar" build-apks \
+            --bundle="$aab" --output="$apks" --mode=default --overwrite
+
+          # `get-size total` devuelve el tamano COMPRIMIDO de descarga como
+          # "MIN,MAX" sobre todas las combinaciones de dispositivo. Se controla
+          # el MAX: es el peor telefono, que es justo el que tiene el guardia.
+          salida=$(java -jar "$RUNNER_TEMP/bundletool.jar" get-size total --apks="$apks")
+          echo "$salida"
+          bytes_max=$(echo "$salida" | tail -1 | cut -d, -f2 | tr -d '[:space:]')
+
+          case "$bytes_max" in
+            ''|*[!0-9]*)
+              echo "::error::No se pudo leer el tamano de descarga de la salida de bundletool."
+              exit 1
+              ;;
+          esac
+
+          kib=$(( bytes_max / 1024 ))
+
+          echo
+          echo "Desglose por division del bundle:"
+          rm -rf "$RUNNER_TEMP/apks" && mkdir -p "$RUNNER_TEMP/apks"
+          unzip -qo "$apks" -d "$RUNNER_TEMP/apks"
+          find "$RUNNER_TEMP/apks" -name '*.apk' -printf '%s\t%f\n' \
+            | sort -rn \
+            | awk -F'\t' '{ printf "  %8.1f KiB  %s\n", $1/1024, $2 }'
+
+          {
+            echo "### Descarga de la app Android"
+            echo
+            echo "| Metrica | Valor |"
+            echo "|---|---|"
+            echo "| Descarga estimada (peor configuracion) | **${kib} KiB** |"
+            echo "| Objetivo | ${OBJETIVO_DESCARGA_KIB} KiB |"
+            echo "| Limite duro | ${LIMITE_DESCARGA_KIB} KiB |"
+            echo "| AAB completo (no es la descarga) | ${aab_kib} KiB |"
+            echo
+            echo "Estimacion de bundletool: es una cota superior, Play suele"
+            echo "entregar algo menos. Falta lo que aun no esta en el repositorio"
+            echo "(PNG de icono y splash), asi que el numero es un piso."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$kib" -gt "$LIMITE_DESCARGA_KIB" ]; then
+            echo "::error::La descarga estimada ($kib KiB) supera el limite duro ($LIMITE_DESCARGA_KIB KiB). Ver docs/tamano-apk-y-arranque.md, seccion de palancas."
+            exit 1
+          fi
+
+          if [ "$kib" -gt "$OBJETIVO_DESCARGA_KIB" ]; then
+            echo "::warning::La descarga estimada ($kib KiB) supera el objetivo ($OBJETIVO_DESCARGA_KIB KiB) pero no el limite duro. Conviene revisarlo antes de que lo supere."
+          fi
+
+      # Informativo, no falla. Responde una pregunta concreta que no conviene
+      # dar por sabida: expo-dev-client esta declarado en `plugins` sin
+      # condicion, y hay que comprobar en el artefacto —no en la documentacion—
+      # que el lanzador de desarrollo no viaja en el release. Si aparece, son
+      # megabytes de codigo que el guardia nunca va a usar.
+      - name: Revisar si el release arrastra el cliente de desarrollo
+        continue-on-error: true
+        run: |
+          set -eu
+          apkanalyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          base=$(find "$RUNNER_TEMP/apks" -name 'base-master.apk' | head -1)
+
+          if [ ! -x "$apkanalyzer" ] || [ -z "$base" ]; then
+            echo "apkanalyzer o el APK base no estan disponibles; se omite la revision."
+            exit 0
+          fi
+
+          encontrados=$("$apkanalyzer" dex packages --defined-only "$base" 2>/dev/null \
+            | grep -c -E 'expo\.modules\.dev(launcher|menu)' || true)
+
+          if [ "$encontrados" -gt 0 ]; then
+            echo "::warning::El APK de release define $encontrados clases de expo-dev-launcher/dev-menu. Revisar si el cliente de desarrollo esta viajando a produccion."
+          else
+            echo "OK: no se detectaron clases del cliente de desarrollo en el release."
+          fi

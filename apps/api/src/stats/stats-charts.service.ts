@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Role } from '@voxia/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { FILTRO_RECINTOS } from './stats-site-scope';
 import { RulesService } from '../rules/rules.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import type { ChartQueryDto, EvolutionQueryDto, Granularidad, TopQueryDto } from './dto/chart-query.dto';
@@ -37,12 +38,6 @@ const TRUNCADO: Record<Granularidad, string> = {
  * interceptor con `set_config('app.tenant_id', ..., true)` y lo aplica la
  * politica RLS. Un `tenant_id` de query string seria una IDOR con nombre nuevo.
  */
-const FILTRO_RECINTOS = `
-        AND ($3::uuid IS NULL OR EXISTS (
-              SELECT 1 FROM supervisor_sites ss
-              WHERE ss.site_id = s.id AND ss.supervisor_id = $3::uuid))
-        AND ($4::uuid IS NULL OR s.id = $4::uuid)
-        AND ($5::text IS NULL OR s.branch_name = $5::text)`;
 
 /**
  * Solo las rondas ya terminadas dicen algo del cumplimiento. Una ronda

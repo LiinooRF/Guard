@@ -19,7 +19,10 @@ import type { PatrolReportService } from './patrol-report.service';
  * Los mocks devuelven la forma REAL del driver de PostgreSQL: `INSERT ...
  * RETURNING` entrega un arreglo plano de filas, y un ON CONFLICT DO NOTHING que
  * no inserta entrega el arreglo vacio. Esa es justamente la diferencia que hace
- * este servicio para decidir si el correo se manda o ya se habia mandado.
+ * este servicio para decidir si el correo se manda o ya se habia mandado. Un
+ * INSERT SIN `RETURNING` —el de `report_dispatch_attempts`— entrega tambien un
+ * arreglo plano, vacio (TypeORM solo devuelve `[filas, cantidad]` para UPDATE y
+ * DELETE), y por eso el servicio no lee nada de esa llamada.
  */
 
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
@@ -101,9 +104,16 @@ function armar(fixture: Fixture = {}) {
   const registradas = new Set(
     (fixture.entregas ?? []).map((e) => `${e.kind}|${e.recipient_email}`),
   );
+  /** Las marcas de "ya se atendio y no habia nada que mandar". */
+  const atendidas: Array<{ patrolId: string; motivo: string }> = [];
 
   const manager = {
     query: jest.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INSERT INTO report_dispatch_attempts')) {
+        atendidas.push({ patrolId: String(params?.[0]), motivo: String(params?.[1]) });
+        // Sin RETURNING: el driver entrega un arreglo vacio.
+        return [];
+      }
       if (sql.includes('INSERT INTO report_deliveries')) {
         const clave = `${String(params?.[1])}|${String(params?.[2])}`;
         if (registradas.has(clave)) return [];
@@ -162,7 +172,7 @@ function armar(fixture: Fixture = {}) {
     rules,
   );
 
-  return { service, manager, informe, mail, rules, queue };
+  return { service, manager, informe, mail, rules, queue, atendidas };
 }
 
 describe('EnvioInformeService', () => {
@@ -273,14 +283,20 @@ describe('EnvioInformeService', () => {
       );
     });
 
-    it('con el envio automatico apagado no manda nada', async () => {
-      const { service, mail, informe } = armar({ reglas: { autoSendReportOnClose: false } });
+    it('con el envio automatico apagado no manda nada, pero deja marca', async () => {
+      const { service, mail, informe, atendidas } = armar({
+        reglas: { autoSendReportOnClose: false },
+      });
 
       const resultado = await service.despachar(TENANT, PATRULLA);
 
       expect(resultado.omitido).toBe('envio_desactivado');
       expect(informe.buildModel).not.toHaveBeenCalled();
       expect(mail.enqueue).not.toHaveBeenCalled();
+      // La marca es lo que impide que el barrido vuelva a levantar esta ronda
+      // cada diez minutos durante las 48 h de la ventana de rescate, ocupando el
+      // cupo de las rondas que si se perdieron.
+      expect(atendidas).toEqual([{ patrolId: PATRULLA, motivo: 'envio_desactivado' }]);
     });
 
     it('con el envio apagado, la alerta bajo umbral igual sale', async () => {
@@ -305,12 +321,38 @@ describe('EnvioInformeService', () => {
     });
 
     it('sin destinatarios no manda y lo deja registrado', async () => {
-      const { service, mail } = armar({ admins: [] });
+      const { service, mail, atendidas } = armar({ admins: [] });
 
       const resultado = await service.despachar(TENANT, PATRULLA);
 
       expect(resultado.omitido).toBe('sin_destinatarios');
       expect(mail.enqueue).not.toHaveBeenCalled();
+      expect(atendidas).toEqual([{ patrolId: PATRULLA, motivo: 'sin_destinatarios' }]);
+    });
+
+    it('un envio normal NO deja marca de atendida: para eso estan las entregas', async () => {
+      // La marca es solo para las omisiones definitivas. Si un despacho que si
+      // mando dejara marca, seria un segundo registro que puede contradecir a
+      // report_deliveries, que es la bitacora de verdad.
+      const { service, atendidas } = armar();
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(resultado.omitido).toBeNull();
+      expect(atendidas).toEqual([]);
+    });
+
+    it('la ronda sin cerrar no deja marca: se reintenta, no se descarta', async () => {
+      // Es transitoria (el job se encola dentro de la transaccion del escaneo y
+      // puede llegar antes que el commit). Marcarla la sacaria del barrido para
+      // siempre justo cuando todavia se puede rescatar.
+      const { service, atendidas } = armar({
+        ronda: [{ tenant_id: TENANT, site_id: SITIO, status: 'en_curso', compliance_pct: null }],
+      });
+
+      await service.despachar(TENANT, PATRULLA);
+
+      expect(atendidas).toEqual([]);
     });
 
     it('una ronda sin cerrar no se despacha', async () => {

@@ -1,0 +1,31 @@
+# Configuracion del escaner de secretos del historial.
+#
+# Se parte de las reglas por defecto de gitleaks y se agregan excepciones. La
+# lista de abajo es CORTA a proposito: cada entrada apaga una alarma, y una
+# excepcion de mas es un secreto que entra sin que nadie se entere.
+#
+# Antes de agregar una: casi siempre la respuesta correcta es cambiar el valor
+# de prueba para que no parezca un secreto, no silenciar el aviso. Ya nos paso
+# con un token falso llamado TOKEN y con una constante llamada SECRETO: las dos
+# se resolvieron renombrando, sin tocar este archivo.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixtures que TIENEN que parecer secretos porque prueban que se enmascaran"
+
+# El unico caso donde renombrar no sirve.
+#
+# `crash-scrubber.ts` existe para borrar tokens, JWTs y credenciales de los
+# reportes de caida ANTES de guardarlos o mandarlos a un tercero (#27). Sus
+# pruebas necesitan cadenas con la forma REAL de un token y de un JWT: si el
+# fixture no se parece a un secreto, la prueba no demuestra nada — pasaria
+# igual con el enmascarado roto, que es exactamente el bug que buscamos evitar.
+#
+# El alcance esta limitado a esos dos archivos de prueba. Si aparece un secreto
+# de verdad en cualquier otro lado, el escaner lo sigue viendo.
+paths = [
+  '''apps/api/src/observability/crash-scrubber\.spec\.ts''',
+  '''apps/api/src/observability/sentry-envelope\.spec\.ts''',
+]

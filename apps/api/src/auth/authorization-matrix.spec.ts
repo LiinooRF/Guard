@@ -21,6 +21,13 @@ import { EnvioInformeController } from '../reports/envio-informe.controller';
 import { FeatureFlagsController } from '../rules/feature-flags.controller';
 import { FeatureFlagsPlatformController } from '../rules/feature-flags-platform.controller';
 import { GpsPolicyController } from '../geo/gps-policy.controller';
+import { ConfigAuditController } from '../audit/config-audit.controller';
+import { PlatformConfigAuditController } from '../audit/platform-config-audit.controller';
+import { CrashReportsController } from '../observability/crash-reports.controller';
+import { PlantillasCorreoController } from '../mail/plantillas-correo.controller';
+import { RegistroEnviosController } from '../mail/registro-envios.controller';
+import { RegistroEnviosProveedorController } from '../mail/registro-envios-proveedor.controller';
+import { ExcelExportController } from '../reports/excel-export.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { PhotoServingController } from '../evidence/photo-serving.controller';
 import { GeoController } from '../geo/geo.controller';
@@ -269,6 +276,31 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SyncController, 'lateScans', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SyncController, 'reviewLateScan', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(GuardController, 'eventAcknowledgement', ['patrols:execute'], ['GUARDIA'], true),
+  secured(ConfigAuditController, 'history', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(ConfigAuditController, 'parameters', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(
+    PlatformConfigAuditController,
+    'platformHistory',
+    ['platform:tenants:manage'],
+    ['SUPERADMIN'],
+  ),
+  secured(
+    PlatformConfigAuditController,
+    'tenantHistory',
+    ['platform:tenants:manage'],
+    ['SUPERADMIN'],
+  ),
+  secured(CrashReportsController, 'reportarFalla', ['account:sessions:manage'], ALL_ROLES),
+  secured(CrashReportsController, 'resumen', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(PlantillasCorreoController, 'verRemitente', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(PlantillasCorreoController, 'guardarRemitente', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(PlantillasCorreoController, 'vistaPrevia', ['tenant:rules:manage'], ['ADMIN'], true),
+  secured(RegistroEnviosController, 'listar', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(RegistroEnviosController, 'porRonda', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  // El proveedor de correo avisa el estado de entrega por webhook: no trae sesion
+  // y se autentica con la firma del propio proveedor, no con un rol.
+  publicEndpoint(RegistroEnviosProveedorController, 'estadoEntrega'),
+  secured(ExcelExportController, 'exportarExcel', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   publicEndpoint(RulesController, 'defaults'),
   publicEndpoint(RulesController, 'catalog'),
   secured(RulesController, 'effective', ['account:sessions:manage'], ALL_ROLES),
@@ -304,6 +336,13 @@ const CONTROLLERS = [
   SupervisorController,
   ReportsController,
   EvidenceController,
+  ConfigAuditController,
+  PlatformConfigAuditController,
+  CrashReportsController,
+  PlantillasCorreoController,
+  RegistroEnviosController,
+  RegistroEnviosProveedorController,
+  ExcelExportController,
   AlertasRondaController,
   ConsentController,
   EnvioInformeController,

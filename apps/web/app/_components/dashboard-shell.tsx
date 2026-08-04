@@ -20,6 +20,12 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#usuarios', icon: '♙', label: 'Usuarios' },
     { href: '#recintos', icon: '▦', label: 'Recintos' },
     { href: '#seguridad', icon: '◇', label: 'Seguridad' },
+    // Consentimiento del trabajador (#78). Dos entradas y no una: publicar el
+    // aviso y demostrar que no se registro ubicacion fuera de turno son dos
+    // preguntas distintas, y la segunda es la que hay que contestar cuando
+    // alguien reclama.
+    { href: '#aviso-geolocalizacion', icon: '⚖', label: 'Consentimiento' },
+    { href: '#rastreo-fuera-de-turno', icon: '⌖', label: 'Fuera de turno' },
     { href: '#sesiones', icon: '◉', label: 'Sesiones' },
   ],
   SUPERVISOR: [
@@ -27,6 +33,9 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#rondas', icon: '◎', label: 'Rondas asignadas' },
     { href: '#informes-evolucion', icon: '∿', label: 'Evolución' },
     { href: '#informes', icon: '▤', label: 'Informes' },
+    // El supervisor tambien opera desde la app y tambien se le registra el
+    // recorrido: su propio aviso tiene que estar a la vista, no escondido.
+    { href: '#consentimiento', icon: '⌖', label: 'Mi ubicación' },
     { href: '#sesiones', icon: '◉', label: 'Sesiones' },
   ],
 };

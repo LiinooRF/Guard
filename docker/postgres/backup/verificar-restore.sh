@@ -16,6 +16,10 @@
 #        - mismas politicas RLS, con el mismo USING y WITH CHECK
 #        - app_tenant_id() y app_has_audited_support_access() existen Y CORREN,
 #          y la segunda falla cerrada sin contexto
+#        - CON EL ROL DE LA APLICACION: con contexto de tenant se ve ese tenant
+#          y solo ese, y sin contexto no se ve NADA. Es la prueba de que el
+#          aislamiento entre empresas sobrevivio al restore, no solo de que las
+#          politicas figuran en el catalogo.
 #        - mismos GRANT para el rol de la aplicacion
 #        - mismos indices
 #        - mismos conteos de filas por tabla entre origen y destino
@@ -37,7 +41,15 @@
 #     que usa postgres-backup. voxia_app no sirve: no puede crear bases y RLS le
 #     cierra la lectura sin contexto de tenant, asi que el dump saldria vacio.
 #   DATABASE_APP_USER   rol de la aplicacion cuyos GRANT se comparan (voxia_app).
+#   DUMP_EXISTENTE      ruta a un dump YA HECHO. Con esto el script no toma uno
+#                       nuevo: restaura ESE archivo. Es la diferencia entre
+#                       probar "un dump hecho igual que el del servicio" y
+#                       probar el respaldo de verdad —incluido el que se bajo de
+#                       vuelta desde fuera del VPS, que es lo unico que
+#                       demuestra que la copia remota sirve.
 #   CONSERVAR=si        no borra la base de prueba ni el dump al terminar.
+#                       Necesario si despues se va a arrancar la API contra la
+#                       base restaurada.
 #   ORIGEN_EN_VIVO=si   el origen recibe escrituras durante la prueba (VPS real):
 #                       una diferencia de FILAS pasa a ser aviso en vez de falla.
 #                       El esquema, RLS y politicas se siguen exigiendo iguales.
@@ -238,18 +250,33 @@ echo "origen=$PGDATABASE  destino=$DESTINO  host=${PGHOST:-local}  rol_app=$ROL_
 # --- 1. Dump: mismo comando que el servicio postgres-backup ----------------
 # Al directorio temporal, NUNCA a /backups: la prueba no debe pisar el dump del
 # dia ni alterar la retencion.
-ARCHIVO="$TRABAJO/voxia-verificacion-$(date +%F).dump"
-INICIO_DUMP=$(date +%s)
-echo "[1/3] pg_dump de '$PGDATABASE'"
-if ! pg_dump -Fc -f "$ARCHIVO.part" "$PGDATABASE"; then
-  rm -f "$ARCHIVO.part"
-  echo "ERROR: pg_dump fallo; no hay nada que verificar." >&2
-  exit 1
+if [ -n "${DUMP_EXISTENTE:-}" ]; then
+  # No se copia a $TRABAJO: se restaura el archivo tal cual esta, y la limpieza
+  # de $TRABAJO no lo toca porque vive afuera.
+  if [ ! -f "$DUMP_EXISTENTE" ]; then
+    echo "ERROR: DUMP_EXISTENTE no existe: $DUMP_EXISTENTE" >&2
+    exit 1
+  fi
+  ARCHIVO="$DUMP_EXISTENTE"
+  ORIGEN_DUMP="archivo existente"
+  SEGUNDOS_DUMP=0
+  TAMANO_DUMP=$(du -h "$ARCHIVO" | cut -f1)
+  echo "[1/3] usando un dump ya hecho: $ARCHIVO ($TAMANO_DUMP)"
+else
+  ARCHIVO="$TRABAJO/voxia-verificacion-$(date +%F).dump"
+  ORIGEN_DUMP="pg_dump nuevo"
+  INICIO_DUMP=$(date +%s)
+  echo "[1/3] pg_dump de '$PGDATABASE'"
+  if ! pg_dump -Fc -f "$ARCHIVO.part" "$PGDATABASE"; then
+    rm -f "$ARCHIVO.part"
+    echo "ERROR: pg_dump fallo; no hay nada que verificar." >&2
+    exit 1
+  fi
+  mv "$ARCHIVO.part" "$ARCHIVO"
+  SEGUNDOS_DUMP=$(( $(date +%s) - INICIO_DUMP ))
+  TAMANO_DUMP=$(du -h "$ARCHIVO" | cut -f1)
+  echo "      dump listo: $TAMANO_DUMP en ${SEGUNDOS_DUMP}s"
 fi
-mv "$ARCHIVO.part" "$ARCHIVO"
-SEGUNDOS_DUMP=$(( $(date +%s) - INICIO_DUMP ))
-TAMANO_DUMP=$(du -h "$ARCHIVO" | cut -f1)
-echo "      dump listo: $TAMANO_DUMP en ${SEGUNDOS_DUMP}s"
 
 # --- 2. Restore con el script del procedimiento manual ---------------------
 echo "[2/3] restore en '$DESTINO' (via restore.sh)"
@@ -305,6 +332,102 @@ fi
 comparar "GRANT sobre tablas para $ROL_APP" "$SQL_GRANTS"
 comparar "indices" "$SQL_INDICES"
 
+# --- Aislamiento entre empresas, con el rol de la aplicacion ----------------
+# Todo lo anterior mira el catalogo: que las politicas figuren y digan lo mismo.
+# Esto lee datos como los lee la API y comprueba el resultado.
+#
+# `SET LOCAL ROLE` cambia el rol dentro de la transaccion. Importa que sea el
+# rol de la app y no el dueño: el dueño de esta base es superusuario y el
+# superusuario se salta RLS entero, asi que "probar" el aislamiento con el
+# mismo usuario que hace el dump daria verde siempre y no probaria nada.
+#
+# Se lee `sites` porque lleva tenant_id desde su migracion original
+# (1722524400000-CreateDemoDomain.ts: id, tenant_id, branch_name, name,
+# address, latitude, longitude, timezone, is_active, created_at).
+SQL_TABLA_SITES=$(cat <<'SQL'
+select count(*)::text
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind = 'r' and c.relname = 'sites'
+SQL
+)
+
+# Los conteos reales por tenant, leidos como dueño (sin RLS de por medio): son
+# el numero contra el que se compara lo que ve la aplicacion.
+SQL_SITES_POR_TENANT=$(cat <<'SQL'
+select tenant_id::text || '=' || count(*)::text
+from public.sites
+group by tenant_id
+order by 1
+SQL
+)
+
+# Marca la linea del conteo. Sin la marca habria que adivinar cual de las
+# lineas que imprime psql es el resultado, y un tag de comando ("COMMIT") se
+# colaria como si fuera un numero.
+contar_sites_como_app() {
+  if [ -n "$1" ]; then
+    psql -d "$DESTINO" -qAtX -v ON_ERROR_STOP=1 -v rol_app="$ROL_APP" -v tenant="$1" <<'SQL' | sed -n 's/^CONTEO=//p'
+BEGIN;
+SET LOCAL ROLE :"rol_app";
+SELECT set_config('app.tenant_id', :'tenant', true);
+SELECT 'CONTEO=' || count(*)::text FROM public.sites;
+COMMIT;
+SQL
+  else
+    psql -d "$DESTINO" -qAtX -v ON_ERROR_STOP=1 -v rol_app="$ROL_APP" <<'SQL' | sed -n 's/^CONTEO=//p'
+BEGIN;
+SET LOCAL ROLE :"rol_app";
+SELECT 'CONTEO=' || count(*)::text FROM public.sites;
+COMMIT;
+SQL
+  fi
+}
+
+if [ "$(consultar "$DESTINO" "$SQL_TABLA_SITES")" -eq 0 ]; then
+  avisar "no existe la tabla 'sites' en el destino: se omite la prueba de aislamiento"
+else
+  consultar "$DESTINO" "$SQL_SITES_POR_TENANT" > "$TRABAJO/sites-por-tenant.txt"
+  TOTAL_SITES=$(awk -F= '{ suma += $2 } END { print suma + 0 }' "$TRABAJO/sites-por-tenant.txt")
+
+  # Sin contexto de tenant no se ve NADA. Es la regla de "fallar cerrada": si
+  # esto devuelve filas, la politica abre cuando el valor esta vacio y cualquier
+  # consulta sin contexto ve datos de todas las empresas.
+  SIN_CONTEXTO=$(contar_sites_como_app "")
+  if [ "$SIN_CONTEXTO" = "0" ]; then
+    ok "sin contexto de tenant, $ROL_APP no ve ninguna fila (la politica falla cerrada)"
+  else
+    falla "sin contexto de tenant, $ROL_APP ve $SIN_CONTEXTO fila(s) de 'sites': la politica NO falla cerrada"
+  fi
+
+  if [ "$TOTAL_SITES" -eq 0 ]; then
+    avisar "no hay filas en 'sites': no se puede comprobar que cada tenant vea las suyas"
+  else
+    REVISADOS=0
+    # Dos tenants alcanzan para probar el cruce y mantienen la prueba corta en
+    # una base con muchas empresas.
+    while IFS='=' read -r TENANT ESPERADO; do
+      if [ -z "$TENANT" ]; then
+        continue
+      fi
+      if [ "$REVISADOS" -ge 2 ]; then
+        break
+      fi
+      REVISADOS=$((REVISADOS + 1))
+      VISTO=$(contar_sites_como_app "$TENANT")
+      if [ "$VISTO" != "$ESPERADO" ]; then
+        falla "con contexto de un tenant, $ROL_APP ve $VISTO filas y le corresponden $ESPERADO"
+      elif [ "$ESPERADO" -eq "$TOTAL_SITES" ]; then
+        # Con un solo tenant en la base, ver "todo" y ver "lo suyo" es el mismo
+        # numero: la comparacion no distingue una politica rota de una sana.
+        ok "con contexto de tenant, $ROL_APP ve sus $VISTO filas (hay un solo tenant: no prueba el cruce)"
+      else
+        ok "con contexto de tenant, $ROL_APP ve sus $VISTO filas y no las $((TOTAL_SITES - ESPERADO)) de las otras empresas"
+      fi
+    done < "$TRABAJO/sites-por-tenant.txt"
+  fi
+fi
+
 conteo_filas "$PGDATABASE" > "$TRABAJO/filas-origen.txt"
 conteo_filas "$DESTINO" > "$TRABAJO/filas-destino.txt"
 FILAS_ORIGEN=$(awk -F= '{ suma += $2 } END { print suma + 0 }' "$TRABAJO/filas-origen.txt")
@@ -327,7 +450,7 @@ fi
 # --- Resultado --------------------------------------------------------------
 echo ""
 echo "== RESULTADO =="
-echo "dump:            $TAMANO_DUMP en ${SEGUNDOS_DUMP}s"
+echo "dump:            $TAMANO_DUMP ($ORIGEN_DUMP) en ${SEGUNDOS_DUMP}s"
 echo "restore:         ${SEGUNDOS_RESTORE}s   <-- tiempo de recuperacion de la base"
 echo "tablas:          $TABLAS_DESTINO"
 echo "filas:           $FILAS_DESTINO"
@@ -349,6 +472,7 @@ if [ -n "${RESUMEN_ARCHIVO:-}" ]; then
     echo "| origen | \`$PGDATABASE\` |"
     echo "| destino | \`$DESTINO\` |"
     echo "| tamaño del dump | $TAMANO_DUMP |"
+    echo "| origen del dump | $ORIGEN_DUMP |"
     echo "| duracion del dump | ${SEGUNDOS_DUMP}s |"
     echo "| **duracion del restore** | **${SEGUNDOS_RESTORE}s** |"
     echo "| tablas | $TABLAS_DESTINO |"
