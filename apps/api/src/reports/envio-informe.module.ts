@@ -4,6 +4,8 @@ import { BullModule } from '@nestjs/bullmq';
 import { DatabaseModule } from '../database/database.module';
 import { MailModule } from '../mail/mail.module';
 import { RulesModule } from '../rules/rules.module';
+import { BarridoEnvioService, ENVIO_BARRIDO_QUEUE_NAME } from './envio-informe.barrido';
+import { BarridoEnvioProcessor } from './envio-informe.barrido.processor';
 import { ENVIO_INFORME_QUEUE_NAME } from './envio-informe.constants';
 import { EnvioInformeController } from './envio-informe.controller';
 import { EnvioInformeProcessor } from './envio-informe.processor';
@@ -26,6 +28,14 @@ import { ReportsModule } from './reports.module';
  * La conexion raiz de BullMQ NO se registra aca: `BullModule.forRootAsync` de
  * MailModule la comparte con todo el proceso (mismo criterio que PushModule).
  * Declararla de nuevo abriria una segunda conexion a Redis para nada.
+ *
+ * DOS COLAS, NO UNA
+ * -----------------
+ * `report-dispatch` despacha el informe de UNA ronda, con contexto de tenant y
+ * jobId idempotente por ronda. `report-dispatch-sweep` es el barrido periodico
+ * que busca rondas cerradas que se quedaron sin informe; corre sin tenant, es
+ * uno solo para toda la plataforma y sus jobs se descartan al completarse. Ver
+ * envio-informe.barrido.processor.ts para por que no comparten cola.
  */
 @Module({
   imports: [
@@ -33,10 +43,18 @@ import { ReportsModule } from './reports.module';
     RulesModule,
     MailModule,
     ReportsModule,
-    BullModule.registerQueue({ name: ENVIO_INFORME_QUEUE_NAME }),
+    BullModule.registerQueue(
+      { name: ENVIO_INFORME_QUEUE_NAME },
+      { name: ENVIO_BARRIDO_QUEUE_NAME },
+    ),
   ],
   controllers: [EnvioInformeController],
-  providers: [EnvioInformeService, EnvioInformeProcessor],
+  providers: [
+    EnvioInformeService,
+    EnvioInformeProcessor,
+    BarridoEnvioService,
+    BarridoEnvioProcessor,
+  ],
   // Se exporta porque quien dispara el envio es otro: GuardService llama a
   // alCerrarRonda() al marcarse el punto de cierre.
   exports: [EnvioInformeService],

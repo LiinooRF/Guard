@@ -23,6 +23,7 @@ import {
   omitir,
   type DestinatarioEnvio,
   type EnvioInformeJobData,
+  type MotivoOmision,
   type ResultadoEnvio,
 } from './envio-informe.types';
 import type { InformeRonda } from './patrol-report.model';
@@ -56,10 +57,31 @@ import { PatrolReportService } from './patrol-report.service';
  *     `reportRecipients`, que se configura por tenant y se pisa por recinto.
  *   - Alerta bajo umbral (OTRO asunto, mismo PDF): solo los administradores, y
  *     ademas del informe, no en vez de el.
+ *
+ * CUANDO NO SE MANDA NADA, TAMBIEN QUEDA REGISTRO
+ *   Si el despacho resuelve que no hay nada que mandar —el envio automatico esta
+ *   apagado, o la empresa no tiene a quien escribirle— deja una fila en
+ *   `report_dispatch_attempts`. No es telemetria: es lo unico que distingue "a
+ *   esta ronda nunca se le despacho el informe" de "se le despacho y se decidio
+ *   no mandar nada". Sin esa marca, el barrido de rezagadas
+ *   (envio-informe.barrido.ts) volveria a levantar esas rondas cada diez minutos
+ *   durante toda su ventana de rescate, ocupando el cupo de las que si se
+ *   perdieron de verdad.
  */
 
 /** Estados en los que una ronda ya termino y el informe tiene sentido. */
 const RONDAS_CERRADAS = new Set(['completada', 'incompleta', 'vencida']);
+
+/**
+ * Las omisiones DEFINITIVAS, que son las unicas que dejan marca.
+ *
+ * Las otras no la dejan y es a proposito: 'ronda_sin_cerrar' es transitoria y el
+ * worker la reintenta; 'ya_enviado' ya tiene su registro en `report_deliveries`;
+ * y 'ronda_inexistente' no tiene ronda a la que apuntar la fila. Un despacho que
+ * falla —error de red, PDF que no se pudo dibujar— tampoco deja marca, porque no
+ * hubo decision: hubo accidente, y esa ronda debe seguir siendo rescatable.
+ */
+type MotivoAtendido = Extract<MotivoOmision, 'envio_desactivado' | 'sin_destinatarios'>;
 
 interface RondaRow {
   site_id: string;
@@ -172,6 +194,7 @@ export class EnvioInformeService {
           patrol_id: patrolId,
         }),
       );
+      await this.marcarAtendida(patrolId, 'sin_destinatarios');
       return omitir(patrolId, 'sin_destinatarios');
     }
 
@@ -185,7 +208,10 @@ export class EnvioInformeService {
       pctPersistido !== null && pctPersistido < reglas.complianceThreshold,
       reglas.autoSendReportOnClose,
     );
-    if (planTentativo.length === 0) return omitir(patrolId, 'envio_desactivado');
+    if (planTentativo.length === 0) {
+      await this.marcarAtendida(patrolId, 'envio_desactivado');
+      return omitir(patrolId, 'envio_desactivado');
+    }
 
     const yaRegistrados = await this.registradas(patrolId);
     if (planTentativo.every((destino) => yaRegistrados.has(clave(destino)))) {
@@ -440,6 +466,28 @@ export class EnvioInformeService {
       [patrolId, destino.kind, destino.email, destino.userId, compliancePct, adjuntado],
     );
     return filas.length > 0;
+  }
+
+  /**
+   * Deja constancia de que esta ronda ya se atendio y no habia nada que mandar.
+   *
+   * Corre dentro de la misma transaccion del despacho y con `app.tenant_id`
+   * seteado, asi que la fila pasa por RLS como cualquier otra. Va contra
+   * `report_dispatch_attempts`, no contra `report_deliveries`: aquella es la
+   * bitacora de correos ENVIADOS y el panel la muestra tal cual; meterle una
+   * fila de "no se envio" obligaria a inventar un destinatario y ensuciaria la
+   * respuesta de `estadoDeEnvio()`.
+   *
+   * `ON CONFLICT DO NOTHING` porque el reproceso de la misma ronda vuelve a
+   * pasar por aca, y la tabla no admite UPDATE ni para el rol de la aplicacion.
+   */
+  private async marcarAtendida(patrolId: string, motivo: MotivoAtendido): Promise<void> {
+    await this.tenantContext.manager.query(
+      `INSERT INTO report_dispatch_attempts (tenant_id, patrol_id, reason)
+       VALUES (app_tenant_id(), $1, $2)
+       ON CONFLICT (tenant_id, patrol_id) DO NOTHING`,
+      [patrolId, motivo],
+    );
   }
 
   /**

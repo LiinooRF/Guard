@@ -33,6 +33,21 @@ type Autenticado = Request & { user: AuthenticatedUser };
 export class SupervisorController {
   constructor(private readonly supervisor: SupervisorService) {}
 
+  /**
+   * Los recintos asignados al supervisor. Va ANTES de la ruta con :siteId a
+   * proposito: Nest resuelve por orden de declaracion y 'sites' no debe caer
+   * en el patron 'sites/:siteId/...'.
+   *
+   * Permiso patrols:monitor y no routes:manage: elegir en cual de mis recintos
+   * mirar es lo primero que hace cualquier pantalla del supervisor, no una
+   * operacion de edicion de rutas.
+   */
+  @Get('sites')
+  @Permissions('patrols:monitor')
+  listSites(@Req() request: Autenticado) {
+    return this.supervisor.listAssignedSites(request.user.sub);
+  }
+
   @Get('sites/:siteId/routes')
   @Permissions('routes:manage')
   listRoutes(@Param() params: SiteParam, @Req() request: Autenticado) {

@@ -131,6 +131,12 @@ export const patrolRulesSchema = z.object({
    * quien no, no, y ninguno queda impedido de trabajar.
    */
   gpsTrackingEnabled: z.boolean().default(true),
+  /**
+   * Tope de filas por hoja de la exportacion a Excel (#136). Si el periodo trae
+   * mas, la planilla sale cortada y lo avisa en la portada: mejor eso que un
+   * archivo que el navegador no puede abrir.
+   */
+  excelExportMaxRows: z.number().int().min(1_000).max(200_000).default(50_000),
   /** Minutos con cosas sin sincronizar antes de avisarle al guardia (#74). */
   syncPendingWarnMin: z.number().int().min(1).max(240).default(15),
   /** Si marcar salida con trabajo sin sincronizar exige confirmar dos veces (#74). */
@@ -251,6 +257,7 @@ export const RULE_UNITS = [
   'megabytes',
   'attempts',
   'operations',
+  'rows',
 ] as const;
 export type RuleUnit = (typeof RULE_UNITS)[number];
 
@@ -263,6 +270,7 @@ export const RULE_UNIT_LABELS: Record<RuleUnit, string> = {
   megabytes: 'MB',
   attempts: 'intentos',
   operations: 'operaciones',
+  rows: 'filas',
 };
 
 /** Agrupacion para la interfaz. No cambia el comportamiento. */
@@ -567,6 +575,20 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     default: DEFAULT_PATROL_RULES.photoMaxSizeMB,
     scopes: SOLO_EMPRESA,
     group: 'evidencia',
+  },
+  excelExportMaxRows: {
+    key: 'excelExportMaxRows',
+    label: 'Tope de filas por hoja del Excel',
+    description:
+      'Cuantas filas como maximo trae cada hoja de la exportacion a Excel. Si el periodo pedido trae mas, la planilla sale cortada y lo avisa en la portada.',
+    type: 'integer',
+    unit: 'rows',
+    min: 1000,
+    max: 200000,
+    default: DEFAULT_PATROL_RULES.excelExportMaxRows,
+    // Por recinto no tiene sentido: una exportacion puede cruzar varios.
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
   },
   gpsTrackingEnabled: {
     key: 'gpsTrackingEnabled',

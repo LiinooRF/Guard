@@ -26,6 +26,11 @@ import { AlertasRondaModule } from './escalation/alertas-ronda.module';
 import { ConsentModule } from './consent/consent.module';
 import { FeatureFlagsModule } from './rules/feature-flags.module';
 import { EnvioInformeModule } from './reports/envio-informe.module';
+import { ConfigAuditModule } from './audit/config-audit.module';
+import { PlantillasCorreoModule } from './mail/plantillas-correo.module';
+import { RegistroEnviosModule } from './mail/registro-envios.module';
+import { CrashReportingModule } from './observability/crash-reporting.module';
+import { ExcelExportModule } from './reports/excel-export.module';
 import { RulesModule } from './rules/rules.module';
 import { StatsChartsModule } from './stats/stats-charts.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
@@ -60,6 +65,11 @@ import { SyncModule } from './sync/sync.module';
     TenantDataModule,
     ReportsModule,
     RulesModule,
+    ExcelExportModule,
+    CrashReportingModule,
+    RegistroEnviosModule,
+    PlantillasCorreoModule,
+    ConfigAuditModule,
     EnvioInformeModule,
     FeatureFlagsModule,
     ConsentModule,

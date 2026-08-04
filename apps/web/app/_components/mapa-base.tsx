@@ -61,13 +61,13 @@ import type { Layer, Map as MapaLeaflet } from 'leaflet';
 import type { GeoPoint } from '@voxia/shared';
 
 import { MapaAtribucion, MapaAviso } from './mapa-atribucion';
+import { COLOR_MARCA, COLOR_TRAZA } from './mapa-colores';
+import { MapaLeyenda, type ItemLeyenda } from './mapa-leyenda';
 import {
   construirModelo,
   firmaDelContenido,
   type PuntoMapa,
   type TrazaMapa,
-  type VarianteMarca,
-  type VarianteTraza,
 } from './mapa-modelo';
 import { ZOOM_INICIAL, resolverOrigenTiles, type OrigenTiles } from './mapa-tiles';
 
@@ -79,6 +79,8 @@ export type {
   VarianteMarca,
   VarianteTraza,
 } from './mapa-modelo';
+export type { ClaveLeyenda } from './mapa-colores';
+export type { ItemLeyenda } from './mapa-leyenda';
 
 type Leaflet = typeof import('leaflet');
 
@@ -104,6 +106,12 @@ export interface MapaBaseProps {
   interactivo?: boolean;
   /** Que decir cuando no hay ni una ubicacion cargada. */
   mensajeVacio?: string;
+  /**
+   * Que significa cada color. Se dibuja bajo el mapa y NO con Leaflet, asi que
+   * sobrevive a que la libreria no cargue. Vacio = sin leyenda: en un mapa de un
+   * solo tipo de marca es ruido.
+   */
+  leyenda?: ReadonlyArray<ItemLeyenda>;
   /** Solo para pruebas y para un proveedor de tiles por empresa. */
   origen?: OrigenTiles;
 }
@@ -125,20 +133,6 @@ const ORIGEN_DEL_ENTORNO = resolverOrigenTiles({
   maxZoom: process.env.NEXT_PUBLIC_MAP_TILES_MAX_ZOOM,
   produccion: process.env.NODE_ENV === 'production',
 });
-
-/** Espejo de las variables de `globals.css`; ver INTEGRACION.md. */
-const COLOR_MARCA: Record<VarianteMarca, string> = {
-  punto: '#4263eb',
-  recinto: '#111b32',
-  inicio: '#18a66a',
-  fin: '#8a55d7',
-  alerta: '#df5360',
-};
-
-const COLOR_TRAZA: Record<VarianteTraza, string> = {
-  recorrido: '#4263eb',
-  ruta: '#687086',
-};
 
 const LADO_MARCA = 26;
 const RELLENO_ENCUADRE: [number, number] = [28, 28];
@@ -164,6 +158,7 @@ export function MapaBase({
   alto = '24rem',
   interactivo = true,
   mensajeVacio = MENSAJE_VACIO_POR_DEFECTO,
+  leyenda = [],
   origen = ORIGEN_DEL_ENTORNO,
 }: MapaBaseProps) {
   const contenedorRef = useRef<HTMLDivElement | null>(null);
@@ -205,6 +200,12 @@ export function MapaBase({
   useEffect(() => {
     const nodo = contenedorRef.current;
     if (!nodo || !hayMapa) return undefined;
+
+    // El mapa se rehace desde cero: el estado vuelve al principio. Sin esto, un
+    // 'sin-libreria' de un intento anterior se queda pegado y la pantalla sigue
+    // diciendo que el mapa no cargo mientras el mapa nuevo se ve perfecto detras.
+    // En el primer montaje ya vale 'cargando' y React no vuelve a renderizar.
+    setEstado('cargando');
 
     let vivo = true;
     let mapa: MapaLeaflet | null = null;
@@ -413,6 +414,8 @@ export function MapaBase({
           {MENSAJE_SIN_LIBRERIA}
         </p>
       ) : null}
+
+      <MapaLeyenda items={leyenda} />
 
       <ListaDeLugares puntos={puntos} abierta={estado === 'sin-libreria'} />
 

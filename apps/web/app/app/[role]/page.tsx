@@ -1,6 +1,10 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 
+import {
+  ConsentimientoAdmin,
+  ConsentimientoTrabajador,
+} from '../../_components/consentimiento-carga';
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
@@ -72,8 +76,15 @@ export default async function RoleDashboard({
 
     return (
       <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined>
-        <GuardHome data={data} apiUrl={publicApiUrl()} />
-        <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
+        {/* El aviso de geolocalizacion ENVUELVE el contenido del turno (#78):
+            mientras la persona no lo haya leido, la puerta no renderiza nada
+            mas. Registrar la ubicacion de un trabajador exige informarselo
+            antes, y un aviso que se pasa de largo con la rueda del mouse no es
+            aviso previo. */}
+        <ConsentimientoTrabajador apiUrl={publicApiUrl()}>
+          <GuardHome data={data} apiUrl={publicApiUrl()} />
+          <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
+        </ConsentimientoTrabajador>
       </DashboardShell>
     );
   }
@@ -106,16 +117,10 @@ export default async function RoleDashboard({
   ]);
   const isSupervisor = role === 'supervisor';
 
-  return (
-    <DashboardShell
-      role={content.role}
-      title={isSupervisor ? 'Mis recintos' : 'Resumen de la empresa'}
-      subtitle={
-        isSupervisor
-          ? 'Operación limitada a los recintos que tienes asignados.'
-          : 'Datos actuales de la empresa autenticada.'
-      }
-    >
+  // El contenido del panel, extraido a una constante solo para poder envolverlo
+  // con el aviso cuando corresponde. No cambia nada de lo que ya habia adentro.
+  const panel = (
+    <>
       <section className="stat-grid" id="resumen">
         <Metric label="Recintos visibles" value={overview?.metrics.sites ?? 0} detail={isSupervisor ? 'Solo asignados' : 'Tenant completo'} />
         <Metric label="Rondas en curso" value={overview?.metrics.activePatrols ?? 0} detail={`${overview?.metrics.pendingPatrols ?? 0} pendientes`} />
@@ -162,7 +167,33 @@ export default async function RoleDashboard({
         />
       )}
       {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
+      {/* Publicar el aviso y demostrar que no se registro ubicacion fuera de
+          turno (#78). Solo ADMIN: es de la empresa completa, y el SUPERVISOR
+          esta limitado a sus recintos asignados. */}
+      {role === 'admin' && <ConsentimientoAdmin apiUrl={publicApiUrl()} />}
       <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
+    </>
+  );
+
+  return (
+    <DashboardShell
+      role={content.role}
+      title={isSupervisor ? 'Mis recintos' : 'Resumen de la empresa'}
+      subtitle={
+        isSupervisor
+          ? 'Operación limitada a los recintos que tienes asignados.'
+          : 'Datos actuales de la empresa autenticada.'
+      }
+    >
+      {/* El SUPERVISOR tambien opera desde la app y tambien se le registra el
+          recorrido, asi que le corresponde el mismo aviso previo que al guardia.
+          Al ADMIN no: no se le registra ubicacion, y por eso no aparece en el
+          padron que arma el servidor. */}
+      {isSupervisor ? (
+        <ConsentimientoTrabajador apiUrl={publicApiUrl()}>{panel}</ConsentimientoTrabajador>
+      ) : (
+        panel
+      )}
     </DashboardShell>
   );
 }
