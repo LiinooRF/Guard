@@ -15,6 +15,7 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#resumen', icon: '⌂', label: 'Resumen' },
     { href: '#rondas', icon: '◎', label: 'Rondas' },
     { href: '#informes', icon: '▤', label: 'Informes' },
+    { href: '#reglas', icon: '⚙', label: 'Reglas' },
     { href: '#usuarios', icon: '♙', label: 'Usuarios' },
     { href: '#recintos', icon: '▦', label: 'Recintos' },
     { href: '#seguridad', icon: '◇', label: 'Seguridad' },
