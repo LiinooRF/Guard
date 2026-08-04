@@ -3,31 +3,18 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  PayloadTooLargeException,
-  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isPhotoRequired } from '@voxia/shared';
-import { createHash } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
-import { leerDimensiones } from './image-format';
+import { type FotoSubida, validarImagen } from './photo-validation';
 
-/**
- * Subconjunto del archivo que entrega FileInterceptor (multer). Se declara aca
- * para no depender de @types/multer: esta es toda la superficie que se usa.
- */
-export interface FotoSubida {
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-}
-
-const MIME_PERMITIDOS: readonly string[] = ['image/jpeg', 'image/png'];
+export type { FotoSubida };
 
 const FOTO_REUSADA = 'Esta imagen ya respalda otro escaneo del tenant: foto reusada';
 
@@ -160,22 +147,8 @@ export class EvidenceService {
     archivo: FotoSubida,
     takenAtDevice?: string,
   ) {
-    if (!MIME_PERMITIDOS.includes(archivo.mimetype)) {
-      throw new UnsupportedMediaTypeException('Solo se acepta evidencia image/jpeg o image/png');
-    }
-    const dimensiones = leerDimensiones(archivo.buffer, archivo.mimetype);
-    if (!dimensiones) {
-      throw new UnsupportedMediaTypeException(
-        'El contenido del archivo no corresponde al formato declarado',
-      );
-    }
-
     const rules = await this.rules.effective();
-    if (archivo.size > rules.photoMaxSizeMB * 1024 * 1024) {
-      throw new PayloadTooLargeException(
-        `La foto supera el maximo de ${rules.photoMaxSizeMB} MB configurado para el tenant`,
-      );
-    }
+    const imagen = validarImagen(archivo, rules.photoMaxSizeMB);
 
     // El guardia solo adjunta evidencia a escaneos de SUS rondas.
     const scans = await this.tenantContext.manager.query<
@@ -190,16 +163,15 @@ export class EvidenceService {
     const scan = scans[0];
     if (!scan) throw new NotFoundException('El escaneo no existe o no pertenece a tus rondas');
 
-    const sha256 = createHash('sha256').update(archivo.buffer).digest('hex');
+    const { sha256 } = imagen;
     const duplicadas = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT id FROM scan_photos WHERE sha256 = $1`,
       [sha256],
     );
     if (duplicadas.length) throw new ConflictException(FOTO_REUSADA);
 
-    const extension = archivo.mimetype === 'image/png' ? 'png' : 'jpg';
     // Ruta RELATIVA a EVIDENCE_PATH: mover el volumen no invalida las filas.
-    const rutaRelativa = join(scan.tenant_id, scan.patrol_id, `${sha256}.${extension}`);
+    const rutaRelativa = join(scan.tenant_id, scan.patrol_id, `${sha256}.${imagen.extension}`);
     const rutaAbsoluta = join(this.evidencePath, rutaRelativa);
     await mkdir(join(this.evidencePath, scan.tenant_id, scan.patrol_id), { recursive: true });
     await writeFile(rutaAbsoluta, archivo.buffer);
@@ -220,8 +192,8 @@ export class EvidenceService {
         rutaRelativa,
         archivo.mimetype,
         archivo.size,
-        dimensiones.width,
-        dimensiones.height,
+        imagen.width,
+        imagen.height,
         sha256,
         takenAtDevice ?? null,
       ],
@@ -241,8 +213,8 @@ export class EvidenceService {
       checkpointId: scan.checkpoint_id,
       mimeType: archivo.mimetype,
       sizeBytes: archivo.size,
-      width: dimensiones.width,
-      height: dimensiones.height,
+      width: imagen.width,
+      height: imagen.height,
       sha256,
       takenAtDevice: takenAtDevice ?? null,
       createdAt: foto.created_at,

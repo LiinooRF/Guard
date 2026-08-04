@@ -156,6 +156,8 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
 
   secured(EvidenceController, 'uploadPhoto', ['patrols:execute'], ['GUARDIA'], true),
   secured(EvidenceController, 'listPatrolPhotos', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(EvidenceController, 'uploadEventPhoto', ['patrols:execute'], ['GUARDIA'], true),
+  secured(EvidenceController, 'listEventPhotos', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
 
   secured(TenantDataController, 'pendingDeletions', ['platform:tenants:manage'], ['SUPERADMIN']),
   secured(TenantDataController, 'exportTenant', ['platform:tenants:manage'], ['SUPERADMIN']),

@@ -196,9 +196,23 @@ GET  /supervisor/sites/:siteId/on-duty       patrols:monitor  ← quién está d
 GET  /reports/patrols/:patrolId              reports:read   → PDF (application/pdf)
 GET  /reports/sites/:siteId?from=&to=        reports:read   → PDF de resumen por sucursal
 GET  /evidence/patrols/:patrolId/photos      reports:read   → metadatos del anexo fotográfico
+POST /evidence/scans/:scanId/photos          patrols:execute → evidencia de un escaneo (multipart)
+POST /evidence/events/:eventId/photos        patrols:execute → foto de una novedad (multipart)
+GET  /evidence/events/:eventId/photos        reports:read   → fotos de una novedad
 ```
 
 Los dos primeros devuelven **bytes de PDF**, no JSON: descárgalos con `blob`, no con `.json()`.
+
+Las dos subidas son **multipart** con el archivo en el campo `foto` y `takenAtDevice` opcional. Tres
+respuestas que la interfaz tiene que distinguir, porque no significan lo mismo:
+
+- **409** = *foto reusada*: esa imagen exacta ya respalda otra evidencia del tenant. No es un error de
+  red y **no se reintenta** — reintentar da siempre lo mismo. Hay que pedir una foto nueva.
+- **415** = el contenido no corresponde al formato declarado (se valida por bytes, no por el mime).
+- **413** = supera el máximo del tenant (`photoMaxSizeMB`), que es configurable y no un número fijo.
+
+La foto de novedad va **después** de crear la novedad, con el id que devolvió el servidor — nunca en
+el mismo POST. En terreno una subida cortada se llevaría también el reporte, que es lo que importa.
 
 ### Escalamiento y eventos
 
