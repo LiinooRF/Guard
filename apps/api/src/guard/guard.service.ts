@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EscalationService } from '../escalation/escalation.service';
+import { GpsPolicyService } from '../geo/gps-policy.service';
 import { MailQueueService } from '../mail/mail-queue.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
@@ -51,6 +52,7 @@ export class GuardService {
     private readonly mail: MailQueueService,
     private readonly rules: RulesService,
     private readonly escalation: EscalationService,
+    private readonly gpsPolicy: GpsPolicyService,
   ) {}
 
   async getHome(guardId: string) {
@@ -129,6 +131,13 @@ export class GuardService {
   }
 
   async startPatrol(patrolId: string, guardId: string) {
+    // La puerta de GPS (#77) va ANTES de poner la ronda en curso: si el tenant
+    // exige ubicacion y el telefono no la da, la ronda no arranca. Ademas deja
+    // escrita la decision, y esa parte es la que importa despues — sin ella una
+    // ronda sin recorrido no distingue "el guardia uso una opcion que la empresa
+    // le dio" de "se cayo el GPS".
+    await this.gpsPolicy.assertPatrolStartAllowed(guardId, patrolId);
+
     const rows = await this.tenantContext.manager.query<
       Array<{ id: string; status: string; started_at: Date }>
     >(
@@ -411,6 +420,44 @@ export class GuardService {
       status: 'en_curso',
       isVoluntary: true,
       expectedCheckpoints: puntos.length,
+    };
+  }
+
+  /**
+   * El acuse de un evento del propio guardia (#125).
+   *
+   * Apretar el boton de panico y no saber si llego deja al guardia igual de
+   * solo que sin boton. El acuse vive en event_notifications, que es donde el
+   * escalamiento anota quien recibio cada nivel.
+   *
+   * Se devuelve la ETIQUETA de quien acuso, nunca acknowledged_by: un UUID no
+   * le sirve al guardia y expone el identificador de otra persona.
+   */
+  async eventAcknowledgement(eventId: string, guardId: string) {
+    const filas = await this.tenantContext.manager.query<
+      Array<{ acknowledged_at: Date | null; quien: string | null }>
+    >(
+      `SELECT n.acknowledged_at,
+              (u.given_name || ' ' || u.family_name) AS quien
+       FROM field_events e
+       LEFT JOIN event_notifications n
+         ON n.tenant_id = e.tenant_id AND n.field_event_id = e.id
+        AND n.acknowledged_at IS NOT NULL
+       LEFT JOIN users u ON u.id = n.acknowledged_by
+       WHERE e.id = $1 AND e.guard_id = $2
+       ORDER BY n.acknowledged_at
+       LIMIT 1`,
+      [eventId, guardId],
+    );
+    const fila = filas[0];
+    // Un evento ajeno y uno inexistente dan lo mismo desde aca, y esa es la
+    // respuesta correcta: no se confirma la existencia de eventos de otros.
+    if (!fila) throw new NotFoundException('El evento no existe o no lo reportaste tu');
+
+    return {
+      eventId,
+      acknowledgedAt: fila.acknowledged_at,
+      acknowledgedByLabel: fila.acknowledged_at ? fila.quien : null,
     };
   }
 
