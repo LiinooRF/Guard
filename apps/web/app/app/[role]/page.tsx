@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
+import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -150,6 +151,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
           apiUrl={publicApiUrl()}
         />
       )}
+      {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
       <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
     </DashboardShell>
   );
