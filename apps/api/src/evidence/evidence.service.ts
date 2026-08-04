@@ -56,8 +56,16 @@ export class EvidenceService {
           EXISTS (
             SELECT 1 FROM site_business_hours h
             WHERE h.tenant_id = m.tenant_id AND h.site_id = m.site_id
+          ) OR EXISTS (
+            SELECT 1 FROM site_holidays f
+            WHERE f.tenant_id = m.tenant_id AND f.site_id = m.site_id
+              AND f.holiday_date = m.local_ts::date
           ) AS has_hours,
-          (
+          NOT EXISTS (
+            SELECT 1 FROM site_holidays f
+            WHERE f.tenant_id = m.tenant_id AND f.site_id = m.site_id
+              AND f.holiday_date = m.local_ts::date
+          ) AND (
             EXISTS (
               SELECT 1 FROM site_business_hours h
               WHERE h.tenant_id = m.tenant_id AND h.site_id = m.site_id

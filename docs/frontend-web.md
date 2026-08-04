@@ -112,11 +112,18 @@ PATCH  /admin/users/:userId/sites/:siteId     {assigned}   ← asigna recinto a 
 
 GET    /admin/sites                                    tenant:sites:manage
 POST   /admin/sites     {branchName, name, address, latitude?, longitude?}
+PATCH  /admin/sites/:siteId {branchName?, name?, address?, latitude?, longitude?, timezone?}
 PATCH  /admin/sites/:siteId/active            {isActive}
+
+GET    /admin/sites/:siteId/business-hours
+PUT    /admin/sites/:siteId/business-hours {hours:[{weekday, opensAt, closesAt}]}
+GET    /admin/sites/:siteId/holidays
+PUT    /admin/sites/:siteId/holidays       {holidays:[{date, name?}]}
 
 GET    /admin/sites/:siteId/checkpoints
 POST   /admin/sites/:siteId/checkpoints  {name, description?, kind?, suggestedOrder?,
-                                          latitude?, longitude?, requiresPhoto?, instructions?}
+                                          latitude?, longitude?, requiresPhoto?, instructions?, tagUid?}
+POST   /admin/sites/:siteId/checkpoints/import {checkpoints:[...]}  ← carga CSV atomica
 PATCH  /admin/checkpoints/:checkpointId       {campos parciales}
 PATCH  /admin/checkpoints/:checkpointId/photo {requiresPhoto: true|false|null}
 PATCH  /admin/checkpoints/:checkpointId/active {isActive}
