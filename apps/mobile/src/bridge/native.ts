@@ -140,6 +140,7 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   const { manejadores, inyectar, portalOrigen, alIncompatible } = opciones;
   const registrar = opciones.alRegistrar ?? (() => undefined);
   let saludado = false;
+  let listo = false;
   let bloqueado = false;
 
   const esperaSaludo: ReturnType<typeof setTimeout> = setTimeout(() => {
@@ -164,8 +165,19 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     );
   }
 
+  function responderErrorPuente(replyTo: string): void {
+    enviar(
+      armarSobre<'error', ErrorPuentePayload>(
+        'error',
+        { codigo: 'error-interno', mensaje: 'La función del teléfono no respondió.' },
+        { replyTo, prefijo: 'err' },
+      ),
+    );
+  }
+
   async function atenderHola(id: string, payload: HolaPayload): Promise<void> {
     saludado = true;
+    listo = false;
     const veredicto = verificarCompatibilidad(payload.requiere);
 
     if (!veredicto.ok) {
@@ -187,7 +199,14 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
       return;
     }
 
-    const dispositivo = await manejadores.capacidades();
+    let dispositivo: CapacidadesDispositivo;
+    try {
+      dispositivo = await manejadores.capacidades();
+    } catch {
+      registrar('puente.capacidades.error');
+      responderErrorPuente(id);
+      return;
+    }
     registrar('puente.listo', `nfc=${String(dispositivo.tieneNfc)}`);
     enviar(
       armarSobre(
@@ -201,6 +220,8 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         { replyTo: id, prefijo: 'rdy' },
       ),
     );
+    bloqueado = false;
+    listo = true;
   }
 
   async function atenderEscaneo(id: string, payload: EscaneoNfcPayload): Promise<void> {
@@ -218,10 +239,15 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   }
 
   async function atenderPermiso(id: string, permiso: Permiso, pedir: boolean): Promise<void> {
-    const resultado = pedir
-      ? await manejadores.pedirPermiso(permiso)
-      : await manejadores.consultarPermiso(permiso);
-    enviar(armarSobre('permission.result', resultado, { replyTo: id, prefijo: 'per' }));
+    try {
+      const resultado = pedir
+        ? await manejadores.pedirPermiso(permiso)
+        : await manejadores.consultarPermiso(permiso);
+      enviar(armarSobre('permission.result', resultado, { replyTo: id, prefijo: 'per' }));
+    } catch {
+      registrar('puente.permiso.error', permiso);
+      responderErrorPuente(id);
+    }
   }
 
   function alRecibirMensaje(evento: WebViewMessageEvent): void {
@@ -253,6 +279,16 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     }
 
     const mensaje = lectura.mensaje;
+
+    if (!MAJORS_SOPORTADOS.includes(mensaje.v)) {
+      registrar('puente.version-rechazada', String(mensaje.v));
+      return;
+    }
+
+    if (mensaje.type !== 'hello' && !listo) {
+      registrar('puente.comando-antes-de-ready', mensaje.type);
+      return;
+    }
 
     // Tras declarar incompatibilidad no se atiende nada mas: seguir contestando
     // a medias produce el peor resultado posible, que es un portal creyendo que
@@ -304,11 +340,14 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         void atenderPermiso(mensaje.id, mensaje.payload.permiso, false);
         return;
       case 'connectivity.query':
-        void manejadores.estadoConexion().then((estado) => {
-          enviar(
+        void manejadores.estadoConexion()
+          .then((estado) => enviar(
             armarSobre('connectivity.state', estado, { replyTo: mensaje.id, prefijo: 'net' }),
-          );
-        });
+          ))
+          .catch(() => {
+            registrar('puente.conectividad.error');
+            responderErrorPuente(mensaje.id);
+          });
         return;
       default:
         return;
@@ -319,7 +358,7 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     guionPrevio: construirGuionPrevio(opciones.appVersion),
     alRecibirMensaje,
     notificarConexion: (estado) => {
-      if (!bloqueado) {
+      if (listo && !bloqueado) {
         enviar(armarSobre('connectivity.state', estado, { prefijo: 'net' }));
       }
     },

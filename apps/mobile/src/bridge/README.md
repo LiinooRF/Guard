@@ -112,6 +112,18 @@ exponer ningún token al JavaScript del portal.
 4. **Nada se evalúa como código.** Los mensajes se leen con `JSON.parse`, jamás
    con `eval`. La inyección hacia el portal usa doble `JSON.stringify` y escapa
    U+2028/U+2029.
+5. **Saludo antes de comandos.** Hasta completar `hello → ready`, el shell no
+   atiende escaneos, permisos ni consultas. Los payloads se validan por tipo,
+   rango y claves permitidas antes de llegar a un módulo nativo.
+
+### Límite de seguridad de `postMessage`
+
+El origen evita que un iframe ajeno ordene un escaneo, pero el JavaScript del
+documento principal comparte el mismo contexto que el cliente del puente. Por
+eso `postMessage` no demuestra por sí solo que un resultado nació en hardware.
+La garantía contra un `nfc.scan.result` fabricado en la consola se completa en
+#59: el dispositivo firma el registro y la API verifica esa firma. No se usa
+un secreto inyectado al WebView, porque el mismo JavaScript podría leerlo.
 
 ## Cómo se conecta en el shell (`App.tsx`)
 
