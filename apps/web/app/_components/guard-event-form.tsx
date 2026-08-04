@@ -33,17 +33,14 @@ export function GuardEventForm({
   enviando,
   mensaje,
   onReportar,
-  onPanico,
 }: {
   enviando: boolean;
   mensaje?: string;
   onReportar: (entrada: { criticidad: Criticidad; texto: string; foto?: File }) => void;
-  onPanico: () => void;
 }) {
   const [criticidad, setCriticidad] = useState<Criticidad>('media');
   const [texto, setTexto] = useState('');
   const [foto, setFoto] = useState<File>();
-  const [confirmandoPanico, setConfirmandoPanico] = useState(false);
   const campoFoto = useRef<HTMLInputElement>(null);
 
   function enviar(evento: FormEvent<HTMLFormElement>) {
@@ -138,44 +135,6 @@ export function GuardEventForm({
         </p>
       ) : null}
 
-      <div className="guardia-panico">
-        <h3>Emergencia</h3>
-        {confirmandoPanico ? (
-          <>
-            <p className="guardia-panico-pregunta">
-              ¿Confirmas la alerta de pánico? Se avisa de inmediato y queda registrada.
-            </p>
-            <button
-              className="guardia-boton-panico"
-              onClick={() => {
-                setConfirmandoPanico(false);
-                onPanico();
-              }}
-              type="button"
-            >
-              Sí, enviar alerta
-            </button>
-            <button
-              className="guardia-boton-secundario ancho"
-              onClick={() => setConfirmandoPanico(false)}
-              type="button"
-            >
-              Cancelar
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              className="guardia-boton-panico"
-              onClick={() => setConfirmandoPanico(true)}
-              type="button"
-            >
-              PÁNICO
-            </button>
-            <p className="guardia-nota">No pide texto. Pide una confirmación y se envía.</p>
-          </>
-        )}
-      </div>
     </section>
   );
 }
