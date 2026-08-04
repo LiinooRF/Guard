@@ -549,3 +549,136 @@ label.guardia-boton-secundario { display: flex; align-items: center; justify-con
   .reglas-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reglas-campo.ancho { grid-column: 1 / -1; }
 }
+
+/* Graficas por sucursal (#87) */
+/* ==========================================================================
+   INFORMES — GRÁFICAS POR SUCURSAL (#87)
+   --------------------------------------------------------------------------
+   Gráficas dibujadas a mano en SVG, sin librería. La misma web se abre dentro
+   del WebView del guardia en teléfonos de gama baja: 200 kB de librería se
+   pagan en segundos de carga en terreno.
+
+   · El ancho de las barras va en PORCENTAJE, no en un `viewBox`. Así la
+     gráfica se estira con la tarjeta y el texto conserva su tamaño en píxeles.
+   · El color NUNCA es el único canal: cada barra lleva su cifra escrita, cada
+     alerta lleva su chip de texto y cada gráfica lleva su tabla.
+   · El texto usa los tokens de texto (--ink, --muted), nunca el color de la
+     serie. La identidad la carga la marca de color que va AL LADO del texto.
+   ========================================================================== */
+
+:root {
+  /* Si el tenant define su marca, estas tres la toman solas. */
+  --stats-primario: var(--marca-primario, #4263eb);
+  --stats-primario-suave: var(--marca-primario-suave, #dbe2fb);
+  --stats-alerta: var(--marca-alerta, #c8394a);
+  --stats-alerta-suave: #fdeaec;
+  --stats-rejilla: #eceff5;
+  --stats-pista: #f0f2f7;
+}
+
+.stats-seccion { margin-top: 1.5rem; }
+.stats-cifras { margin-top: 1rem; }
+.stats-cifra small { color: var(--muted); }
+.stats-cifra.alerta strong, .stats-cifra.alerta small { color: var(--stats-alerta); }
+.stats-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; }
+.stats-tarjeta { min-width: 0; }
+.stats-subtitulo { margin: 1.5rem 0 0; font-size: .8rem; letter-spacing: -.01em; }
+.stats-vacio { margin-top: 1rem; }
+
+/* --- Barra de filtros --------------------------------------------------- */
+.stats-filtros { margin-top: 1rem; border: 1px solid var(--line); border-radius: 1rem; padding: 1rem; background: white; box-shadow: 0 8px 30px rgba(24,38,72,.04); }
+.stats-filtros-campos { display: grid; grid-template-columns: 1fr; gap: .65rem; }
+.stats-filtros-campos label { display: grid; gap: .3rem; min-width: 0; color: var(--muted); font-size: .62rem; font-weight: 750; }
+.stats-filtros-campos input, .stats-filtros-campos select { min-width: 0; min-height: 2.7rem; border: 1px solid #d9deea; border-radius: .65rem; padding: 0 .7rem; color: var(--ink); background: #fbfcfe; }
+.stats-filtros-campos input:focus-visible, .stats-filtros-campos select:focus-visible { border-color: var(--stats-primario); outline: 3px solid rgba(66,99,235,.16); }
+.stats-filtros-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-top: .9rem; }
+.stats-filtros-conteo { color: var(--muted); font-size: .68rem; font-weight: 700; }
+.stats-boton { min-height: 2.6rem; padding: 0 1rem; font-size: .72rem; cursor: pointer; }
+a.stats-boton { display: inline-flex; align-items: center; }
+
+/* --- Estados: aviso, error y vacío son tres cosas distintas -------------- */
+.stats-estado { margin: .9rem 0 0; border: 1px solid; border-radius: .7rem; padding: .75rem .85rem; font-size: .74rem; line-height: 1.55; }
+.stats-estado.aviso { border-color: #efd7ae; color: #7a4a00; background: #fff9ed; }
+.stats-estado.error { border-color: #f2cbd0; color: #8d1f2c; background: #fff5f6; }
+
+/* --- SVG: barras -------------------------------------------------------- */
+.stats-grafica { display: block; width: 100%; margin-top: .9rem; overflow: visible; }
+.stats-barra-titulo { fill: var(--ink); font-size: .78rem; font-weight: 700; }
+.stats-barra-sub { fill: var(--muted); font-size: .7rem; font-weight: 500; }
+.stats-barra-pista { fill: var(--stats-pista); }
+.stats-barra { fill: var(--stats-primario); }
+.stats-barra.alerta { fill: var(--stats-alerta); }
+.stats-barra-valor { fill: var(--ink); font-size: .72rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stats-barra-valor.dentro { fill: #ffffff; }
+.stats-referencia { stroke: #8b93a8; stroke-width: 1; }
+.stats-referencia-texto { fill: var(--muted); font-size: .64rem; font-weight: 700; }
+
+/* --- SVG: serie temporal y columnas ------------------------------------- */
+.stats-rejilla { stroke: var(--stats-rejilla); stroke-width: 1; }
+.stats-eje { fill: var(--muted); font-size: .62rem; font-variant-numeric: tabular-nums; }
+/* El umbral SÍ va punteado: no es rejilla, es una línea de referencia, y el
+   punteado es justamente lo que la distingue de la rejilla. */
+.stats-umbral { stroke: #8b93a8; stroke-width: 1; stroke-dasharray: 4 3; }
+.stats-umbral-texto { fill: var(--muted); font-size: .64rem; font-weight: 700; }
+.stats-linea { fill: none; stroke: var(--stats-primario); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* El anillo blanco es el separador: deja la marca legible donde cruza la línea. */
+.stats-marca { fill: var(--stats-primario); stroke: #ffffff; stroke-width: 2; }
+.stats-valor-serie { fill: var(--ink); font-size: .68rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stats-columna-pista { fill: var(--stats-primario-suave); }
+.stats-columna { fill: var(--stats-primario); }
+
+/* --- Leyenda y chips ---------------------------------------------------- */
+.stats-leyenda { display: flex; flex-wrap: wrap; gap: 1rem; margin: .9rem 0 0; padding: 0; color: var(--muted); font-size: .68rem; font-weight: 700; list-style: none; }
+.stats-leyenda li { display: inline-flex; align-items: center; gap: .4rem; }
+.stats-marca-leyenda { display: inline-block; width: .8rem; height: .8rem; border-radius: .2rem; }
+.stats-marca-leyenda.relleno { background: var(--stats-primario); }
+/* El borde no es decoración: es lo que separa "programadas" de "completadas"
+   cuando la página se imprime en blanco y negro. */
+.stats-marca-leyenda.pista { border: 1px solid #a9b8e6; background: var(--stats-primario-suave); }
+.stats-marca-leyenda.linea { height: .2rem; border-radius: 99px; background: var(--stats-primario); }
+.stats-marca-leyenda.alerta { background: var(--stats-alerta); }
+.stats-alertas { display: grid; gap: .35rem; margin: .8rem 0 0; padding: 0; color: var(--muted); font-size: .68rem; list-style: none; }
+.stats-alertas li { display: flex; align-items: center; gap: .45rem; }
+.stats-chip { border-radius: 99px; padding: .22rem .5rem; font-size: .6rem; font-weight: 800; }
+.stats-chip.alerta { color: #8d1f2c; background: var(--stats-alerta-suave); }
+
+/* --- La tabla gemela ---------------------------------------------------- */
+.stats-detalle { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .7rem; }
+.stats-detalle > summary { color: var(--stats-primario); font-size: .7rem; font-weight: 800; cursor: pointer; }
+.stats-detalle > summary:focus-visible { border-radius: .3rem; outline: 3px solid rgba(66,99,235,.3); outline-offset: 2px; }
+.stats-detalle-cuerpo { margin-top: .8rem; }
+.stats-detalle-acciones { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .7rem; }
+.stats-tabla-envoltura { overflow-x: auto; }
+.stats-tabla { width: 100%; border-collapse: collapse; font-size: .7rem; }
+.stats-tabla th, .stats-tabla td { border-bottom: 1px solid #eff1f5; padding: .5rem .6rem; text-align: left; white-space: nowrap; }
+.stats-tabla thead th { color: var(--muted); font-size: .62rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.stats-tabla tbody th { font-weight: 700; }
+.stats-tabla .numerica { text-align: right; font-variant-numeric: tabular-nums; }
+.stats-tabla tbody tr.alerta th, .stats-tabla tbody tr.alerta td { background: var(--stats-alerta-suave); }
+.stats-invisible { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (min-width: 901px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats-filtros-campos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) {
+  .stats-filtros-campos { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+/* El caso real: el jefe de operaciones imprime esto y lo lleva a la reunión.
+   En papel manda la tabla, así que se abre sola y los filtros desaparecen. */
+@media print {
+  .stats-filtros, .stats-detalle-acciones, .stats-detalle > summary { display: none; }
+  .stats-detalle > .stats-detalle-cuerpo { display: block !important; }
+  .stats-tarjeta { box-shadow: none; break-inside: avoid; }
+  .stats-grafica { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .stats-tabla th, .stats-tabla td { white-space: normal; }
+}
+
+/* Alto contraste de Windows: las formas tienen que seguir existiendo. */
+@media (forced-colors: active) {
+  .stats-barra, .stats-columna, .stats-marca { fill: Highlight; }
+  .stats-barra-pista, .stats-columna-pista { fill: Canvas; stroke: CanvasText; }
+  .stats-linea { stroke: Highlight; }
+  .stats-rejilla, .stats-umbral, .stats-referencia { stroke: CanvasText; }
+}

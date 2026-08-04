@@ -5,6 +5,7 @@ import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { InformesPanel } from '../../_components/informes-panel';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
+import { StatsCharts } from '../../_components/stats-charts';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -50,7 +51,15 @@ interface TenantOverview {
   }>;
 }
 
-export default async function RoleDashboard({ params }: { params: Promise<{ role: string }> }) {
+export default async function RoleDashboard({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ role: string }>;
+  // Los filtros de las graficas viven en la URL: sin esto la barra empuja el
+  // parametro y nadie lo lee.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { role } = await params;
   const content = ROLE_CONTENT[role as keyof typeof ROLE_CONTENT];
   if (!content) notFound();
@@ -141,6 +150,7 @@ export default async function RoleDashboard({ params }: { params: Promise<{ role
           </div>
         )}
       </section>
+      <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
       <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
       {role === 'admin' && (
         <AdminManagement
