@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import type { EstadoConexionPayload, ResultadoEscaneoPayload } from '../_lib/bridge/protocol';
+import type {
+  EstadoConexionPayload,
+  ResultadoEscaneoPayload,
+  RutaOfflinePayload,
+} from '../_lib/bridge/protocol';
 import { crearClientePuente } from '../_lib/bridge/web-client';
 
 export { ErrorEscaneoPortal } from '../_lib/bridge/web-client';
@@ -40,15 +44,17 @@ export interface PuenteGuardia {
   conexion: EstadoConexionPayload;
   escanear: (titulo: string) => Promise<ResultadoEscaneoPayload>;
   cancelarEscaneo: () => void;
+  guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<boolean>;
 }
 
-export function useGuardBridge(): PuenteGuardia {
+export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   // `useState` y no `useMemo`: la identidad del cliente tiene que sobrevivir a
   // cualquier re-render, y useMemo no lo garantiza por contrato.
   const [cliente] = useState(crearClientePuente);
   const [fase, setFase] = useState<FasePuente>('conectando');
   const [aviso, setAviso] = useState<string>();
   const [puedeEscanear, setPuedeEscanear] = useState(false);
+  const [soportaRutaOffline, setSoportaRutaOffline] = useState(false);
   // Valor fijo en el primer render: leer `navigator` acá rompería la hidratación.
   const [conexion, setConexion] = useState<EstadoConexionPayload>({
     enLinea: true,
@@ -83,10 +89,22 @@ export function useGuardBridge(): PuenteGuardia {
       }
 
       setFase('listo');
+      setSoportaRutaOffline(estado.info.protocolo.minor >= 1);
       const { dispositivo } = estado.info;
       if (!dispositivo.tieneNfc) {
         setAviso(SIN_ANTENA);
         return;
+      }
+      if (estado.info.protocolo.minor >= 3 && apiUrl && typeof window !== 'undefined') {
+        try {
+          await cliente.registrarFirma({
+            apiUrl: new URL(apiUrl, window.location.origin).href.replace(/\/$/, ''),
+            portalOrigin: window.location.origin,
+          });
+        } catch {
+          setAviso('No se pudo registrar la identidad segura de este teléfono. Revisa la conexión.');
+          return;
+        }
       }
       // Con la antena apagada se deja intentar igual: el shell responde
       // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto.
@@ -102,7 +120,7 @@ export function useGuardBridge(): PuenteGuardia {
       bajaConexion();
       cliente.desconectar();
     };
-  }, [cliente]);
+  }, [apiUrl, cliente]);
 
   // Sin shell nativo la conectividad la reporta el navegador. Con shell manda el
   // shell, que además avisa los cambios sin que se los pidan.
@@ -124,6 +142,11 @@ export function useGuardBridge(): PuenteGuardia {
     [cliente],
   );
   const cancelarEscaneo = useCallback(() => cliente.cancelarEscaneo(), [cliente]);
+  const guardarRutaOffline = useCallback(async (ruta: RutaOfflinePayload) => {
+    if (!soportaRutaOffline) return false;
+    await cliente.guardarRutaOffline(ruta);
+    return true;
+  }, [cliente, soportaRutaOffline]);
 
   return {
     fase,
@@ -132,5 +155,6 @@ export function useGuardBridge(): PuenteGuardia {
     conexion,
     escanear,
     cancelarEscaneo,
+    guardarRutaOffline,
   };
 }

@@ -27,6 +27,9 @@ import {
   type Permiso,
   type ResultadoEscaneoPayload,
   type ResultadoPermisoPayload,
+  type RutaOfflinePayload,
+  type EncolarSyncPayload,
+  type RegistrarFirmaPayload,
 } from './protocol';
 
 /**
@@ -55,6 +58,11 @@ export interface ManejadoresNativos {
   readonly pedirPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly consultarPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
+  readonly guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<string>;
+  readonly borrarRutaOffline: () => Promise<void>;
+  readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
+  readonly sincronizarCola: () => Promise<{ procesadas: number; pendientes: number }>;
+  readonly registrarFirma: (payload: RegistrarFirmaPayload) => Promise<string>;
 }
 
 export interface OpcionesPuente {
@@ -140,6 +148,7 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   const { manejadores, inyectar, portalOrigen, alIncompatible } = opciones;
   const registrar = opciones.alRegistrar ?? (() => undefined);
   let saludado = false;
+  let listo = false;
   let bloqueado = false;
 
   const esperaSaludo: ReturnType<typeof setTimeout> = setTimeout(() => {
@@ -164,8 +173,19 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     );
   }
 
+  function responderErrorPuente(replyTo: string): void {
+    enviar(
+      armarSobre<'error', ErrorPuentePayload>(
+        'error',
+        { codigo: 'error-interno', mensaje: 'La función del teléfono no respondió.' },
+        { replyTo, prefijo: 'err' },
+      ),
+    );
+  }
+
   async function atenderHola(id: string, payload: HolaPayload): Promise<void> {
     saludado = true;
+    listo = false;
     const veredicto = verificarCompatibilidad(payload.requiere);
 
     if (!veredicto.ok) {
@@ -187,7 +207,14 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
       return;
     }
 
-    const dispositivo = await manejadores.capacidades();
+    let dispositivo: CapacidadesDispositivo;
+    try {
+      dispositivo = await manejadores.capacidades();
+    } catch {
+      registrar('puente.capacidades.error');
+      responderErrorPuente(id);
+      return;
+    }
     registrar('puente.listo', `nfc=${String(dispositivo.tieneNfc)}`);
     enviar(
       armarSobre(
@@ -201,6 +228,8 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         { replyTo: id, prefijo: 'rdy' },
       ),
     );
+    bloqueado = false;
+    listo = true;
   }
 
   async function atenderEscaneo(id: string, payload: EscaneoNfcPayload): Promise<void> {
@@ -218,10 +247,15 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   }
 
   async function atenderPermiso(id: string, permiso: Permiso, pedir: boolean): Promise<void> {
-    const resultado = pedir
-      ? await manejadores.pedirPermiso(permiso)
-      : await manejadores.consultarPermiso(permiso);
-    enviar(armarSobre('permission.result', resultado, { replyTo: id, prefijo: 'per' }));
+    try {
+      const resultado = pedir
+        ? await manejadores.pedirPermiso(permiso)
+        : await manejadores.consultarPermiso(permiso);
+      enviar(armarSobre('permission.result', resultado, { replyTo: id, prefijo: 'per' }));
+    } catch {
+      registrar('puente.permiso.error', permiso);
+      responderErrorPuente(id);
+    }
   }
 
   function alRecibirMensaje(evento: WebViewMessageEvent): void {
@@ -253,6 +287,22 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     }
 
     const mensaje = lectura.mensaje;
+
+    // El `hello` queda FUERA de este filtro a proposito: es el mensaje que
+    // negocia la version, y atenderHola() ya responde 'incompatible' con el
+    // motivo. Descartarlo aca dejaba al portal viejo esperando en silencio, sin
+    // saber si la app lo escucho — y sin manera de mostrarle al guardia que
+    // tiene que actualizar. El portal se despliega solo; la app tarda semanas
+    // en llegarle a todos, asi que este cruce de versiones va a pasar.
+    if (mensaje.type !== 'hello' && !MAJORS_SOPORTADOS.includes(mensaje.v)) {
+      registrar('puente.version-rechazada', String(mensaje.v));
+      return;
+    }
+
+    if (mensaje.type !== 'hello' && !listo) {
+      registrar('puente.comando-antes-de-ready', mensaje.type);
+      return;
+    }
 
     // Tras declarar incompatibilidad no se atiende nada mas: seguir contestando
     // a medias produce el peor resultado posible, que es un portal creyendo que
@@ -303,12 +353,62 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
       case 'permission.query':
         void atenderPermiso(mensaje.id, mensaje.payload.permiso, false);
         return;
+      case 'offline.route.save':
+        void manejadores.guardarRutaOffline(mensaje.payload)
+          .then((savedAt) => enviar(armarSobre(
+            'offline.route.saved',
+            { patrolId: mensaje.payload.patrolId, savedAt },
+            { replyTo: mensaje.id, prefijo: 'off' },
+          )))
+          .catch(() => {
+            registrar('puente.ruta-offline.error');
+            responderErrorPuente(mensaje.id);
+          });
+        return;
+      case 'offline.route.clear':
+        void manejadores.borrarRutaOffline()
+          .then(() => enviar(armarSobre(
+            'offline.route.cleared', {}, { replyTo: mensaje.id, prefijo: 'off' },
+          )))
+          .catch(() => {
+            registrar('puente.ruta-offline-borrado.error');
+            responderErrorPuente(mensaje.id);
+          });
+        return;
+      case 'sync.queue.enqueue':
+        void manejadores.encolarSync(mensaje.payload)
+          .then((inserted) => enviar(armarSobre(
+            'sync.queue.enqueued',
+            { clientId: mensaje.payload.operation.clientId, inserted },
+            { replyTo: mensaje.id, prefijo: 'syn' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
+        return;
+      case 'sync.queue.flush':
+        void manejadores.sincronizarCola()
+          .then((resultado) => enviar(armarSobre(
+            'sync.queue.flushed',
+            { processed: resultado.procesadas, pending: resultado.pendientes },
+            { replyTo: mensaje.id, prefijo: 'syn' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
+        return;
+      case 'device.signature.register':
+        void manejadores.registrarFirma(mensaje.payload)
+          .then((deviceId) => enviar(armarSobre(
+            'device.signature.registered', { deviceId }, { replyTo: mensaje.id, prefijo: 'sig' },
+          )))
+          .catch(() => responderErrorPuente(mensaje.id));
+        return;
       case 'connectivity.query':
-        void manejadores.estadoConexion().then((estado) => {
-          enviar(
+        void manejadores.estadoConexion()
+          .then((estado) => enviar(
             armarSobre('connectivity.state', estado, { replyTo: mensaje.id, prefijo: 'net' }),
-          );
-        });
+          ))
+          .catch(() => {
+            registrar('puente.conectividad.error');
+            responderErrorPuente(mensaje.id);
+          });
         return;
       default:
         return;
@@ -319,7 +419,7 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     guionPrevio: construirGuionPrevio(opciones.appVersion),
     alRecibirMensaje,
     notificarConexion: (estado) => {
-      if (!bloqueado) {
+      if (listo && !bloqueado) {
         enviar(armarSobre('connectivity.state', estado, { prefijo: 'net' }));
       }
     },

@@ -5,14 +5,28 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { CreateScanDto } from './dto/create-scan.dto';
+import { EnrollDeviceKeyDto } from './dto/enroll-device-key.dto';
 import { ReportEventDto } from './dto/report-event.dto';
 import { ShiftMarkDto } from './dto/shift-mark.dto';
 import { GuardService } from './guard.service';
+import { DeviceSignatureService } from './device-signature.service';
 
 @Controller('guard')
 @TenantScope()
 export class GuardController {
-  constructor(private readonly guardService: GuardService) {}
+  constructor(
+    private readonly guardService: GuardService,
+    private readonly signatures: DeviceSignatureService,
+  ) {}
+
+  @Post('device-signing-key')
+  @Permissions('patrols:execute')
+  enrollDeviceKey(
+    @Body() input: EnrollDeviceKeyDto,
+    @Req() request: Request & { user: AuthenticatedUser },
+  ) {
+    return this.signatures.enroll(request.user.sub, input.deviceId, input.key);
+  }
 
   @Get('home')
   @Permissions('patrols:execute')

@@ -2,6 +2,7 @@
 
 import { escribirJson, leerJson } from './guard-storage';
 import { ensureFreshSession } from './use-session-refresh';
+import { reflejarEnColaNativa } from './guard-native-outbox';
 
 /**
  * La única puerta a la API desde la pantalla del guardia (#91, #92, #94).
@@ -67,6 +68,8 @@ export type PayloadEscaneo = {
   latitude?: number;
   longitude?: number;
   accuracyM?: number;
+  deviceId?: string;
+  signature?: string;
 };
 
 export type Criticidad = 'info' | 'baja' | 'media' | 'alta' | 'panico';
@@ -166,11 +169,13 @@ export function encolar(operacion: {
   type: TipoOperacion;
   patrolId?: string;
   payload: Record<string, unknown>;
-}): void {
+}, apiUrl = urlApi): void {
+  const queuedAt = new Date().toISOString();
   guardar([
     ...cargar(),
-    { ...operacion, queuedAt: new Date().toISOString(), intentos: 0, estado: 'pendiente' },
+    { ...operacion, queuedAt, intentos: 0, estado: 'pendiente' },
   ]);
+  void reflejarEnColaNativa(apiUrl, { ...operacion, queuedAt }).catch(() => undefined);
   programar(ESPERA_BASE_MS);
 }
 
@@ -337,7 +342,7 @@ export async function enviarEscaneo(
   payload: PayloadEscaneo,
 ): Promise<Envio<RespuestaEscaneo>> {
   const encolarEste = () => {
-    encolar({ clientId: payload.clientScanId, type: 'scan', patrolId, payload });
+    encolar({ clientId: payload.clientScanId, type: 'scan', patrolId, payload }, apiUrl);
     return { clase: 'encolado' as const };
   };
   if (sinRed()) return encolarEste();
@@ -374,7 +379,7 @@ export async function enviarNovedad(
       type: 'event',
       ...(payload.patrolId ? { patrolId: payload.patrolId } : {}),
       payload,
-    });
+    }, apiUrl);
     return { clase: 'encolado' as const };
   };
   if (sinRed()) return encolarEsta();

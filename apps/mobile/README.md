@@ -131,6 +131,20 @@ Las rondas ocurren en subterráneos y perímetros sin señal. Una ronda completa
 **modo avión** debe registrarse y sincronizar después sin perder ni un escaneo ni
 una foto. Si se probó solo con wifi, no está probado.
 
+### Probar la cola en segundo plano (#72)
+
+La operación se escribe primero en la base SQLCipher con el mismo UUID que usa
+`POST /sync/push`. Android registra un `WorkManager` mediante
+`expo-background-task`: exige red y conserva el orden de `queuedAt`; el sistema,
+no la app, decide el instante exacto de ejecución (intervalo mínimo 15 minutos).
+Al detectar red con la app abierta también se vacía inmediatamente.
+
+En un **development build** se puede forzar el worker desde una pantalla de
+diagnóstico llamando `BackgroundTask.triggerTaskWorkerForTestingAsync()`. La
+prueba de aceptación real es: encolar en modo avión, mandar la app al fondo,
+restaurar red y comprobar en `/sync/status` que cada UUID aparece una sola vez.
+Expo Go no ejecuta este worker nativo.
+
 ---
 
 ## Los tres perfiles de build
@@ -223,7 +237,8 @@ casi todos son **calendario, no código**:
 | Configuración de permisos, identidad visual y perfiles de EAS | hecho (este PR) |
 | Contrato del puente versionado (`src/bridge/`) | hecho (este PR) |
 | Módulos nativos de NFC, cámara y ubicación | **falta** — carril #11 / #5 |
-| Cableado del puente en `App.tsx` | **falta** — el snippet exacto está en `src/bridge/README.md` |
+| Cableado del puente en `App.tsx` | hecho (#58): saludo, origen, compatibilidad y conectividad |
+| Autenticidad criptográfica del escaneo | **falta** — se completa en #59; `postMessage` solo no puede probar dispositivo |
 
 `App.tsx` no se toca en este PR a propósito: lo está trabajando el carril de NFC
 y dos agentes escribiendo el mismo archivo es cómo se pierde trabajo.

@@ -86,7 +86,7 @@ export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: str
 }
 
 function SinAsignacion({ apiUrl, mensaje }: { apiUrl: string; mensaje?: string }) {
-  const puente = useGuardBridge();
+  const puente = useGuardBridge(apiUrl);
   return (
     <>
       <SyncEstado apiUrl={apiUrl} conexion={puente.conexion} />
@@ -112,7 +112,7 @@ function Ronda({
   shift: NonNullable<GuardShiftData['shift']>;
   apiUrl: string;
 }) {
-  const puente = useGuardBridge();
+  const puente = useGuardBridge(apiUrl);
   const [estado, setEstado] = useState<EstadoRonda>(() => estadoInicial(patrol.id));
   const [vista, setVista] = useState<Vista>('ronda');
   const [fase, setFase] = useState<FaseEscaneo>('inactivo');
@@ -186,7 +186,7 @@ function Ronda({
     setFase('enviando');
     setAnuncio('Registrando el punto…');
 
-    const clientScanId = nuevoUuid();
+    const clientScanId = lectura.clientScanId ?? nuevoUuid();
     const envio = await enviarEscaneo(apiUrl, patrol.id, {
       uid: lectura.uid,
       method: 'nfc',
@@ -195,6 +195,8 @@ function Ronda({
       ...(lectura.latitude === undefined ? {} : { latitude: lectura.latitude }),
       ...(lectura.longitude === undefined ? {} : { longitude: lectura.longitude }),
       ...(lectura.accuracyM === undefined ? {} : { accuracyM: lectura.accuracyM }),
+      ...(lectura.deviceId === undefined ? {} : { deviceId: lectura.deviceId }),
+      ...(lectura.signature === undefined ? {} : { signature: lectura.signature }),
     });
     setFase('inactivo');
 

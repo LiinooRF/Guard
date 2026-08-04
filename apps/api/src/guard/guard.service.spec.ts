@@ -51,7 +51,10 @@ describe('GuardService', () => {
           route_name: 'Ronda nocturna demo',
           estimated_duration_min: 30,
           checkpoints: [
-            { id: 'checkpoint-id', name: 'Acceso', position: 1, isClosingPoint: true },
+            {
+              id: 'checkpoint-id', name: 'Acceso', position: 1,
+              isClosingPoint: true, tagUids: ['04AABBCC'],
+            },
           ],
         },
       ]),
@@ -320,5 +323,36 @@ describe('GuardService.registerScan', () => {
       anomalies: ['sin_fix_gps'],
       patrol: { status: 'en_curso' },
     });
+  });
+
+  it('marca como sospechoso un GPS a unos 500 m y un reloj manipulado', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: '-33.45', longitude: '-70.66',
+        is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([{ id: 'scan-id' }])
+      .mockResolvedValueOnce([{
+        checkpoint_id: 'cp-1',
+        anomalies: ['fuera_de_radio_gps', 'reloj_desfasado'],
+      }]);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(),
+    );
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto({
+      latitude: -33.4455,
+      scannedAt: '2020-01-01T00:00:00.000Z',
+    }))).resolves.toMatchObject({
+      anomalies: ['fuera_de_radio_gps', 'reloj_desfasado'],
+    });
+    const insert = manager.query.mock.calls.find(([sql]: [string]) =>
+      sql.includes('INSERT INTO scans'));
+    expect(insert?.[1][10]).toContain('fuera_de_radio_gps');
+    expect(insert?.[1][10]).toContain('reloj_desfasado');
   });
 });

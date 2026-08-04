@@ -29,6 +29,7 @@ const ETIQUETAS_ANOMALIA: Record<ScanAnomaly, string> = {
   velocidad_imposible: 'Tiempo imposible entre dos puntos',
   reloj_desfasado: 'Reloj del teléfono desfasado',
   dispositivo_duplicado: 'Otro dispositivo escaneó en tu nombre',
+  firma_dispositivo_ausente: 'Escaneo de una versión antigua sin firma del dispositivo',
 };
 
 /**

@@ -48,7 +48,7 @@ export const PUENTE = 'voxia.bridge' as const;
 
 /** Version que habla ESTE build del shell. */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 0;
+export const PROTOCOLO_MINOR = 3;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -128,12 +128,51 @@ export interface ConsultarPermisoPayload {
   readonly permiso: Permiso;
 }
 
+export interface RutaOfflinePayload {
+  readonly patrolId: string;
+  readonly status: 'pendiente' | 'en_curso';
+  readonly siteName: string;
+  readonly routeName: string;
+  readonly scheduledStartAt: string;
+  readonly scheduledEndAt: string;
+  readonly estimatedDurationMin: number;
+  readonly checkpoints: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly position: number;
+    readonly isClosingPoint?: boolean;
+    readonly tagUids: readonly string[];
+  }[];
+}
+
+export interface EncolarSyncPayload {
+  readonly apiUrl: string;
+  readonly portalOrigin: string;
+  readonly operation: {
+    readonly type: 'scan' | 'event';
+    readonly clientId: string;
+    readonly patrolId?: string;
+    readonly payload: Record<string, unknown>;
+    readonly queuedAt: string;
+  };
+}
+
+export interface RegistrarFirmaPayload {
+  readonly apiUrl: string;
+  readonly portalOrigin: string;
+}
+
 export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
   | Sobre<'nfc.scan.cancel', Record<string, never>>
   | Sobre<'permission.request', PedirPermisoPayload>
   | Sobre<'permission.query', ConsultarPermisoPayload>
+  | Sobre<'offline.route.save', RutaOfflinePayload>
+  | Sobre<'offline.route.clear', Record<string, never>>
+  | Sobre<'sync.queue.enqueue', EncolarSyncPayload>
+  | Sobre<'sync.queue.flush', Record<string, never>>
+  | Sobre<'device.signature.register', RegistrarFirmaPayload>
   | Sobre<'connectivity.query', Record<string, never>>;
 
 export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
@@ -142,6 +181,11 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'nfc.scan.cancel',
   'permission.request',
   'permission.query',
+  'offline.route.save',
+  'offline.route.clear',
+  'sync.queue.enqueue',
+  'sync.queue.flush',
+  'device.signature.register',
   'connectivity.query',
 ];
 
@@ -190,6 +234,9 @@ export interface ResultadoEscaneoPayload {
   readonly latitude?: number;
   readonly longitude?: number;
   readonly accuracyM?: number;
+  readonly clientScanId?: string;
+  readonly deviceId?: string;
+  readonly signature?: string;
 }
 
 /**
@@ -233,6 +280,11 @@ export interface EstadoConexionPayload {
   readonly tipo: TipoConexion;
 }
 
+export interface RutaOfflineGuardadaPayload {
+  readonly patrolId: string;
+  readonly savedAt: string;
+}
+
 export type CodigoErrorPuente =
   | 'mensaje-invalido'
   | 'mensaje-demasiado-grande'
@@ -252,6 +304,11 @@ export type MensajeShell =
   | Sobre<'nfc.scan.result', ResultadoEscaneoPayload>
   | Sobre<'nfc.scan.error', ErrorEscaneoPayload>
   | Sobre<'permission.result', ResultadoPermisoPayload>
+  | Sobre<'offline.route.saved', RutaOfflineGuardadaPayload>
+  | Sobre<'offline.route.cleared', Record<string, never>>
+  | Sobre<'sync.queue.enqueued', { readonly clientId: string; readonly inserted: boolean }>
+  | Sobre<'sync.queue.flushed', { readonly processed: number; readonly pending: number }>
+  | Sobre<'device.signature.registered', { readonly deviceId: string }>
   | Sobre<'connectivity.state', EstadoConexionPayload>
   | Sobre<'error', ErrorPuentePayload>;
 
@@ -261,6 +318,11 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'nfc.scan.result',
   'nfc.scan.error',
   'permission.result',
+  'offline.route.saved',
+  'offline.route.cleared',
+  'sync.queue.enqueued',
+  'sync.queue.flushed',
+  'device.signature.registered',
   'connectivity.state',
   'error',
 ];
@@ -370,13 +432,202 @@ function esSobre(valor: unknown): valor is Sobre<string, unknown> {
   return (
     c['p'] === PUENTE &&
     typeof c['v'] === 'number' &&
-    typeof c['id'] === 'string' &&
+    Number.isInteger(c['v']) &&
+    typeof c['id'] === 'string' && c['id'].length > 0 && c['id'].length <= 128 &&
     typeof c['type'] === 'string' &&
     typeof c['ts'] === 'string' &&
     typeof c['payload'] === 'object' &&
     c['payload'] !== null
   );
 }
+
+function esRegistro(valor: unknown): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+}
+
+function clavesPermitidas(valor: Record<string, unknown>, claves: readonly string[]): boolean {
+  return Object.keys(valor).every((clave) => claves.includes(clave));
+}
+
+function payloadPortalValido(type: string, payload: unknown): boolean {
+  if (!esRegistro(payload)) return false;
+  switch (type) {
+    case 'hello': {
+      const requiere = payload['requiere'];
+      return clavesPermitidas(payload, ['portalBuild', 'requiere']) &&
+        typeof payload['portalBuild'] === 'string' && payload['portalBuild'].length <= 120 &&
+        esRegistro(requiere) && clavesPermitidas(requiere, ['major', 'minMinor']) &&
+        Number.isInteger(requiere['major']) && Number.isInteger(requiere['minMinor']) &&
+        Number(requiere['major']) >= 0 && Number(requiere['minMinor']) >= 0;
+    }
+    case 'nfc.scan.start':
+      return clavesPermitidas(payload, ['timeoutMs', 'titulo']) &&
+        Number.isInteger(payload['timeoutMs']) && Number(payload['timeoutMs']) >= 1_000 &&
+        Number(payload['timeoutMs']) <= 120_000 &&
+        (payload['titulo'] === undefined ||
+          (typeof payload['titulo'] === 'string' && payload['titulo'].length <= 120));
+    case 'nfc.scan.cancel':
+    case 'offline.route.clear':
+    case 'sync.queue.flush':
+    case 'connectivity.query':
+      return Object.keys(payload).length === 0;
+    case 'permission.request':
+      return clavesPermitidas(payload, ['permiso', 'divulgacionMostrada']) &&
+        PERMISOS.includes(payload['permiso'] as Permiso) &&
+        typeof payload['divulgacionMostrada'] === 'boolean';
+    case 'permission.query':
+      return clavesPermitidas(payload, ['permiso']) &&
+        PERMISOS.includes(payload['permiso'] as Permiso);
+    case 'offline.route.save': {
+      const checkpoints = payload['checkpoints'];
+      return clavesPermitidas(payload, [
+        'patrolId', 'status', 'siteName', 'routeName', 'scheduledStartAt', 'scheduledEndAt',
+        'estimatedDurationMin', 'checkpoints',
+      ]) && esIdentificador(payload['patrolId']) &&
+        (payload['status'] === 'pendiente' || payload['status'] === 'en_curso') &&
+        esTexto(payload['siteName'], 160) && esTexto(payload['routeName'], 160) &&
+        esFecha(payload['scheduledStartAt']) && esFecha(payload['scheduledEndAt']) &&
+        Number.isInteger(payload['estimatedDurationMin']) &&
+        Number(payload['estimatedDurationMin']) >= 1 && Number(payload['estimatedDurationMin']) <= 1_440 &&
+        Array.isArray(checkpoints) && checkpoints.length > 0 && checkpoints.length <= 500 &&
+        checkpoints.every((punto) => esRegistro(punto) &&
+          clavesPermitidas(punto, ['id', 'name', 'position', 'isClosingPoint', 'tagUids']) &&
+          esIdentificador(punto['id']) && esTexto(punto['name'], 160) &&
+          Number.isInteger(punto['position']) && Number(punto['position']) >= 1 &&
+          (punto['isClosingPoint'] === undefined || typeof punto['isClosingPoint'] === 'boolean') &&
+          Array.isArray(punto['tagUids']) && punto['tagUids'].length <= 10 &&
+          punto['tagUids'].every((uid) =>
+            typeof uid === 'string' && uid.length >= 4 && uid.length <= 64 && /^[\x20-\x7E]+$/.test(uid)));
+    }
+    case 'sync.queue.enqueue': {
+      const operacion = payload['operation'];
+      if (!clavesPermitidas(payload, ['apiUrl', 'portalOrigin', 'operation']) ||
+          typeof payload['apiUrl'] !== 'string' || !esApiUrl(payload['apiUrl']) ||
+          typeof payload['portalOrigin'] !== 'string' || !esPortalOrigin(payload['portalOrigin']) ||
+          !esRegistro(operacion) ||
+          !clavesPermitidas(operacion, ['type', 'clientId', 'patrolId', 'payload', 'queuedAt'])) {
+        return false;
+      }
+      return (operacion['type'] === 'scan' || operacion['type'] === 'event') &&
+        esUuid(operacion['clientId']) &&
+        (operacion['patrolId'] === undefined || esUuid(operacion['patrolId'])) &&
+        (operacion['type'] !== 'scan' || esUuid(operacion['patrolId'])) &&
+        esRegistro(operacion['payload']) && esFecha(operacion['queuedAt']);
+    }
+    case 'device.signature.register':
+      return clavesPermitidas(payload, ['apiUrl', 'portalOrigin']) &&
+        typeof payload['apiUrl'] === 'string' && esApiUrl(payload['apiUrl']) &&
+        typeof payload['portalOrigin'] === 'string' && esPortalOrigin(payload['portalOrigin']);
+    default:
+      return false;
+  }
+}
+
+const PERMISOS: readonly Permiso[] = [
+  'nfc', 'camara', 'ubicacion', 'ubicacion-segundo-plano', 'notificaciones',
+];
+
+function payloadShellValido(type: string, payload: unknown): boolean {
+  if (!esRegistro(payload)) return false;
+  switch (type) {
+    case 'ready':
+      return esRegistro(payload['protocolo']) && esRegistro(payload['app']) &&
+        esRegistro(payload['dispositivo']) && Array.isArray(payload['majorsSoportados']);
+    case 'incompatible':
+      return (payload['motivo'] === 'app-antigua' || payload['motivo'] === 'portal-antiguo') &&
+        typeof payload['mensaje'] === 'string';
+    case 'nfc.scan.result':
+      return typeof payload['uid'] === 'string' && /^[0-9A-F]{4,64}$/.test(payload['uid']) &&
+        payload['tech'] === 'nfc' && typeof payload['scannedAt'] === 'string' &&
+        !Number.isNaN(Date.parse(payload['scannedAt'])) &&
+        ((payload['clientScanId'] === undefined && payload['deviceId'] === undefined &&
+          payload['signature'] === undefined) ||
+         (esUuid(payload['clientScanId']) && esUuid(payload['deviceId']) &&
+          typeof payload['signature'] === 'string' && /^[0-9a-f]{64}$/.test(payload['signature']))) &&
+        (payload['latitude'] === undefined ||
+          (typeof payload['latitude'] === 'number' && payload['latitude'] >= -90 && payload['latitude'] <= 90)) &&
+        (payload['longitude'] === undefined ||
+          (typeof payload['longitude'] === 'number' && payload['longitude'] >= -180 && payload['longitude'] <= 180)) &&
+        (payload['accuracyM'] === undefined ||
+          (typeof payload['accuracyM'] === 'number' && payload['accuracyM'] >= 0));
+    case 'nfc.scan.error':
+      return CODIGOS_ESCANEO.includes(payload['codigo'] as CodigoErrorEscaneo) &&
+        typeof payload['mensaje'] === 'string' && typeof payload['reintentable'] === 'boolean';
+    case 'permission.result':
+      return PERMISOS.includes(payload['permiso'] as Permiso) &&
+        ESTADOS_PERMISO.includes(payload['estado'] as EstadoPermiso) &&
+        typeof payload['puedeVolverAPedir'] === 'boolean';
+    case 'offline.route.saved':
+      return esIdentificador(payload['patrolId']) && esFecha(payload['savedAt']);
+    case 'offline.route.cleared':
+      return Object.keys(payload).length === 0;
+    case 'sync.queue.enqueued':
+      return esUuid(payload['clientId']) && typeof payload['inserted'] === 'boolean';
+    case 'sync.queue.flushed':
+      return Number.isInteger(payload['processed']) && Number(payload['processed']) >= 0 &&
+        Number.isInteger(payload['pending']) && Number(payload['pending']) >= 0;
+    case 'device.signature.registered':
+      return esUuid(payload['deviceId']);
+    case 'connectivity.state':
+      return typeof payload['enLinea'] === 'boolean' &&
+        TIPOS_CONEXION.includes(payload['tipo'] as TipoConexion);
+    case 'error':
+      return CODIGOS_PUENTE.includes(payload['codigo'] as CodigoErrorPuente) &&
+        typeof payload['mensaje'] === 'string';
+    default:
+      return false;
+  }
+}
+
+function esTexto(valor: unknown, maximo: number): valor is string {
+  return typeof valor === 'string' && valor.length > 0 && valor.length <= maximo;
+}
+
+function esIdentificador(valor: unknown): valor is string {
+  return esTexto(valor, 128) && /^[A-Za-z0-9_-]+$/.test(valor);
+}
+
+function esFecha(valor: unknown): valor is string {
+  return typeof valor === 'string' && !Number.isNaN(Date.parse(valor));
+}
+
+function esUuid(valor: unknown): valor is string {
+  return typeof valor === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(valor);
+}
+
+function esApiUrl(valor: string): boolean {
+  if (valor.length > 500) return false;
+  try {
+    const url = new URL(valor);
+    return url.protocol === 'https:' ||
+      (url.protocol === 'http:' && ['localhost', '127.0.0.1', '10.0.2.2'].includes(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+function esPortalOrigin(valor: string): boolean {
+  if (!esApiUrl(valor)) return false;
+  try {
+    return new URL(valor).origin === valor;
+  } catch {
+    return false;
+  }
+}
+
+const CODIGOS_ESCANEO: readonly CodigoErrorEscaneo[] = [
+  'nfc-no-disponible', 'nfc-desactivado', 'permiso-denegado', 'cancelado',
+  'timeout', 'etiqueta-ilegible', 'error-desconocido',
+];
+const ESTADOS_PERMISO: readonly EstadoPermiso[] = [
+  'concedido', 'denegado', 'denegado-definitivo', 'no-aplica',
+];
+const TIPOS_CONEXION: readonly TipoConexion[] = ['wifi', 'celular', 'ninguna', 'desconocida'];
+const CODIGOS_PUENTE: readonly CodigoErrorPuente[] = [
+  'mensaje-invalido', 'mensaje-demasiado-grande', 'origen-no-autorizado',
+  'tipo-desconocido', 'divulgacion-faltante', 'error-interno',
+];
 
 /**
  * Lee un mensaje crudo. Valida forma, tamaño y que el tipo pertenezca al
@@ -390,6 +641,7 @@ function esSobre(valor: unknown): valor is Sobre<string, unknown> {
 function leer<T extends { type: string }>(
   crudo: string,
   tiposValidos: readonly string[],
+  validarPayload: (type: string, payload: unknown) => boolean,
 ): ResultadoLectura<T> {
   if (crudo.length * 2 > MAX_BYTES_MENSAJE) {
     return { ok: false, codigo: 'mensaje-demasiado-grande', detalle: `${crudo.length} caracteres` };
@@ -408,16 +660,19 @@ function leer<T extends { type: string }>(
   if (!tiposValidos.includes(plano.type)) {
     return { ok: false, codigo: 'tipo-desconocido', detalle: plano.type };
   }
+  if (!validarPayload(plano.type, plano.payload)) {
+    return { ok: false, codigo: 'mensaje-invalido', detalle: `payload ${plano.type}` };
+  }
 
   return { ok: true, mensaje: plano as unknown as T };
 }
 
 export function leerMensajePortal(crudo: string): ResultadoLectura<MensajePortal> {
-  return leer<MensajePortal>(crudo, TIPOS_PORTAL);
+  return leer<MensajePortal>(crudo, TIPOS_PORTAL, payloadPortalValido);
 }
 
 export function leerMensajeShell(crudo: string): ResultadoLectura<MensajeShell> {
-  return leer<MensajeShell>(crudo, TIPOS_SHELL);
+  return leer<MensajeShell>(crudo, TIPOS_SHELL, payloadShellValido);
 }
 
 /** Contador local; no pretende ser unico entre dispositivos, solo dentro de la sesion. */
