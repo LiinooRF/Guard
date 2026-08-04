@@ -141,4 +141,40 @@ describe('ReportsService.buildSiteSummary', () => {
     ).rejects.toThrow('`from` debe ser anterior a `to`');
     expect(manager.query).not.toHaveBeenCalled();
   });
+
+  it('el supervisor no descarga el resumen de un recinto ajeno', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([SITIO])
+      .mockResolvedValueOnce([]); // sin asignacion en supervisor_sites
+    const service = armar(manager);
+
+    await expect(service.buildSiteSummary(
+      'site-ajeno',
+      undefined,
+      undefined,
+      { sub: 'supervisor-1', role: 'SUPERVISOR' },
+    )).rejects.toThrow('No tienes este recinto asignado');
+    expect(manager.query).toHaveBeenCalledTimes(2);
+    expect(manager.query.mock.calls[1]?.[0]).toContain('supervisor_sites');
+  });
+
+  it('el supervisor descarga el resumen de un recinto asignado', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([SITIO])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce([]) // rondas
+      .mockResolvedValueOnce([]) // semanas
+      .mockResolvedValueOnce([]); // rutas
+    const service = armar(manager);
+
+    const informe = await service.buildSiteSummary(
+      'site-propio',
+      undefined,
+      undefined,
+      { sub: 'supervisor-1', role: 'SUPERVISOR' },
+    );
+    expect(esPdf(informe.pdf)).toBe(true);
+  });
 });

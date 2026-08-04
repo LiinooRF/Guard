@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuditWriterModule } from '../audit/audit-writer.module';
 import { DatabaseModule } from '../database/database.module';
 import { PlatformRulesController } from './platform-rules.controller';
 import { PlatformRulesService } from './platform-rules.service';
@@ -9,7 +10,7 @@ import { RulesService } from './rules.service';
 // DatabaseModule es obligatorio: RulesService inyecta TenantContextService y
 // PlatformRulesService el DataSource (el nivel plataforma no tiene tenant).
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, AuditWriterModule],
   controllers: [RulesController, PlatformRulesController],
   providers: [RulesService, PlatformRulesService],
   exports: [RulesService],

@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 
+import type { AuthenticatedUser } from '../auth/auth.guard';
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
@@ -80,7 +81,12 @@ export class ReportsService {
    * por ruta (barras dibujadas con primitivas, sin librerias de charts) mas la
    * tabla de rondas. Sin `from`/`to` cubre los ultimos 30 dias.
    */
-  async buildSiteSummary(siteId: string, from?: string, to?: string): Promise<SiteSummaryReport> {
+  async buildSiteSummary(
+    siteId: string,
+    from?: string,
+    to?: string,
+    requester: Pick<AuthenticatedUser, 'sub' | 'role'> | null = null,
+  ): Promise<SiteSummaryReport> {
     const hasta = to ? new Date(to) : new Date();
     const desde = from ? new Date(from) : new Date(hasta.getTime() - 30 * 24 * 3_600_000);
     if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
@@ -105,6 +111,7 @@ export class ReportsService {
     );
     const sitio = sitios[0];
     if (!sitio) throw new NotFoundException('La sucursal no existe');
+    await this.verificarAlcance(siteId, requester);
 
     const rondas = await this.tenantContext.manager.query<RondaPeriodoRow[]>(
       `
@@ -192,6 +199,20 @@ export class ReportsService {
       from: desde,
       to: hasta,
     };
+  }
+
+  private async verificarAlcance(
+    siteId: string,
+    requester: Pick<AuthenticatedUser, 'sub' | 'role'> | null,
+  ): Promise<void> {
+    if (requester === null || requester.role !== 'SUPERVISOR') return;
+    const asignacion = await this.tenantContext.manager.query<Array<{ present: boolean }>>(
+      `SELECT true AS present
+       FROM supervisor_sites
+       WHERE site_id = $1 AND supervisor_id = $2`,
+      [siteId, requester.sub],
+    );
+    if (!asignacion.length) throw new ForbiddenException('No tienes este recinto asignado');
   }
 
   // ------------------------------------------------------------- render base
