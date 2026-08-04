@@ -39,3 +39,18 @@ export class CreateTenantUserDto {
   @MaxLength(128)
   password?: string;
 }
+
+export class UpdateTenantUserDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  givenName!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  familyName!: string;
+
+  @IsIn(['SUPERVISOR', 'GUARDIA'])
+  role!: 'SUPERVISOR' | 'GUARDIA';
+}
