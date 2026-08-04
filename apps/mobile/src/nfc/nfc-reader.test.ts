@@ -13,6 +13,11 @@ function puerto(parcial: Partial<PuertoNfc> = {}): PuertoNfc {
     cancelar: async () => undefined,
     posicion: async () => ({ latitude: -33.45, longitude: -70.66, accuracyM: 8 }),
     confirmar: () => undefined,
+    firmar: async () => ({
+      clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+      deviceId: '4a0c8f7e-1111-4222-8333-444455556666',
+      signature: 'a'.repeat(64),
+    }),
     clasificarError: () => 'desconocido',
     ahora: () => new Date('2026-08-04T12:00:00.000Z'),
     ...parcial,
@@ -30,6 +35,9 @@ test('normaliza el UID NTAG y adjunta GPS y timestamp del dispositivo', async ()
     latitude: -33.45,
     longitude: -70.66,
     accuracyM: 8,
+    clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+    deviceId: '4a0c8f7e-1111-4222-8333-444455556666',
+    signature: 'a'.repeat(64),
   });
   assert.equal(vibraciones, 1);
 });
@@ -99,4 +107,3 @@ test('rechaza un segundo escaneo concurrente sin cancelar el primero', async () 
   resolver?.({ id: '04AABBCC' });
   await primero;
 });
-

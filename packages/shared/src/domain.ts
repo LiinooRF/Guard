@@ -93,6 +93,7 @@ export const scanAnomalySchema = z.enum([
   'velocidad_imposible',
   'reloj_desfasado',
   'dispositivo_duplicado',
+  'firma_dispositivo_ausente',
 ]);
 export type ScanAnomaly = z.infer<typeof scanAnomalySchema>;
 

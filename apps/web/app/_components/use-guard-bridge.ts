@@ -47,7 +47,7 @@ export interface PuenteGuardia {
   guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<boolean>;
 }
 
-export function useGuardBridge(): PuenteGuardia {
+export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   // `useState` y no `useMemo`: la identidad del cliente tiene que sobrevivir a
   // cualquier re-render, y useMemo no lo garantiza por contrato.
   const [cliente] = useState(crearClientePuente);
@@ -95,6 +95,17 @@ export function useGuardBridge(): PuenteGuardia {
         setAviso(SIN_ANTENA);
         return;
       }
+      if (estado.info.protocolo.minor >= 3 && apiUrl && typeof window !== 'undefined') {
+        try {
+          await cliente.registrarFirma({
+            apiUrl: new URL(apiUrl, window.location.origin).href.replace(/\/$/, ''),
+            portalOrigin: window.location.origin,
+          });
+        } catch {
+          setAviso('No se pudo registrar la identidad segura de este teléfono. Revisa la conexión.');
+          return;
+        }
+      }
       // Con la antena apagada se deja intentar igual: el shell responde
       // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto.
       setAviso(dispositivo.nfcActivado ? undefined : NFC_APAGADO);
@@ -109,7 +120,7 @@ export function useGuardBridge(): PuenteGuardia {
       bajaConexion();
       cliente.desconectar();
     };
-  }, [cliente]);
+  }, [apiUrl, cliente]);
 
   // Sin shell nativo la conectividad la reporta el navegador. Con shell manda el
   // shell, que además avisa los cambios sin que se los pidan.

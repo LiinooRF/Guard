@@ -92,5 +92,8 @@ export function crearManejadoresBase(): ManejadoresNativos {
     borrarRutaOffline: async () => undefined,
     encolarSync: async () => false,
     sincronizarCola: async () => ({ procesadas: 0, pendientes: 0 }),
+    registrarFirma: async () => {
+      throw new Error('firma-no-configurada');
+    },
   };
 }

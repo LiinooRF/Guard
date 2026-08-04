@@ -27,6 +27,12 @@ export interface PuertoNfc {
   readonly cancelar: () => Promise<void>;
   readonly posicion: () => Promise<PosicionEscaneo | undefined>;
   readonly confirmar: () => void;
+  readonly firmar: (input: {
+    uid: string; method: 'nfc'; scannedAt: string;
+    latitude?: number; longitude?: number; accuracyM?: number;
+  }) => Promise<{
+    clientScanId: string; deviceId: string; signature: string;
+  }>;
   readonly clasificarError: (causa: unknown) => FalloNfcNativo;
   readonly ahora?: () => Date;
 }
@@ -101,12 +107,13 @@ export function crearLectorNfc(puerto: PuertoNfc): LectorNfc {
       puerto.confirmar();
       const scannedAt = (puerto.ahora?.() ?? new Date()).toISOString();
       const posicion = await puerto.posicion().catch(() => undefined);
-      return {
+      const scan = {
         uid,
-        tech: 'nfc',
         scannedAt,
         ...(posicion ?? {}),
       };
+      const firma = await puerto.firmar({ ...scan, method: 'nfc' });
+      return { ...scan, tech: 'nfc', ...firma };
     } catch (causa) {
       if (causa instanceof ErrorEscaneo) throw causa;
       throw errorClasificado(cancelado ? 'cancelado' : puerto.clasificarError(causa));

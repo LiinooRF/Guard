@@ -10,6 +10,7 @@ import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 import type { ShiftMarkDto } from './dto/shift-mark.dto';
+import { DeviceSignatureService } from './device-signature.service';
 
 /**
  * La regla que dio origen al producto: si el cumplimiento queda bajo el
@@ -54,6 +55,7 @@ export class GuardService {
     private readonly rules: RulesService,
     private readonly escalation: EscalationService,
     private readonly gpsPolicy: GpsPolicyService,
+    private readonly signatures?: DeviceSignatureService,
   ) {}
 
   async getHome(guardId: string) {
@@ -180,6 +182,9 @@ export class GuardService {
    * escaneo original. Las anomalias MARCAN, no rechazan (ver CLAUDE.md).
    */
   async registerScan(patrolId: string, guardId: string, input: CreateScanDto) {
+    // En producción siempre está inyectado. Es opcional solo para que los tests
+    // unitarios de reglas no construyan criptografía ni ConfigModule.
+    const estadoFirma = await this.signatures?.verify(guardId, input);
     const patrols = await this.tenantContext.manager.query<Array<{
       id: string;
       status: string;
@@ -234,6 +239,7 @@ export class GuardService {
     // el admin rigen la proxima ronda, sin deploy.
     const rules = await this.rules.effective();
     const anomalies: ScanAnomaly[] = [];
+    if (estadoFirma === 'legacy') anomalies.push('firma_dispositivo_ausente');
     if (input.latitude === undefined || input.longitude === undefined) {
       if (rules.gpsSharingRequired) anomalies.push('sin_fix_gps');
     } else if (target.latitude !== null && target.longitude !== null) {
@@ -250,13 +256,17 @@ export class GuardService {
 
     const inserted = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `INSERT INTO scans (
-        tenant_id, patrol_id, checkpoint_id, tag_id, method, client_scan_id,
-        scanned_at_device, latitude, longitude, accuracy_m, anomalies
-      ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+        tenant_id, patrol_id, guard_id, checkpoint_id, tag_id, method, client_scan_id,
+        scanned_at_device, latitude, longitude, accuracy_m, anomalies,
+        device_id, device_signature
+      ) VALUES (
+        app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13
+      )
       ON CONFLICT (tenant_id, patrol_id, client_scan_id) DO NOTHING
       RETURNING id`,
       [
         patrolId,
+        guardId,
         target.checkpoint_id,
         target.tag_id,
         input.method,
@@ -266,6 +276,8 @@ export class GuardService {
         input.longitude ?? null,
         input.accuracyM ?? null,
         JSON.stringify(anomalies),
+        input.deviceId ?? null,
+        input.signature ?? null,
       ],
     );
     const replay = !inserted.length;

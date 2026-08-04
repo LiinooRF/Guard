@@ -68,6 +68,8 @@ export type PayloadEscaneo = {
   latitude?: number;
   longitude?: number;
   accuracyM?: number;
+  deviceId?: string;
+  signature?: string;
 };
 
 export type Criticidad = 'info' | 'baja' | 'media' | 'alta' | 'panico';

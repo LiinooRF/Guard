@@ -31,7 +31,12 @@ function setup() {
     }),
     escanearNfc: async () => {
       escaneos += 1;
-      return { uid: '04AABBCCDD', tech: 'nfc', scannedAt: new Date().toISOString() };
+      return {
+        uid: '04AABBCCDD', tech: 'nfc', scannedAt: new Date().toISOString(),
+        clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+        deviceId: '4a0c8f7e-1111-4222-8333-444455556666',
+        signature: 'a'.repeat(64),
+      };
     },
     cancelarEscaneo: () => undefined,
     pedirPermiso: async (permiso) => ({
@@ -49,6 +54,7 @@ function setup() {
       return inserted;
     },
     sincronizarCola: async () => ({ procesadas: 0, pendientes: 0 }),
+    registrarFirma: async () => '4a0c8f7e-1111-4222-8333-444455556666',
   };
   const puente = crearPuenteNativo({
     portalOrigen: ORIGEN,
@@ -72,6 +78,13 @@ test('rechaza payloads mal formados antes de llegar a los módulos nativos', () 
     uid: 'uid-minuscula', tech: 'nfc', scannedAt: 'ayer',
   }));
   assert.equal(leerMensajeShell(scanFalso).ok, false);
+  const firmaFalsa = JSON.stringify(armarSobre('nfc.scan.result', {
+    uid: '04AABBCC', tech: 'nfc', scannedAt: '2026-08-04T01:00:00.000Z',
+    clientScanId: '3a0c8f7e-1111-4222-8333-444455556666',
+    deviceId: '4a0c8f7e-1111-4222-8333-444455556666',
+    signature: 'no-es-una-firma',
+  }));
+  assert.equal(leerMensajeShell(firmaFalsa).ok, false);
 });
 
 test('rechaza mensajes de iframes u orígenes diferentes', async () => {
