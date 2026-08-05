@@ -12,6 +12,7 @@ import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 import type { ShiftMarkDto } from './dto/shift-mark.dto';
 import { DeviceSignatureService } from './device-signature.service';
+import { filasDe } from '../consent/sql-result';
 
 interface PatrolRow {
   id: string;
@@ -439,17 +440,26 @@ export class GuardService {
 
   /** Marcaje de SALIDA de la jornada abierta. */
   async endShift(guardId: string, input: ShiftMarkDto) {
-    const filas = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE shift_assignments
-       SET status = 'cerrado', ended_at = now(),
-           end_latitude = $2, end_longitude = $3
-       WHERE id = (
-         SELECT a.id FROM shift_assignments a
-         WHERE a.guard_id = $1 AND a.status = 'en_curso'
-         ORDER BY a.started_at DESC LIMIT 1
-       )
-       RETURNING id`,
-      [guardId, input.latitude ?? null, input.longitude ?? null],
+    /*
+     * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount]: `filas[0]`
+     * era el ARREGLO de filas —truthy aunque venga vacio—, asi que marcar salida
+     * sin jornada abierta respondia 200 con `assignmentId: undefined` en vez del
+     * 409. startPatrol() resuelve lo mismo envolviendo el UPDATE en un CTE; aca
+     * se deja el SQL intacto porque no habia como correrlo contra Postgres.
+     */
+    const filas = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE shift_assignments
+         SET status = 'cerrado', ended_at = now(),
+             end_latitude = $2, end_longitude = $3
+         WHERE id = (
+           SELECT a.id FROM shift_assignments a
+           WHERE a.guard_id = $1 AND a.status = 'en_curso'
+           ORDER BY a.started_at DESC LIMIT 1
+         )
+         RETURNING id`,
+        [guardId, input.latitude ?? null, input.longitude ?? null],
+      ),
     );
     const cerrada = filas[0];
     if (!cerrada) throw new ConflictException('No tienes una jornada abierta');

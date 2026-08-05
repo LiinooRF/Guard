@@ -9,6 +9,7 @@ import {
 import type { PatrolRules } from '@voxia/shared';
 import { createHash } from 'node:crypto';
 
+import { filasDe } from '../consent/sql-result';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { Criticality } from '../guard/dto/report-event.dto';
 import { MailQueueService } from '../mail/mail-queue.service';
@@ -327,14 +328,25 @@ export class EscalationService {
 
   /** Alguien se hizo cargo. Un segundo acuse es 409: el primero manda. */
   async acknowledge(notificationId: string, userId: string) {
-    const filas = await this.tenantContext.manager.query<
-      Array<{ id: string; field_event_id: string; level: number; acknowledged_at: Date }>
-    >(
-      `UPDATE event_notifications
-       SET acknowledged_at = now(), acknowledged_by = $2
-       WHERE id = $1 AND tenant_id = app_tenant_id() AND acknowledged_at IS NULL
-       RETURNING id, field_event_id, level, acknowledged_at`,
-      [notificationId, userId],
+    /*
+     * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount]: `filas[0]`
+     * era el ARREGLO de filas —truthy aunque venga vacio—, asi que el segundo
+     * acuse respondia 200 con id y eventId undefined y level NaN en vez del 409.
+     * Justo lo contrario de lo que documenta esta funcion.
+     */
+    const filas = filasDe<{
+      id: string;
+      field_event_id: string;
+      level: number;
+      acknowledged_at: Date;
+    }>(
+      await this.tenantContext.manager.query(
+        `UPDATE event_notifications
+         SET acknowledged_at = now(), acknowledged_by = $2
+         WHERE id = $1 AND tenant_id = app_tenant_id() AND acknowledged_at IS NULL
+         RETURNING id, field_event_id, level, acknowledged_at`,
+        [notificationId, userId],
+      ),
     );
     const acuse = filas[0];
     if (acuse) {

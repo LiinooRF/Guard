@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { createHash } from 'node:crypto';
 import type { Queue } from 'bullmq';
 
+import { filasAfectadas } from '../consent/sql-result';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import {
   PUSH_JOB_ATTEMPTS,
@@ -72,13 +73,18 @@ export class PushService {
    * al recuperar señal y tiene que poder repetirse sin ruido.
    */
   async unregister(token: string, userId: string): Promise<{ removed: boolean }> {
-    const filas = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `DELETE FROM device_tokens
-       WHERE tenant_id = app_tenant_id() AND token = $1 AND user_id = $2
-       RETURNING id`,
-      [token, userId],
+    // `filasAfectadas` porque un DELETE devuelve [filas, rowCount]: leido como
+    // arreglo media 2 siempre y `removed` salia true aunque no se borrara nada
+    // — la app daba por dado de baja un token que seguia recibiendo avisos.
+    const borradas = filasAfectadas(
+      await this.tenantContext.manager.query(
+        `DELETE FROM device_tokens
+         WHERE tenant_id = app_tenant_id() AND token = $1 AND user_id = $2
+         RETURNING id`,
+        [token, userId],
+      ),
     );
-    return { removed: filas.length > 0 };
+    return { removed: borradas > 0 };
   }
 
   // ------------------------------------------------------------------ envio

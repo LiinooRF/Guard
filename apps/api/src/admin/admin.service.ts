@@ -12,6 +12,7 @@ import { QueryFailedError } from 'typeorm';
 import { AuthService } from '../auth/auth.service';
 import { createAuthActionToken } from '../auth/auth-action-token';
 import { MailService } from '../auth/mail.service';
+import { filasDe } from '../consent/sql-result';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
@@ -245,17 +246,26 @@ export class AdminService {
   }
 
   async setUserActive(userId: string, isActive: boolean) {
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE users
-       SET is_active = $2, updated_at = now()
-       WHERE id = $1
-         AND EXISTS (
-           SELECT 1 FROM memberships
-           WHERE memberships.user_id = users.id
-             AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')
-         )
-       RETURNING id`,
-      [userId, isActive],
+    /*
+     * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount] y no filas:
+     * leido como arreglo mide 2 pase lo que pase, asi que el 404 de abajo no se
+     * lanzaba nunca y desactivar al ADMIN del tenant —o a un id inventado—
+     * respondia 200. Vale para todos los UPDATE/DELETE ... RETURNING de este
+     * archivo.
+     */
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE users
+         SET is_active = $2, updated_at = now()
+         WHERE id = $1
+           AND EXISTS (
+             SELECT 1 FROM memberships
+             WHERE memberships.user_id = users.id
+               AND memberships.role_key IN ('SUPERVISOR', 'GUARDIA')
+           )
+         RETURNING id`,
+        [userId, isActive],
+      ),
     );
     if (!result.length) throw new NotFoundException('Usuario administrable no encontrado');
     const revokedSessions = isActive ? 0 : await this.auth.revokeAllSessions(userId);
@@ -401,18 +411,22 @@ export class AdminService {
     if (!fields.length) throw new BadRequestException('Nada que actualizar');
 
     const sets = fields.map(([column], index) => `${column} = $${index + 2}`).join(', ');
-    const rows = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE sites SET ${sets} WHERE id = $1 RETURNING id`,
-      [siteId, ...fields.map(([, value]) => value)],
+    const rows = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE sites SET ${sets} WHERE id = $1 RETURNING id`,
+        [siteId, ...fields.map(([, value]) => value)],
+      ),
     );
     if (!rows.length) throw new NotFoundException('Recinto no encontrado');
     return { id: siteId };
   }
 
   async setSiteActive(siteId: string, isActive: boolean) {
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE sites SET is_active = $2 WHERE id = $1 RETURNING id`,
-      [siteId, isActive],
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE sites SET is_active = $2 WHERE id = $1 RETURNING id`,
+        [siteId, isActive],
+      ),
     );
     if (!result.length) throw new NotFoundException('Recinto no encontrado');
     return { id: siteId, isActive };
@@ -669,27 +683,33 @@ export class AdminService {
     if (!campos.length) throw new BadRequestException('Nada que actualizar');
 
     const sets = campos.map(([columna], i) => `${columna} = $${i + 2}`).join(', ');
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE checkpoints SET ${sets} WHERE id = $1 RETURNING id`,
-      [checkpointId, ...campos.map(([, valor]) => valor)],
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE checkpoints SET ${sets} WHERE id = $1 RETURNING id`,
+        [checkpointId, ...campos.map(([, valor]) => valor)],
+      ),
     );
     if (!result.length) throw new NotFoundException('Punto de control no encontrado');
     return { id: checkpointId };
   }
 
   async setCheckpointPhoto(checkpointId: string, requiresPhoto: boolean | null) {
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE checkpoints SET requires_photo = $2 WHERE id = $1 RETURNING id`,
-      [checkpointId, requiresPhoto],
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE checkpoints SET requires_photo = $2 WHERE id = $1 RETURNING id`,
+        [checkpointId, requiresPhoto],
+      ),
     );
     if (!result.length) throw new NotFoundException('Punto de control no encontrado');
     return { id: checkpointId, requiresPhoto };
   }
 
   async setCheckpointActive(checkpointId: string, isActive: boolean) {
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE checkpoints SET is_active = $2 WHERE id = $1 RETURNING id`,
-      [checkpointId, isActive],
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE checkpoints SET is_active = $2 WHERE id = $1 RETURNING id`,
+        [checkpointId, isActive],
+      ),
     );
     if (!result.length) throw new NotFoundException('Punto de control no encontrado');
     return { id: checkpointId, isActive };
@@ -730,11 +750,17 @@ export class AdminService {
 
     // Reemplazo con historial: si el punto ya tiene una etiqueta activa de esta
     // tecnologia, queda desactivada con su fecha. Nunca se borra una fila.
-    const replaced = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE tags SET is_active = false, replaced_at = now()
-       WHERE checkpoint_id = $1 AND tech = $2 AND is_active
-       RETURNING id`,
-      [checkpointId, tech],
+    //
+    // Sin `filasDe`, `replaced[0]` era el ARREGLO de filas y `replaced[0].id`
+    // undefined: `replacedTagId` salia null incluso cuando si hubo reemplazo, y
+    // esa es justamente la trazabilidad de que etiqueta se retiro.
+    const replaced = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE tags SET is_active = false, replaced_at = now()
+         WHERE checkpoint_id = $1 AND tech = $2 AND is_active
+         RETURNING id`,
+        [checkpointId, tech],
+      ),
     );
 
     const tagId = randomUUID();
@@ -756,11 +782,13 @@ export class AdminService {
   }
 
   async retireTag(tagId: string) {
-    const result = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `UPDATE tags SET is_active = false, replaced_at = now()
-       WHERE id = $1 AND is_active
-       RETURNING id`,
-      [tagId],
+    const result = filasDe<{ id: string }>(
+      await this.tenantContext.manager.query(
+        `UPDATE tags SET is_active = false, replaced_at = now()
+         WHERE id = $1 AND is_active
+         RETURNING id`,
+        [tagId],
+      ),
     );
     if (!result.length) throw new NotFoundException('Etiqueta activa no encontrada');
     return { id: tagId, active: false };
