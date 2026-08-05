@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { patrolRulesSchema } from '@voxia/shared';
 
 import type { GpsPolicyService } from '../geo/gps-policy.service';
@@ -130,6 +131,26 @@ describe('GuardService', () => {
 });
 
 describe('GuardService.registerScan', () => {
+  it('el arranque automatico pasa por la MISMA puerta de consentimiento que el boton', async () => {
+    // El agujero que existia: `startPatrol()` exigia el consentimiento de
+    // ubicacion, pero escanear con la ronda en 'pendiente' la arrancaba sola sin
+    // preguntar. Bastaba no apretar el boton. Comprobado contra staging: con el
+    // consentimiento en `nunca_aceptado`, `start` daba 403 y el escaneo 200.
+    const puerta = {
+      assertPatrolStartAllowed: jest.fn().mockRejectedValue(
+        new ForbiddenException('Para iniciar la ronda tienes que aceptar el aviso de compartir ubicación.'),
+      ),
+    } as unknown as GpsPolicyService;
+    const manager = { query: jest.fn().mockResolvedValueOnce([{ ...PATROL, status: 'pendiente' }]) };
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), puerta, sinEnvioInforme());
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).rejects.toThrow(
+      /aceptar el aviso/,
+    );
+    // Y no alcanzo a marcar la ronda como iniciada.
+    expect(manager.query).toHaveBeenCalledTimes(1);
+  });
+
   const PATROL = {
     id: 'patrol-id',
     status: 'en_curso',
