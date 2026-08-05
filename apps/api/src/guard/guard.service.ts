@@ -230,6 +230,17 @@ export class GuardService {
     // El primer escaneo inicia la ronda si venia pendiente: en terreno el
     // guardia escanea, no aprieta botones.
     if (patrol.status === 'pendiente') {
+      // La MISMA puerta que `startPatrol()`. Si el arranque automatico no la
+      // aplicara, el aviso de geolocalizacion no valdria nada: bastaria no
+      // apretar "Iniciar ronda" y escanear directo para que el sistema empiece
+      // a guardar la ubicacion de un trabajador que nunca lo acepto. Comprobado
+      // contra staging: con el consentimiento en `nunca_aceptado`, `start`
+      // respondia 403 y el escaneo respondia 200 igual.
+      //
+      // Va solo en el arranque, no en cada escaneo, y a proposito: una ronda ya
+      // empezada paso por esta puerta, y cortarla a mitad de camino en terreno
+      // perderia la evidencia de lo que el guardia ya recorrio.
+      await this.gpsPolicy.assertPatrolStartAllowed(guardId, patrolId);
       await this.tenantContext.manager.query(
         `UPDATE patrols SET status = 'en_curso', started_at = now()
          WHERE id = $1 AND status = 'pendiente'`,
