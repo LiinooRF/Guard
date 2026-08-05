@@ -92,4 +92,43 @@ describe('migraciones', () => {
     // ambiente ya no se puede renombrar sin romper el arranque.
     expect(repetidos).toEqual([]);
   });
+
+  /**
+   * En PostgreSQL los limites `{m,n}` de una expresion regular solo admiten
+   * valores de 0 a 255. Y el patron **no se compila al crear la tabla**: se
+   * compila la primera vez que la restriccion se evalua, o sea en el primer
+   * INSERT. Asi que un tope de mas se ve exactamente como no verse: la
+   * migracion pasa, los SELECT responden, y el primer INSERT devuelve 500 con
+   * `invalid regular expression: invalid repetition count(s)`.
+   *
+   * Paso con `consent_policies_url_check` (`{4,500}`) y dejo el producto sin
+   * poder publicar el aviso de GPS — y por lo tanto sin poder iniciar rondas —
+   * con los 1473 tests de la API en verde, porque mockean `manager.query`.
+   *
+   * El tope se pone en un `length()`, que no tiene ese limite.
+   */
+  it('ningun regex de PostgreSQL pide un limite mayor a 255', () => {
+    const LIMITE = 255;
+    // Las dos apariciones que quedan del patron roto, y por que se quedan:
+    // la migracion original porque ya se aplico y el archivo es el registro de
+    // lo que de verdad corrio, y el `down()` del arreglo porque revertir tiene
+    // que devolver el esquema a como estaba, no a como deberia haber estado.
+    const HEREDADAS = new Set([
+      '1725472800000-CreateConsentPolicies.ts: {4,500}',
+      '1725732000000-FixConsentPolicyUrlCheck.ts: {4,500}',
+    ]);
+
+    const excedidos: string[] = [];
+    for (const migracion of migraciones) {
+      const sql = readFileSync(join(CARPETA, migracion.archivo), 'utf8');
+      for (const encontrado of sql.matchAll(/\{(\d+)(?:,(\d+))?\}/g)) {
+        const topes = [encontrado[1], encontrado[2]].filter(Boolean).map(Number);
+        const senal = `${migracion.archivo}: ${encontrado[0]}`;
+        if (topes.some((tope) => tope > LIMITE) && !HEREDADAS.has(senal)) {
+          excedidos.push(senal);
+        }
+      }
+    }
+    expect(excedidos).toEqual([]);
+  });
 });
