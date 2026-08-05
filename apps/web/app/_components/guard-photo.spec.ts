@@ -81,12 +81,35 @@ describe('lineasMarcaAgua', () => {
 });
 
 describe('fechaHoraMarca', () => {
-  it('formatea en 24 h con fecha completa', () => {
+  const INSTANTE = new Date('2026-08-05T02:41:00Z');
+
+  it('formatea en 24 h con fecha completa, en la zona del recinto', () => {
     // 2026-08-05T02:41:00Z = 22:41 del 04-08 en Santiago (agosto es invierno,
-    // UTC-4).
-    const texto = fechaHoraMarca(new Date('2026-08-05T02:41:00Z'));
+    // UTC-4). La zona va EXPLICITA: sin pasarla, esta prueba mide la zona de la
+    // maquina que la corre. Pasaba en Chile y fallaba en CI, que corre en UTC.
+    const texto = fechaHoraMarca(INSTANTE, 'America/Santiago');
     expect(texto).toMatch(/^\d{2}-\d{2}-\d{4}/);
     expect(texto).toContain('22:41');
+  });
+
+  it('cada recinto ve su propia hora para el mismo instante', () => {
+    // El mismo momento, tres recintos. Es el motivo entero de que la zona sea
+    // un parametro: la marca se quema en los pixeles y no se corrige despues.
+    expect(fechaHoraMarca(INSTANTE, 'America/Santiago')).toContain('22:41');
+    expect(fechaHoraMarca(INSTANTE, 'UTC')).toContain('02:41');
+    expect(fechaHoraMarca(INSTANTE, 'America/Bogota')).toContain('21:41');
+  });
+
+  it('sin zona del recinto cae en la del dispositivo', () => {
+    // Respaldo, no comportamiento buscado: la API manda `sites.timezone` en
+    // GET /guard/home. Se compara contra la zona resuelta del entorno en vez de
+    // contra una hora fija, para que la prueba diga lo mismo en Chile y en CI.
+    const delDispositivo = new Intl.DateTimeFormat('es-CL', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(INSTANTE);
+    expect(fechaHoraMarca(INSTANTE)).toContain(delDispositivo);
   });
 });
 
