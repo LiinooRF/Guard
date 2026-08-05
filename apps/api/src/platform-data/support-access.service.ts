@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { filasDe } from '../consent/sql-result';
+
 export interface OpenSupportAccessInput {
   readonly tenantId: string;
   readonly reason: string;
@@ -91,14 +93,23 @@ export class SupportAccessService {
   /** Cierra la ventana antes de que venza. */
   async close(superadminId: string, supportAccessId: string) {
     await this.assertSuperadmin(superadminId);
-    const filas = await this.dataSource.query(
-      `UPDATE support_access_log SET ended_at = now()
-       WHERE id = $1 AND superadmin_user_id = $2 AND ended_at IS NULL
-       RETURNING id, tenant_id`,
-      [supportAccessId, superadminId],
+    /*
+     * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount]: `filas.length`
+     * media 2 siempre, asi que cerrar un acceso inexistente —o el de OTRO
+     * superadmin— respondia 200 con `tenantId: undefined` en vez del 404. En una
+     * ventana de soporte el cierre falso es peor que el error: deja creer que ya
+     * nadie esta mirando los datos del cliente.
+     */
+    const filas = filasDe<{ id: string; tenant_id: string }>(
+      await this.dataSource.query(
+        `UPDATE support_access_log SET ended_at = now()
+         WHERE id = $1 AND superadmin_user_id = $2 AND ended_at IS NULL
+         RETURNING id, tenant_id`,
+        [supportAccessId, superadminId],
+      ),
     );
     if (!filas.length) throw new NotFoundException('No hay un acceso abierto con ese id');
-    return { supportAccessId, tenantId: filas[0].tenant_id, closed: true };
+    return { supportAccessId, tenantId: filas[0]!.tenant_id, closed: true };
   }
 
   /** Accesos vigentes del SUPERADMIN, para saber qué tiene abierto. */

@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager, QueryFailedError } from 'typeorm';
 
+import { filasDe } from '../consent/sql-result';
+
 /**
  * Retencion por defecto antes del purge definitivo. Es el seguro contra el
  * borrado por error: se puede subir por solicitud (retentionDays del DTO).
@@ -123,12 +125,20 @@ export class TenantDataService {
 
   async cancelDeletion(actorId: string, tenantId: string) {
     return this.withPlatformActor(actorId, async (manager) => {
-      const rows = await manager.query<DeletionRow[]>(
-        `UPDATE tenant_deletions
-         SET status = 'cancelado'
-         WHERE target_tenant_id = $1 AND status = 'programado'
-         RETURNING ${DELETION_COLUMNS}`,
-        [tenantId],
+      /*
+       * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount]: `rows[0]`
+       * era el ARREGLO de filas —truthy aunque venga vacio—, asi que cancelar un
+       * borrado que no existe respondia 200 con todos los campos en undefined en
+       * vez del 404.
+       */
+      const rows = filasDe<DeletionRow>(
+        await manager.query(
+          `UPDATE tenant_deletions
+           SET status = 'cancelado'
+           WHERE target_tenant_id = $1 AND status = 'programado'
+           RETURNING ${DELETION_COLUMNS}`,
+          [tenantId],
+        ),
       );
       const cancelled = rows[0];
       if (!cancelled) {
@@ -211,12 +221,17 @@ export class TenantDataService {
         );
       }
 
-      const updated = await manager.query<DeletionRow[]>(
-        `UPDATE tenant_deletions
-         SET status = 'ejecutado', executed_at = now()
-         WHERE id = $1
-         RETURNING ${DELETION_COLUMNS}`,
-        [request.id],
+      // Mismo motivo que en cancelDeletion: sin `filasDe`, el comprobante del
+      // purge —la unica prueba de que se ejecuto y cuando— salia con todos los
+      // campos en undefined.
+      const updated = filasDe<DeletionRow>(
+        await manager.query(
+          `UPDATE tenant_deletions
+           SET status = 'ejecutado', executed_at = now()
+           WHERE id = $1
+           RETURNING ${DELETION_COLUMNS}`,
+          [request.id],
+        ),
       );
       return this.toDeletion(updated[0]!);
     });
