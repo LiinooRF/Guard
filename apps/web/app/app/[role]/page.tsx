@@ -7,6 +7,7 @@ import {
 } from '../../_components/consentimiento-carga';
 import { DashboardShell } from '../../_components/dashboard-shell';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
+import { GuardShift } from '../../_components/guard-shift';
 import { InformesPanel } from '../../_components/informes-panel';
 import { LivePatrolBoard } from '../../_components/live-patrol-board';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
@@ -86,7 +87,21 @@ export default async function RoleDashboard({
             antes, y un aviso que se pasa de largo con la rueda del mouse no es
             aviso previo. */}
         <ConsentimientoTrabajador apiUrl={publicApiUrl()}>
-          <GuardHome data={data} apiUrl={publicApiUrl()} />
+          {/* Dos pantallas, una sola montada a la vez. GuardHome es la antesala:
+              resumen del turno y el boton de iniciar. GuardShift es la ronda en
+              terreno — escaneo NFC, fotos, novedades, panico, sincronizacion.
+              Hasta ahora la pagina montaba SIEMPRE GuardHome, asi que con la
+              ronda en curso el guardia veia un boton "Escanear punto NFC" sin
+              onClick: todo el modulo de terreno existia en el repo y no lo
+              alcanzaba nadie.
+              No se montan las dos juntas a proposito: cada una llama a
+              useGuardBridge, que abre su propio cliente del puente nativo, y dos
+              handshakes compiten por los mismos mensajes de escaneo. */}
+          {data.patrol && data.patrol.status !== 'pendiente' ? (
+            <GuardShift data={data} apiUrl={publicApiUrl()} />
+          ) : (
+            <GuardHome data={data} apiUrl={publicApiUrl()} />
+          )}
           <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
         </ConsentimientoTrabajador>
       </DashboardShell>

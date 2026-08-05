@@ -418,10 +418,14 @@ export async function subirFotoNovedad(
   apiUrl: string,
   eventId: string,
   foto: File,
+  takenAtDevice: string,
 ): Promise<boolean> {
   const cuerpo = new FormData();
   cuerpo.append('foto', foto);
-  cuerpo.append('takenAtDevice', new Date().toISOString());
+  // La hora de CAPTURA, que llega desde quien llama. Poner `new Date()` aca
+  // registraba la hora en que hubo señal: una ronda de las 03:00 sincronizada a
+  // las 07:00 quedaba con las 07:00, y eso invalida la evidencia.
+  cuerpo.append('takenAtDevice', takenAtDevice);
   try {
     const respuesta = await pedirApi(apiUrl, `/evidence/events/${eventId}/photos`, {
       method: 'POST',

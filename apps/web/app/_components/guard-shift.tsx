@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
+import { GuardMapa } from './guard-mapa';
 import { PanicoPanel } from './panico-panel';
 import { SyncEstado } from './sync-estado';
 import { GuardEventForm } from './guard-event-form';
@@ -31,6 +32,16 @@ import {
   type PuntoRuta,
 } from './guard-shift-state';
 import { GuardShiftSummary } from './guard-shift-summary';
+import { procesarFoto } from './guard-photo';
+import {
+  borrarFoto,
+  clasificarPendientes,
+  contarPendientes,
+  fijarServerId,
+  guardarFoto,
+  leerFoto,
+  listarPendientes,
+} from './guard-photo-store';
 import { nuevoUuid } from './guard-storage';
 import {
   ErrorEscaneoPortal,
@@ -51,10 +62,14 @@ export interface GuardShiftData {
   hasAssignment: boolean;
   message?: string;
   shift?: { scheduledStartAt: string; scheduledEndAt: string };
+  /** Presupuesto de la foto, resuelto por la API en la cascada del recinto. */
+  photoBudget?: { targetBytes: number; maxBytes: number };
   patrol?: {
     id: string;
     status: string;
     siteName: string;
+    /** Zona horaria del RECINTO, que manda la API. Ver guard-photo.ts. */
+    timezone?: string;
     routeName: string;
     estimatedDurationMin: number;
     completedCheckpointCount: number;
@@ -71,18 +86,44 @@ const hora = new Intl.DateTimeFormat('es-CL', {
 });
 
 /**
- * Fotos de novedades que todavía no tienen id de servidor. Viven en memoria: una
- * foto en base64 no cabe en localStorage y guardarla en IndexedDB es un trabajo
- * aparte. Si el WebView se cierra antes de sincronizar, la foto se pierde y la
- * pantalla lo dice desde el formulario. Ver INTEGRACION.md.
+ * Sube la foto de una novedad desde el almacén persistente y, si el servidor la
+ * recibe, la borra de ahí. Devuelve `undefined` cuando esa novedad no tenía foto.
+ *
+ * Las fotos ya no viven en memoria sino en IndexedDB (`guard-photo-store`, #70):
+ * si el WebView se cierra antes de sincronizar, la foto no se pierde y se sube al
+ * reabrir o al recuperar señal.
  */
-const fotosPendientes = new Map<string, File>();
+async function subirFotoPersistida(
+  apiUrl: string,
+  clientEventId: string,
+  serverId: string,
+): Promise<boolean | undefined> {
+  const guardada = await leerFoto(clientEventId);
+  if (!guardada) return undefined;
+  // Se manda la hora de CAPTURA que quedo guardada con la foto, no la de ahora:
+  // esta subida puede ocurrir horas despues, al recuperar señal.
+  const subida = await subirFotoNovedad(
+    apiUrl,
+    serverId,
+    guardada.blob as File,
+    guardada.takenAtDevice,
+  );
+  if (subida) await borrarFoto(clientEventId);
+  return subida;
+}
 
 export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: string }) {
   if (!data.hasAssignment || data.patrol === undefined || data.shift === undefined) {
     return <SinAsignacion apiUrl={apiUrl} mensaje={data.message} />;
   }
-  return <Ronda apiUrl={apiUrl} patrol={data.patrol} shift={data.shift} />;
+  return (
+    <Ronda
+      apiUrl={apiUrl}
+      patrol={data.patrol}
+      shift={data.shift}
+      {...(data.photoBudget ? { presupuestoFoto: data.photoBudget } : {})}
+    />
+  );
 }
 
 function SinAsignacion({ apiUrl, mensaje }: { apiUrl: string; mensaje?: string }) {
@@ -107,10 +148,12 @@ function Ronda({
   patrol,
   shift,
   apiUrl,
+  presupuestoFoto,
 }: {
   patrol: NonNullable<GuardShiftData['patrol']>;
   shift: NonNullable<GuardShiftData['shift']>;
   apiUrl: string;
+  presupuestoFoto?: GuardShiftData['photoBudget'];
 }) {
   const puente = useGuardBridge(apiUrl);
   const [estado, setEstado] = useState<EstadoRonda>(() => estadoInicial(patrol.id));
@@ -120,6 +163,11 @@ function Ronda({
   const [errorEscaneo, setErrorEscaneo] = useState<string>();
   const [enviandoNovedad, setEnviandoNovedad] = useState(false);
   const [mensajeNovedad, setMensajeNovedad] = useState<string>();
+  const [fotosPorSubir, setFotosPorSubir] = useState(0);
+
+  const refrescarFotosPendientes = useCallback(async () => {
+    setFotosPorSubir(await contarPendientes());
+  }, []);
 
   const puntos = useMemo(
     () => [...patrol.checkpoints].sort((a, b) => a.position - b.position),
@@ -143,23 +191,50 @@ function Ronda({
 
   useEffect(() => iniciarAutoSync(apiUrl), [apiUrl]);
 
+  // Al montar (o al reabrir tras cerrar el WebView), rehidrata las fotos que
+  // quedaron sin subir: las que ya tienen id de servidor se reintentan ahora, y
+  // las que aún esperan el id lo reciben por el veredicto de la cola de texto.
+  // Ver #70.
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      const pendientes = await listarPendientes();
+      if (vivo) setFotosPorSubir(pendientes.length);
+      for (const foto of clasificarPendientes(pendientes).listas) {
+        if (!foto.serverId) continue;
+        const subida = await subirFotoPersistida(apiUrl, foto.clientEventId, foto.serverId);
+        if (subida !== undefined) {
+          actualizar((actual) => marcarFotoSubida(actual, foto.clientEventId, subida));
+        }
+      }
+      if (vivo) await refrescarFotosPendientes();
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [apiUrl, actualizar, refrescarFotosPendientes]);
+
   useEffect(
     () =>
       suscribirVeredictos((veredictos) => {
         actualizar((actual) => aplicarVeredictos(actual, veredictos));
 
         // La foto esperaba el id que solo aparece cuando la novedad llega al
-        // servidor. Este es el momento en que existe.
+        // servidor. Este es el momento en que existe: se fija en el almacén
+        // (para reintentar aunque la subida falle) y se sube.
         for (const veredicto of veredictos) {
-          const foto = fotosPendientes.get(veredicto.clientId);
-          if (!foto || veredicto.status === 'rechazado' || !veredicto.serverId) continue;
-          fotosPendientes.delete(veredicto.clientId);
-          void subirFotoNovedad(apiUrl, veredicto.serverId, foto).then((subida) => {
-            actualizar((actual) => marcarFotoSubida(actual, veredicto.clientId, subida));
-          });
+          if (veredicto.status === 'rechazado' || !veredicto.serverId) continue;
+          const { clientId, serverId } = veredicto;
+          void fijarServerId(clientId, serverId)
+            .then(() => subirFotoPersistida(apiUrl, clientId, serverId))
+            .then((subida) => {
+              if (subida === undefined) return;
+              actualizar((actual) => marcarFotoSubida(actual, clientId, subida));
+              void refrescarFotosPendientes();
+            });
         }
       }),
-    [actualizar, apiUrl],
+    [actualizar, apiUrl, refrescarFotosPendientes],
   );
 
   const siguiente = siguientePunto(puntos, estado.puntos);
@@ -271,13 +346,31 @@ function Ronda({
       reportedAt: reportadaAt,
       ...(entrada.texto ? { text: entrada.texto } : {}),
     };
-    if (entrada.foto) fotosPendientes.set(clientEventId, entrada.foto);
+    // Antes de encolarla: se reescala, se le quema la marca de agua con fecha y
+    // hora y se comprime bajo el objetivo de tamaño (#67). La versión liviana y
+    // trazable se guarda en el almacén persistente (#70): sobrevive al cierre del
+    // WebView y se sube sola.
+    if (entrada.foto) {
+      const foto = await procesarFoto(entrada.foto, {
+        sitio: patrol.siteName,
+        ruta: patrol.routeName,
+        // La zona del recinto: la hora se quema en los pixeles y no se corrige
+        // despues. Si la API no la manda, cae en la del dispositivo.
+        ...(patrol.timezone ? { zonaHoraria: patrol.timezone } : {}),
+        // El peso objetivo lo decide el ADMIN por recinto, no este archivo: una
+        // bodega con fibra y un perimetro rural no quieren lo mismo.
+        ...(presupuestoFoto ? { objetivoBytes: presupuestoFoto.targetBytes } : {}),
+      });
+      await guardarFoto(clientEventId, foto, reportadaAt);
+      await refrescarFotosPendientes();
+    }
 
     const envio = await enviarNovedad(apiUrl, payload);
     const esPanico = entrada.criticidad === 'panico';
 
     if (envio.clase === 'rechazado') {
-      fotosPendientes.delete(clientEventId);
+      await borrarFoto(clientEventId);
+      await refrescarFotosPendientes();
       setMensajeNovedad(envio.mensaje);
       setEnviandoNovedad(false);
       return;
@@ -315,12 +408,16 @@ function Ronda({
         : 'Quedó registrada, pero no había a quién avisar. Comunícate por radio.',
     );
 
-    const foto = fotosPendientes.get(clientEventId);
-    if (foto && idEvento) {
-      fotosPendientes.delete(clientEventId);
-      const subida = await subirFotoNovedad(apiUrl, idEvento, foto);
-      actualizar((actual) => marcarFotoSubida(actual, clientEventId, subida));
-      if (!subida) setMensajeNovedad('La novedad quedó registrada, pero la foto no se pudo subir.');
+    if (entrada.foto && idEvento) {
+      await fijarServerId(clientEventId, idEvento);
+      const subida = await subirFotoPersistida(apiUrl, clientEventId, idEvento);
+      if (subida !== undefined) {
+        actualizar((actual) => marcarFotoSubida(actual, clientEventId, subida));
+        if (!subida) {
+          setMensajeNovedad('La novedad quedó registrada, pero la foto no se pudo subir.');
+        }
+      }
+      await refrescarFotosPendientes();
     }
     setEnviandoNovedad(false);
   }
@@ -328,6 +425,14 @@ function Ronda({
   return (
     <>
       <SyncEstado apiUrl={apiUrl} conexion={puente.conexion} />
+
+      {fotosPorSubir > 0 ? (
+        <p className="guardia-anuncio" role="status" aria-live="polite">
+          {fotosPorSubir === 1
+            ? 'Queda 1 foto por subir. Se envía sola al recuperar señal.'
+            : `Quedan ${fotosPorSubir} fotos por subir. Se envían solas al recuperar señal.`}
+        </p>
+      ) : null}
 
       <section className="guardia-cabecera">
         <p className="guardia-eyebrow">{patrol.siteName}</p>
@@ -341,6 +446,12 @@ function Ronda({
 
       {vista === 'ronda' ? (
         <>
+          <GuardMapa
+            puntos={puntos}
+            registros={estado.puntos}
+            siteName={patrol.siteName}
+            {...(siguiente ? { siguiente } : {})}
+          />
           <GuardCheckpointList
             anuncio={anuncio}
             fase={fase}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { LiveGuardMap, type LivePosition } from './live-guard-map';
+import { RecorridoPatrulla } from './recorrido-patrulla';
 
 interface LivePatrol {
   id: string; siteName: string; routeName: string; guardName: string;
@@ -25,6 +26,7 @@ export function LivePatrolBoard({
 }) {
   const [data, setData] = useState<LiveResponse | null>(null);
   const [error, setError] = useState('');
+  const [recorridoAbierto, setRecorridoAbierto] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -71,6 +73,8 @@ export function LivePatrolBoard({
         <div className="live-progress-label"><strong>{patrol.scannedCheckpoints}/{patrol.expectedCheckpoints} puntos</strong><span>{patrol.progressPct}%</span></div>
         <small>{patrol.lastCheckpointName ? `Último: ${patrol.lastCheckpointName} · ${clock(patrol.lastScanAt)}` : patrol.status === 'pendiente' ? `Comienza ${clock(patrol.scheduledStartAt)}` : 'Esperando el primer escaneo'}</small>
         {patrol.gpsEnabled && <small>{patrol.position ? `GPS ${clock(patrol.position.recordedAt)}${patrol.position.accuracyM ? ` · ±${Math.round(patrol.position.accuracyM)} m` : ''}` : 'GPS habilitado · sin posición reciente'}</small>}
+        {patrol.gpsEnabled && <button type="button" className="text-button" aria-expanded={recorridoAbierto === patrol.id} onClick={() => setRecorridoAbierto((abierto) => abierto === patrol.id ? null : patrol.id)}>{recorridoAbierto === patrol.id ? 'Ocultar recorrido' : 'Ver recorrido'}</button>}
+        {recorridoAbierto === patrol.id && <RecorridoPatrulla apiUrl={apiUrl} patrolId={patrol.id} tileUrl={tileUrl} attribution={attribution} />}
       </article>)}
     </div>
     {data && !data.patrols.length && <div className="dashboard-empty"><strong>No hay rondas activas</strong><span>Las rondas pendientes o en curso aparecerán aquí automáticamente.</span></div>}

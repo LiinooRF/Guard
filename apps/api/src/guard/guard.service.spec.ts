@@ -83,6 +83,34 @@ describe('GuardService', () => {
     ]);
   });
 
+  // Un mock devuelve lo que le pidas y no sabe SQL: el GROUP BY se puede romper
+  // entero con los 101 tests en verde. Paso `s.timezone` a la respuesta y agrupe
+  // por `p.site_id` en vez de `s.id`; site_id es columna de patrols, no la clave
+  // de sites, asi que Postgres respondia 42803 y GET /guard/home devolvia 500
+  // para TODOS los guardias. Aca se comprueba la unica regla que importa: si se
+  // selecciona una columna de una tabla, esa tabla aparece en el GROUP BY POR SU
+  // CLAVE PRIMARIA, que es lo que habilita la dependencia funcional.
+  it('agrupa por las claves primarias de cada tabla de la que selecciona columnas', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([]) };
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await service.getHome('guard-id');
+    // Se quitan los comentarios `--` antes de mirar: si no, el propio comentario
+    // que explica el bug contendria los nombres y el test pasaria solo.
+    const sql = (manager.query.mock.calls[0]?.[0] as string).replace(/--.*$/gm, '');
+    const seleccion = sql.slice(0, sql.search(/GROUP BY/i));
+    const agrupadas = (/GROUP BY([\s\S]*?)(?:ORDER BY|LIMIT|$)/i.exec(sql)?.[1] ?? '')
+      .split(',')
+      .map((columna) => columna.trim())
+      .filter(Boolean);
+
+    for (const [alias, clave] of [['p', 'p.id'], ['s', 's.id'], ['r', 'r.id']] as const) {
+      if (new RegExp(`\\b${alias}\\.[a-z_]+`).test(seleccion)) {
+        expect(agrupadas).toContain(clave);
+      }
+    }
+  });
+
   it('inicia únicamente una ronda pendiente asignada al guardia autenticado', async () => {
     const manager = {
       query: jest.fn().mockResolvedValue([
