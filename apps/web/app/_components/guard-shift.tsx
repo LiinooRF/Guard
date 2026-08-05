@@ -31,6 +31,7 @@ import {
   type PuntoRuta,
 } from './guard-shift-state';
 import { GuardShiftSummary } from './guard-shift-summary';
+import { procesarFoto } from './guard-photo';
 import { nuevoUuid } from './guard-storage';
 import {
   ErrorEscaneoPortal,
@@ -271,7 +272,16 @@ function Ronda({
       reportedAt: reportadaAt,
       ...(entrada.texto ? { text: entrada.texto } : {}),
     };
-    if (entrada.foto) fotosPendientes.set(clientEventId, entrada.foto);
+    // Antes de encolarla: se reescala, se le quema la marca de agua con fecha y
+    // hora y se comprime bajo el objetivo de tamaño (#67). La versión liviana y
+    // trazable es la que se guarda y la que se sube.
+    if (entrada.foto) {
+      const foto = await procesarFoto(entrada.foto, {
+        sitio: patrol.siteName,
+        ruta: patrol.routeName,
+      });
+      fotosPendientes.set(clientEventId, foto);
+    }
 
     const envio = await enviarNovedad(apiUrl, payload);
     const esPanico = entrada.criticidad === 'panico';
