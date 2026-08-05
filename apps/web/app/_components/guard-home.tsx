@@ -12,10 +12,14 @@ export interface GuardHomeData {
     scheduledStartAt: string;
     scheduledEndAt: string;
   };
+  /** Presupuesto de compresion de foto, resuelto por la API en la cascada del recinto. */
+  photoBudget?: { targetBytes: number; maxBytes: number };
   patrol?: {
     id: string;
     status: 'pendiente' | 'en_curso';
     siteName: string;
+    /** Zona horaria del RECINTO. La marca de agua de la foto la usa. */
+    timezone?: string;
     routeName: string;
     estimatedDurationMin: number;
     completedCheckpointCount: number;
@@ -24,6 +28,9 @@ export interface GuardHomeData {
       name: string;
       position: number;
       isClosingPoint?: boolean;
+      // Un punto puede no estar geolocalizado; el mapa lo omite.
+      latitude?: number | null;
+      longitude?: number | null;
       tagUids: string[];
     }>;
   };
@@ -112,11 +119,11 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           <button className="guard-primary-action" type="button" onClick={startPatrol} disabled={starting}>
             {starting ? 'Iniciando…' : 'Iniciar ronda'}
           </button>
-        ) : (
-          <button className="guard-primary-action" type="button">
-            Escanear punto NFC
-          </button>
-        )}
+        ) : null}
+        {/* No hay boton de escanear aca: con la ronda en curso, la pagina monta
+            GuardShift, que es donde vive el escaneo de verdad. Lo que habia era
+            un <button> sin onClick — se veia igual que uno funcionando y no
+            hacia nada. */}
         {error ? <p className="guard-action-error" role="alert">{error}</p> : null}
 
         <div className="guard-shift-grid">

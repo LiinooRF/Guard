@@ -98,7 +98,11 @@ export class GuardService {
           ON c.tenant_id = rc.tenant_id AND c.id = rc.checkpoint_id
         WHERE p.guard_id = $1
           AND p.status IN ('pendiente', 'en_curso')
-        GROUP BY p.id, p.site_id, s.name, r.name, r.estimated_duration_min
+        -- Se agrupa por las CLAVES PRIMARIAS (p.id, s.id, r.id): eso habilita
+        -- la dependencia funcional y deja usar cualquier columna de esas tablas.
+        -- Agrupar por p.site_id no sirve: es columna de patrols, no la PK de
+        -- sites, y Postgres aborta con 42803 al pedir s.timezone.
+        GROUP BY p.id, s.id, r.id
         ORDER BY
           CASE p.status WHEN 'en_curso' THEN 0 ELSE 1 END,
           p.scheduled_start_at DESC
