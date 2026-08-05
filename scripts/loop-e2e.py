@@ -107,8 +107,17 @@ check('  y se le pide aceptarlo', vista.get('actionRequired') in ('aceptar', 'ac
 vigente = (vista.get('policy') or {}).get('version')
 estado, cuerpo, _ = pedir('POST', API + '/geo/consent', {
     'policyVersion': vigente,
-    'deviceInfo': {'model': 'prueba-e2e', 'os': 'android'}}, guardia, UA_APP)
+    'deviceInfo': 'prueba-e2e / android'}, guardia, UA_APP)
 check('el guardia acepta el rastreo', estado in (200, 201),
+      'HTTP %s %s' % (estado, cuerpo[:200]))
+
+# El telefono informa como quedo el permiso del sistema operativo. No es un
+# tramite del script: la puerta de GPS lo exige aparte del consentimiento
+# escrito, porque una cosa es aceptar el aviso y otra que Android deje leer la
+# ubicacion de verdad.
+estado, cuerpo, _ = pedir('POST', API + '/geo/permission', {
+    'status': 'concedido', 'deviceInfo': 'prueba-e2e / android'}, guardia, UA_APP)
+check('el telefono confirma el permiso de ubicacion del sistema', estado in (200, 201),
       'HTTP %s %s' % (estado, cuerpo[:200]))
 
 # -------------------------------------------------------------- 3. la ronda
