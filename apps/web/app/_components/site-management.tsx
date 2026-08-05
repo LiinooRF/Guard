@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { HorarioHabilPanel } from './horario-habil-panel';
 import type { TenantSite } from './role-management';
 import { CoordinateMap } from './coordinate-map';
 import {
@@ -24,20 +25,10 @@ interface Checkpoint {
   isActive: boolean;
 }
 
-interface BusinessHour {
-  weekday: number;
-  opensAt: string;
-  closesAt: string;
-}
 
-interface Holiday {
-  date: string;
-  name: string | null;
-}
 
 type Coordinates = [number | null, number | null];
 
-const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export function SiteManagement({
   sites,
@@ -55,8 +46,6 @@ export function SiteManagement({
   const [message, setMessage] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
-  const [hours, setHours] = useState<BusinessHour[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [siteCoordinates, setSiteCoordinates] = useState<Coordinates>([null, null]);
   const [siteEditCoordinates, setSiteEditCoordinates] = useState<Coordinates>([null, null]);
@@ -98,19 +87,15 @@ export function SiteManagement({
     setSiteEditCoordinates(
       [site.latitude, site.longitude],
     );
-    const [pointResponse, hourResponse, holidayResponse] = await Promise.all([
+    const [pointResponse] = await Promise.all([
       fetch(`${apiUrl}/admin/sites/${site.id}/checkpoints`, requestOptions()),
-      fetch(`${apiUrl}/admin/sites/${site.id}/business-hours`, requestOptions()),
-      fetch(`${apiUrl}/admin/sites/${site.id}/holidays`, requestOptions()),
     ]);
-    if (!pointResponse.ok || !hourResponse.ok || !holidayResponse.ok) {
+    if (!pointResponse.ok) {
       setMessage('No pudimos cargar todos los datos del recinto. Revisa tus permisos e intenta nuevamente.');
       setLoadingDetail(false);
       return;
     }
     setCheckpoints((await pointResponse.json()) as Checkpoint[]);
-    setHours((await hourResponse.json()) as BusinessHour[]);
-    setHolidays((await holidayResponse.json()) as Holiday[]);
     setLoadingDetail(false);
   }
 
@@ -214,27 +199,7 @@ export function SiteManagement({
     setMessage(`Etiqueta vinculada a ${checkpoint.name}.`);
   }
 
-  async function saveHours() {
-    if (!selected) return;
-    const response = await jsonRequest(
-      `${apiUrl}/admin/sites/${selected.id}/business-hours`,
-      'PUT',
-      { hours },
-    );
-    if (!response.ok) return setMessage(await responseMessage(response));
-    setHours((await response.json()) as BusinessHour[]);
-    setMessage('Horario hábil guardado. Aplica inmediatamente a la evidencia fotográfica.');
-  }
 
-  async function saveHolidays() {
-    if (!selected) return;
-    const response = await jsonRequest(`${apiUrl}/admin/sites/${selected.id}/holidays`, 'PUT', {
-      holidays,
-    });
-    if (!response.ok) return setMessage(await responseMessage(response));
-    setHolidays((await response.json()) as Holiday[]);
-    setMessage('Feriados guardados. Esas fechas se consideran fuera de horario hábil.');
-  }
 
   async function importCsv() {
     if (!selected || !csv || csv.errors.length || !csv.checkpoints.length) return;
@@ -313,9 +278,17 @@ export function SiteManagement({
                   setCoordinates={setSiteEditCoordinates}
                   onSubmit={updateSite}
                 />
-                <HoursEditor hours={hours} setHours={setHours} onSave={() => void saveHours()} />
               </div>
-              <HolidayEditor holidays={holidays} setHolidays={setHolidays} onSave={() => void saveHolidays()} />
+              {/* Horario habil y feriados del recinto (#68). El panel carga,
+                  guarda y comprueba por su cuenta: no necesita estado del
+                  padre. Reemplaza a HoursEditor y HolidayEditor, que eran la
+                  version minima de esto mismo. */}
+              <HorarioHabilPanel
+                apiUrl={apiUrl}
+                siteId={selected.id}
+                siteName={selected.name}
+                timezone={selected.timezone}
+              />
               <div className="management-grid checkpoint-create-grid">
                 <CheckpointCreateForm
                   nextOrder={checkpoints.length + 1}
@@ -361,39 +334,7 @@ function SiteGeneralForm({ site, pending, coordinates, setCoordinates, onSubmit 
   );
 }
 
-function HoursEditor({ hours, setHours, onSave }: { hours: BusinessHour[]; setHours: (hours: BusinessHour[]) => void; onSave: () => void }) {
-  const byDay = new Map(hours.map((hour) => [hour.weekday, hour]));
-  return (
-    <section className="management-card"><div className="card-heading"><div><span className="eyebrow">Evidencia</span><h3>Horario hábil</h3></div></div>
-      <p className="form-note">Fuera de estos tramos, todos los puntos exigen foto. Un cierre menor que la apertura representa un turno nocturno.</p>
-      <div className="hours-grid">
-        {DAYS.map((day, weekday) => {
-          const hour = byDay.get(weekday);
-          return <div className="hours-row" key={day}>
-            <label><input type="checkbox" checked={Boolean(hour)} onChange={(event) => setHours(event.target.checked ? [...hours, { weekday, opensAt: '09:00', closesAt: '18:00' }].sort((a, b) => a.weekday - b.weekday) : hours.filter((item) => item.weekday !== weekday))} />{day}</label>
-            <input type="time" value={hour?.opensAt ?? '09:00'} disabled={!hour} onChange={(event) => setHours(hours.map((item) => item.weekday === weekday ? { ...item, opensAt: event.target.value } : item))} />
-            <span>—</span>
-            <input type="time" value={hour?.closesAt ?? '18:00'} disabled={!hour} onChange={(event) => setHours(hours.map((item) => item.weekday === weekday ? { ...item, closesAt: event.target.value } : item))} />
-          </div>;
-        })}
-      </div>
-      <button className="primary-button" onClick={onSave}>Guardar horario</button>
-    </section>
-  );
-}
 
-function HolidayEditor({ holidays, setHolidays, onSave }: { holidays: Holiday[]; setHolidays: (holidays: Holiday[]) => void; onSave: () => void }) {
-  const [date, setDate] = useState('');
-  const [name, setName] = useState('');
-  return (
-    <section className="management-card management-wide holidays-card"><div className="card-heading"><div><span className="eyebrow">Calendario</span><h3>Feriados y cierres especiales</h3></div></div>
-      <p className="form-note">Cada fecha se considera no hábil sólo para este recinto, en su propia zona horaria.</p>
-      <div className="holiday-add"><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input placeholder="Motivo (opcional)" value={name} onChange={(event) => setName(event.target.value)} /><button className="secondary-button" type="button" disabled={!date || holidays.some((item) => item.date === date)} onClick={() => { setHolidays([...holidays, { date, name: name.trim() || null }].sort((a, b) => a.date.localeCompare(b.date))); setDate(''); setName(''); }}>Agregar fecha</button></div>
-      <div className="holiday-list">{holidays.map((holiday) => <span key={holiday.date}>{holiday.date}{holiday.name ? ` · ${holiday.name}` : ''}<button type="button" aria-label={`Quitar ${holiday.date}`} onClick={() => setHolidays(holidays.filter((item) => item.date !== holiday.date))}>×</button></span>)}</div>
-      <button className="primary-button" onClick={onSave}>Guardar feriados</button>
-    </section>
-  );
-}
 
 function CheckpointCreateForm({ nextOrder, coordinates, setCoordinates, onSubmit }: { nextOrder: number; coordinates: Coordinates; setCoordinates: (value: Coordinates) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (

@@ -7,6 +7,7 @@ import {
 } from '@voxia/shared';
 
 import { AdminController } from '../admin/admin.controller';
+import { HorarioHabilController } from '../admin/horario-habil.controller';
 import { AuditController } from '../audit/audit.controller';
 import { BrandingController } from '../branding/branding.controller';
 import { ChecklistsController } from '../checklists/checklists.controller';
@@ -98,6 +99,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(AdminController, 'replaceBusinessHours', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(AdminController, 'listHolidays', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(AdminController, 'replaceHolidays', ['tenant:sites:manage'], ['ADMIN'], true),
+  secured(HorarioHabilController, 'comprobarHorario', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(
     AdminController,
     'setSupervisorSite',
@@ -340,6 +342,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
 const CONTROLLERS = [
   AuthController,
   AdminController,
+  HorarioHabilController,
   DashboardController,
   GuardController,
   PlatformController,
