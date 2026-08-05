@@ -62,10 +62,14 @@ export interface GuardShiftData {
   hasAssignment: boolean;
   message?: string;
   shift?: { scheduledStartAt: string; scheduledEndAt: string };
+  /** Presupuesto de la foto, resuelto por la API en la cascada del recinto. */
+  photoBudget?: { targetBytes: number; maxBytes: number };
   patrol?: {
     id: string;
     status: string;
     siteName: string;
+    /** Zona horaria del RECINTO, que manda la API. Ver guard-photo.ts. */
+    timezone?: string;
     routeName: string;
     estimatedDurationMin: number;
     completedCheckpointCount: number;
@@ -94,9 +98,16 @@ async function subirFotoPersistida(
   clientEventId: string,
   serverId: string,
 ): Promise<boolean | undefined> {
-  const foto = await leerFoto(clientEventId);
-  if (!foto) return undefined;
-  const subida = await subirFotoNovedad(apiUrl, serverId, foto as File);
+  const guardada = await leerFoto(clientEventId);
+  if (!guardada) return undefined;
+  // Se manda la hora de CAPTURA que quedo guardada con la foto, no la de ahora:
+  // esta subida puede ocurrir horas despues, al recuperar señal.
+  const subida = await subirFotoNovedad(
+    apiUrl,
+    serverId,
+    guardada.blob as File,
+    guardada.takenAtDevice,
+  );
   if (subida) await borrarFoto(clientEventId);
   return subida;
 }
@@ -105,7 +116,14 @@ export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: str
   if (!data.hasAssignment || data.patrol === undefined || data.shift === undefined) {
     return <SinAsignacion apiUrl={apiUrl} mensaje={data.message} />;
   }
-  return <Ronda apiUrl={apiUrl} patrol={data.patrol} shift={data.shift} />;
+  return (
+    <Ronda
+      apiUrl={apiUrl}
+      patrol={data.patrol}
+      shift={data.shift}
+      {...(data.photoBudget ? { presupuestoFoto: data.photoBudget } : {})}
+    />
+  );
 }
 
 function SinAsignacion({ apiUrl, mensaje }: { apiUrl: string; mensaje?: string }) {
@@ -130,10 +148,12 @@ function Ronda({
   patrol,
   shift,
   apiUrl,
+  presupuestoFoto,
 }: {
   patrol: NonNullable<GuardShiftData['patrol']>;
   shift: NonNullable<GuardShiftData['shift']>;
   apiUrl: string;
+  presupuestoFoto?: GuardShiftData['photoBudget'];
 }) {
   const puente = useGuardBridge(apiUrl);
   const [estado, setEstado] = useState<EstadoRonda>(() => estadoInicial(patrol.id));
@@ -334,6 +354,12 @@ function Ronda({
       const foto = await procesarFoto(entrada.foto, {
         sitio: patrol.siteName,
         ruta: patrol.routeName,
+        // La zona del recinto: la hora se quema en los pixeles y no se corrige
+        // despues. Si la API no la manda, cae en la del dispositivo.
+        ...(patrol.timezone ? { zonaHoraria: patrol.timezone } : {}),
+        // El peso objetivo lo decide el ADMIN por recinto, no este archivo: una
+        // bodega con fibra y un perimetro rural no quieren lo mismo.
+        ...(presupuestoFoto ? { objetivoBytes: presupuestoFoto.targetBytes } : {}),
       });
       await guardarFoto(clientEventId, foto, reportadaAt);
       await refrescarFotosPendientes();

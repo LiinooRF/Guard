@@ -27,7 +27,14 @@
  * la evidencia.
  */
 
-/** Objetivo de tamaño: por debajo sube bien con red móvil pobre. */
+/**
+ * Respaldo cuando la API todavia no mando el presupuesto.
+ *
+ * El valor REAL lo decide el admin por recinto (`photoUploadTargetKB` en
+ * rules.ts) y llega en `GET /guard/home` como `photoBudget.targetBytes`. Este
+ * numero es solo la red de seguridad para el primer render: dejarlo como unica
+ * fuente convertia en letra muerta una regla que el admin ya podia configurar.
+ */
 export const TAMANO_OBJETIVO_BYTES = 500 * 1024;
 
 /** Lado más largo tras reescalar. 1600 px basta para leer el estado de una puerta. */
@@ -95,7 +102,7 @@ export function lineasMarcaAgua({
  * 24 h, con fecha: el timestamp tiene que ser inequívoco cuando la foto termina
  * en un juicio laboral.
  */
-export function fechaHoraMarca(fecha: Date = new Date()): string {
+export function fechaHoraMarca(fecha: Date = new Date(), zonaHoraria?: string): string {
   return new Intl.DateTimeFormat('es-CL', {
     day: '2-digit',
     month: '2-digit',
@@ -103,7 +110,7 @@ export function fechaHoraMarca(fecha: Date = new Date()): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'America/Santiago',
+    ...(zonaHoraria ? { timeZone: zonaHoraria } : {}),
   }).format(fecha);
 }
 
@@ -115,6 +122,14 @@ export interface OpcionesFoto {
   fecha?: Date;
   ladoMax?: number;
   objetivoBytes?: number;
+  /**
+   * Zona horaria DEL RECINTO (`sites.timezone`), que llega desde la API.
+   *
+   * Sin ella se usa la del dispositivo. Lo que NO se hace es cablear
+   * 'America/Santiago': esta hora se quema en los pixeles y una evidencia con
+   * la hora equivocada no se re-renderiza como una pantalla.
+   */
+  zonaHoraria?: string;
 }
 
 // --------------------------------------------------------------- navegador
@@ -175,7 +190,7 @@ export async function procesarFoto(file: File, opciones: OpcionesFoto = {}): Pro
 
   const objetivo = opciones.objetivoBytes ?? TAMANO_OBJETIVO_BYTES;
   const lineas = lineasMarcaAgua({
-    fechaHora: fechaHoraMarca(opciones.fecha),
+    fechaHora: fechaHoraMarca(opciones.fecha, opciones.zonaHoraria),
     ...(opciones.sitio ? { sitio: opciones.sitio } : {}),
     ...(opciones.ruta ? { ruta: opciones.ruta } : {}),
     ...(opciones.guardia ? { guardia: opciones.guardia } : {}),

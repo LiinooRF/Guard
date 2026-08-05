@@ -152,15 +152,28 @@ export async function fijarServerId(clientEventId: string, serverId: string): Pr
 }
 
 /** Devuelve el Blob de la foto, o `undefined` si ya no está. */
-export function leerFoto(clientEventId: string): Promise<Blob | undefined> {
+/**
+ * Devuelve la foto CON su hora de captura.
+ *
+ * Devolver solo el blob era el bug: quien subia ponia `new Date()`, o sea la
+ * hora en que hubo señal. En un producto cuyo sentido es demostrar que alguien
+ * estuvo en un lugar A UNA HORA, esa diferencia no es un detalle: una ronda
+ * hecha a las 03:00 y sincronizada a las 07:00 quedaba registrada a las 07:00.
+ */
+export function leerFoto(
+  clientEventId: string,
+): Promise<{ blob: Blob; takenAtDevice: string } | undefined> {
   return conRespaldo(
     async () => {
       const registro = await conAlmacen<RegistroFoto | undefined>('readonly', (a) =>
         a.get(clientEventId),
       );
-      return registro?.blob;
+      return registro ? { blob: registro.blob, takenAtDevice: registro.takenAtDevice } : undefined;
     },
-    () => memoria.get(clientEventId)?.blob,
+    () => {
+      const registro = memoria.get(clientEventId);
+      return registro ? { blob: registro.blob, takenAtDevice: registro.takenAtDevice } : undefined;
+    },
   );
 }
 

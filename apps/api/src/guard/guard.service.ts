@@ -19,7 +19,9 @@ interface PatrolRow {
   scheduled_start_at: Date;
   scheduled_end_at: Date;
   started_at: Date | null;
+  site_id: string;
   site_name: string;
+  site_timezone: string;
   route_name: string;
   estimated_duration_min: number;
   checkpoints: Array<{
@@ -59,7 +61,9 @@ export class GuardService {
           p.scheduled_start_at,
           p.scheduled_end_at,
           p.started_at,
+          p.site_id,
           s.name AS site_name,
+          s.timezone AS site_timezone,
           r.name AS route_name,
           r.estimated_duration_min,
           COALESCE(
@@ -94,7 +98,7 @@ export class GuardService {
           ON c.tenant_id = rc.tenant_id AND c.id = rc.checkpoint_id
         WHERE p.guard_id = $1
           AND p.status IN ('pendiente', 'en_curso')
-        GROUP BY p.id, s.name, r.name, r.estimated_duration_min
+        GROUP BY p.id, p.site_id, s.name, r.name, r.estimated_duration_min
         ORDER BY
           CASE p.status WHEN 'en_curso' THEN 0 ELSE 1 END,
           p.scheduled_start_at DESC
@@ -113,6 +117,8 @@ export class GuardService {
       };
     }
 
+    const reglas = await this.rules.effective({ siteId: patrol.site_id });
+
     return {
       hasAssignment: true as const,
       shift: {
@@ -123,11 +129,33 @@ export class GuardService {
         id: patrol.id,
         status: patrol.status,
         siteName: patrol.site_name,
+        // La zona del RECINTO, no la del telefono ni la del servidor. El portal
+        // la necesita para la marca de agua de la foto, que se QUEMA en los
+        // pixeles: una hora mal impresa en la evidencia no se puede corregir
+        // despues como se corrige una pantalla.
+        timezone: patrol.site_timezone,
         routeName: patrol.route_name,
         estimatedDurationMin: patrol.estimated_duration_min,
         startedAt: patrol.started_at,
         completedCheckpointCount: 0,
         checkpoints: patrol.checkpoints,
+      },
+      /*
+       * El presupuesto de la foto, resuelto en la cascada DEL RECINTO y no
+       * decidido por el telefono.
+       *
+       * Son dos numeros distintos a proposito: `targetBytes` es a lo que el
+       * telefono comprime antes de subir, y `maxBytes` es el techo que el
+       * servidor acepta. El objetivo se acota al techo — un admin que baje el
+       * maximo por debajo del objetivo no puede dejar al portal generando fotos
+       * que su propio servidor va a rechazar.
+       */
+      photoBudget: {
+        targetBytes: Math.min(
+          reglas.photoUploadTargetKB * 1024,
+          reglas.photoMaxSizeMB * 1024 * 1024,
+        ),
+        maxBytes: reglas.photoMaxSizeMB * 1024 * 1024,
       },
       connection: { status: 'online' as const },
       synchronization: { pendingItems: 0 },

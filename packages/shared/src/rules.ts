@@ -120,6 +120,19 @@ export const patrolRulesSchema = z.object({
 
   /** Tamaño maximo de cada foto de evidencia, en megabytes (#13). */
   photoMaxSizeMB: z.number().int().min(1).max(50).default(10),
+  /**
+   * Peso al que el telefono COMPRIME la foto antes de subirla, en kilobytes.
+   *
+   * Es distinto de photoMaxSizeMB, que es el techo que el servidor acepta. Este
+   * es el objetivo del cliente y siempre es menor: comprimir hasta el techo
+   * dejaria subidas de megas en un perimetro sin cobertura.
+   *
+   * Mas alto es mas nitido y mas lento de subir donde hay poca señal; mas bajo
+   * sube siempre pero puede no dejar leer el estado de una cerradura. Por eso lo
+   * elige el admin y no el codigo: una bodega con fibra y un perimetro rural no
+   * quieren lo mismo.
+   */
+  photoUploadTargetKB: z.number().int().min(100).max(5_000).default(500),
 
   /** Intentos de login fallidos antes de bloquear temporalmente. */
   /**
@@ -255,6 +268,7 @@ export const RULE_UNITS = [
   'minutes',
   'days',
   'megabytes',
+  'kilobytes',
   'attempts',
   'operations',
   'rows',
@@ -268,6 +282,7 @@ export const RULE_UNIT_LABELS: Record<RuleUnit, string> = {
   minutes: 'min',
   days: 'dias',
   megabytes: 'MB',
+  kilobytes: 'KB',
   attempts: 'intentos',
   operations: 'operaciones',
   rows: 'filas',
@@ -562,6 +577,19 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     default: DEFAULT_PATROL_RULES.photoRetentionDays,
     scopes: SOLO_EMPRESA,
     group: 'retencion',
+  },
+  photoUploadTargetKB: {
+    key: 'photoUploadTargetKB',
+    label: 'Peso objetivo de la foto al subir',
+    description:
+      'A que peso comprime el telefono la foto antes de subirla. Mas alto se ve mejor y sube mas lento donde hay poca señal; mas bajo sube siempre pero puede no dejar leer el detalle.',
+    type: 'integer',
+    unit: 'kilobytes',
+    min: 100,
+    max: 5000,
+    default: DEFAULT_PATROL_RULES.photoUploadTargetKB,
+    scopes: HASTA_RECINTO,
+    group: 'evidencia',
   },
   photoMaxSizeMB: {
     key: 'photoMaxSizeMB',
