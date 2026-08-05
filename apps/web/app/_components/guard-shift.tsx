@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
+import { GuardMapa } from './guard-mapa';
 import { PanicoPanel } from './panico-panel';
 import { SyncEstado } from './sync-estado';
 import { GuardEventForm } from './guard-event-form';
@@ -419,6 +420,12 @@ function Ronda({
 
       {vista === 'ronda' ? (
         <>
+          <GuardMapa
+            puntos={puntos}
+            registros={estado.puntos}
+            siteName={patrol.siteName}
+            {...(siguiente ? { siguiente } : {})}
+          />
           <GuardCheckpointList
             anuncio={anuncio}
             fase={fase}

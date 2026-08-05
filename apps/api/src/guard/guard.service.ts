@@ -27,6 +27,10 @@ interface PatrolRow {
     name: string;
     position: number;
     isClosingPoint: boolean;
+    // Coordenadas del punto para dibujarlo en el visor de ruta (#76). Pueden ser
+    // null: un punto puede no estar geolocalizado y el mapa lo omite.
+    latitude: number | null;
+    longitude: number | null;
     tagUids: string[];
   }>;
 }
@@ -65,6 +69,8 @@ export class GuardService {
                 'name', c.name,
                 'position', rc.position,
                 'isClosingPoint', rc.is_closing_point,
+                'latitude', c.latitude,
+                'longitude', c.longitude,
                 'tagUids', COALESCE((
                   SELECT jsonb_agg(t.uid ORDER BY t.installed_at DESC)
                   FROM tags t
