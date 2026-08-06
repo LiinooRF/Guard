@@ -42,19 +42,34 @@ export class PushProcessor extends WorkerHost {
   async process(job: Job<PushJobData>): Promise<PushJobResult> {
     const { tenantId, userId, notification } = job.data;
 
+    /*
+     * EL JOIN CON users NO ES DECORATIVO (#43): entre que el aviso se encola y
+     * que se entrega pueden pasar minutos, y en esos minutos a la persona la
+     * pueden dar de baja. Desactivarla le revoca las sesiones pero no le quita
+     * el token —la app sigue instalada—, asi que sin este filtro el criterio
+     * "un usuario dado de baja deja de recibir push" se cumpliria solo para lo
+     * que todavia no habia salido de la cola. Filtrar aca, en el ultimo paso
+     * antes del transporte, lo cumple para todos los caminos y sin depender de
+     * que cada emisor se acuerde.
+     */
     const filas = await this.enTenant<{ token: string }>(
       tenantId,
-      `SELECT token FROM device_tokens
-       WHERE tenant_id = app_tenant_id() AND user_id = $1
-       ORDER BY last_seen_at DESC`,
+      `SELECT dispositivo.token
+       FROM device_tokens dispositivo
+       JOIN users usuario ON usuario.id = dispositivo.user_id
+       WHERE dispositivo.tenant_id = app_tenant_id()
+         AND dispositivo.user_id = $1
+         AND usuario.is_active
+       ORDER BY dispositivo.last_seen_at DESC`,
       [userId],
     );
     const tokens = filas.map((f) => f.token);
 
     if (tokens.length === 0) {
-      // No es una falla: hay destinatarios que solo usan el escritorio. Se
-      // registra porque un supervisor de terreno sin dispositivos casi siempre
-      // significa que nunca acepto el permiso de notificaciones.
+      // No es una falla: hay destinatarios que solo usan el escritorio, y
+      // tambien cae aca el que quedo dado de baja despues de encolarse el
+      // aviso. Se registra porque un supervisor de terreno sin dispositivos casi
+      // siempre significa que nunca acepto el permiso de notificaciones.
       this.logger.log(
         JSON.stringify({ event: 'push_sin_dispositivos', tenant_id: tenantId, job_id: job.id }),
       );

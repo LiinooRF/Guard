@@ -196,7 +196,7 @@ export class ConsentService {
       // Los tres numeros que la app tiene que MOSTRAR en el aviso. Salen de las
       // reglas del tenant, no del codigo del telefono.
       tracking: {
-        // gpsTrackingEnabled y NO gpsSharingRequired: con GPS "opcional" este
+        // gpsTrackingEnabled y NO gpsSharingMandatory: con GPS "opcional" este
         // aviso decia que no se registra ubicacion mientras el servidor si la
         // registraba para quien habia aceptado. Un aviso legal que miente es
         // peor que no tener aviso.

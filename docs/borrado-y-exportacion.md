@@ -83,9 +83,15 @@ los datos ocurre únicamente dentro de funciones `SECURITY DEFINER` que validan
 
 ## Nota para el equipo de tests de integración
 
-`tenant_deletions` tiene columna `tenant_id` pero **sin RLS** (tabla de
-plataforma, mismo criterio que `platform_memberships`: su consumidor es el
-SUPERADMIN, que no tiene contexto tenant). El test
-`tenant-isolation.integration.spec.ts` exige RLS al 100% de las tablas con
-`tenant_id`: hay que excluir `tenant_deletions` de ese barrido, con comentario
-del porqué.
+`tenant_deletions` **no** tiene columna `tenant_id`: la llama `target_tenant_id`
+a propósito, porque la fila habla *sobre* una empresa en vez de pertenecer a
+ella (tabla de plataforma, mismo criterio que `platform_memberships`: su
+consumidor es el SUPERADMIN, que no tiene contexto tenant). Por eso no necesita
+RLS y tampoco ninguna exclusión en el barrido de
+`tenant-isolation.integration.spec.ts`, que sólo mira tablas con `tenant_id`.
+
+Lo que sí hace falta es la anotación al revés: toda tabla que **no** lleve
+`tenant_id` tiene que estar en `TABLAS_SIN_TENANT_ID`
+(`apps/api/src/database/aislamiento-tenant.ts`) con el motivo escrito, o
+`aislamiento-tenant.spec.ts` falla nombrándola (#218). `tenant_deletions` ya
+está ahí, con este mismo motivo.

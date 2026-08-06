@@ -25,9 +25,11 @@ import {
   TOPE_DIAS,
   etiquetaRango,
   hoyUtc,
+  plural,
   resolverRangoPanel,
   type ClaveGrafica,
   type CumplimientoPorRecinto,
+  type CumplimientoPorRuta,
   type PuntosOmitidos,
 } from './stats-charts-data';
 import { SupervisorInformes, type OpcionRecintoSupervisor } from './supervisor-informes';
@@ -35,10 +37,13 @@ import { SupervisorOmisiones } from './supervisor-omisiones';
 import { SupervisorRutas } from './supervisor-rutas';
 import {
   TOPE_PUNTOS_OMITIDOS,
+  TOPE_RUTAS,
   elegirRecinto,
   esUuid,
   leerReglasOmision,
   normalizarUuid,
+  type RecintoAsignado,
+  type RecintoDelCatalogo,
   type ResultadoSupervisor,
   type RondaSupervisor,
 } from './supervisor-datos';
@@ -120,9 +125,7 @@ export async function SupervisorPanel({
   const claveOmitidos: ClaveGrafica = 'omitidos';
   const dentroDeTopeOmitidos = rango.dias <= TOPE_DIAS[claveOmitidos];
 
-  const [cumplimiento, omitidos, reglasEfectivas] = await Promise.all([
-    // El catalogo de recintos sale de aca y no de un `GET /supervisor/sites`,
-    // que no existe: esta respuesta ya viene acotada a los recintos asignados.
+  const [cumplimiento, omitidos, reglasEfectivas, asignados] = await Promise.all([
     pedir<CumplimientoPorRecinto>('/stats/charts/compliance-by-site', comunes()),
     dentroDeTopeOmitidos
       ? pedir<PuntosOmitidos>('/stats/charts/missed-checkpoints', omitidosParams)
@@ -134,19 +137,92 @@ export async function SupervisorPanel({
     // plataforma o de empresa (ver su ficha de catalogo), justamente porque esta
     // tarjeta compara puntos de varios recintos a la vez.
     pedir<{ rules?: unknown }>('/rules/effective'),
+    /*
+     * El catalogo de recintos para elegir. Sale de aca y NO de
+     * `compliance-by-site`, que solo devuelve los recintos que tuvieron rondas
+     * en el periodo: con esa fuente, un supervisor con cinco recintos asignados
+     * y dos con actividad no podia ni siquiera SELECCIONAR los otros tres para
+     * ver sus informes, que es justo lo que pide el issue. El servidor ya lo
+     * acota a `supervisor_sites`, igual que todo lo demas de esta pantalla.
+     */
+    pedir<RecintoAsignado[]>('/supervisor/sites'),
   ]);
 
-  const recintos = cumplimiento.estado === 'ok' ? cumplimiento.datos.sites : [];
-  const umbral = cumplimiento.estado === 'ok' ? cumplimiento.datos.threshold : null;
+  const conRondas = cumplimiento.estado === 'ok' ? cumplimiento.datos.sites : [];
+
+  /*
+   * Aca ya no se lee ningun umbral. El de la tarjeta de rutas viaja DENTRO de
+   * `compliance-by-route`, que es la misma respuesta con la que el servidor
+   * conto `belowThreshold`. Cuando salia de esta consulta, un fallo de
+   * `compliance-by-site` dejaba la tarjeta de rutas sin umbral: seguia
+   * dibujandose, pero sin marcar ninguna ruta bajo la linea y sin decir por que.
+   */
+
   const reglasOmision =
     reglasEfectivas.estado === 'ok' ? leerReglasOmision(reglasEfectivas.datos.rules) : null;
-  const recinto = elegirRecinto(recintos, recintoPedido);
 
-  // Las rondas del recinto elegido. Sin recinto no se pide nada: el endpoint es
-  // por recinto y pedirselos todos seria una consulta por cada uno.
-  const rondas: ResultadoSupervisor<RondaSupervisor[]> = recinto
-    ? await pedir<RondaSupervisor[]>(`/supervisor/sites/${recinto.id}/patrols`)
-    : { estado: 'ok', datos: [] };
+  /*
+   * El catalogo con el que se elige recinto y se pintan los nombres.
+   *
+   * Si `/supervisor/sites` respondio, son TODOS los recintos asignados; si esa
+   * llamada fallo, se cae a los que tuvieron rondas, que es lo que habia antes.
+   * Peor catalogo, pero un catalogo: quedarse sin selector porque una de dos
+   * consultas fallo deja la pantalla inservible.
+   *
+   * Cuando el filtro de arriba trae sucursal, el catalogo se recorta igual que
+   * lo hace el servidor con las cifras. Sin esto la lista ofreceria recintos de
+   * otra sucursal mientras las graficas muestran solo una: dos alcances
+   * distintos en la misma pantalla.
+   */
+  const catalogo: RecintoDelCatalogo[] =
+    asignados.estado === 'ok'
+      ? asignados.datos
+          .filter((sitio) => !sucursalPedida || sitio.branchName === sucursalPedida)
+          .map((sitio) => ({
+            siteId: sitio.id,
+            siteName: sitio.name,
+            branchName: sitio.branchName,
+          }))
+      : conRondas.map((sitio) => ({
+          siteId: sitio.siteId,
+          siteName: sitio.siteName,
+          branchName: sitio.branchName,
+        }));
+
+  const recinto = elegirRecinto(catalogo, recintoPedido);
+
+  /*
+   * Lo del recinto elegido. Sin recinto no se pide nada: las rondas se piden por
+   * recinto —pedirselas a todos seria una consulta por cada uno— y las rutas de
+   * dos recintos distintos no se comparan entre si.
+   *
+   * El `siteId` de las rutas sale del recinto YA resuelto y no de la URL: puede
+   * venir de `elegirRecinto()` cuando el supervisor tiene uno solo asignado y no
+   * eligio nada. Si el id no fuera suyo, el servidor responde 403 y eso se
+   * dibuja como "ese recinto no esta entre los tuyos", no como una falla.
+   */
+  const claveRutas: ClaveGrafica = 'rutas';
+  const dentroDeTopeRutas = rango.dias <= TOPE_DIAS[claveRutas];
+
+  const rutasParams = new URLSearchParams({
+    from: rango.desde,
+    to: rango.hasta,
+    limit: String(TOPE_RUTAS),
+  });
+  if (recinto) rutasParams.set('siteId', normalizarUuid(recinto.id));
+
+  const [rondas, rutas] = await Promise.all([
+    recinto
+      ? pedir<RondaSupervisor[]>(`/supervisor/sites/${recinto.id}/patrols`)
+      : Promise.resolve<ResultadoSupervisor<RondaSupervisor[]>>({ estado: 'ok', datos: [] }),
+    recinto && dentroDeTopeRutas
+      ? pedir<CumplimientoPorRuta>('/stats/charts/compliance-by-route', rutasParams)
+      : Promise.resolve<ResultadoSupervisor<CumplimientoPorRuta>>(
+          recinto
+            ? { estado: 'fuera-de-tope', clave: claveRutas }
+            : { estado: 'ok', datos: { range: rango, threshold: 0, routes: [] } },
+        ),
+  ]);
 
   /*
    * Los parametros tal como venian en la URL, aplanados. Los enlaces de la
@@ -160,7 +236,7 @@ export async function SupervisorPanel({
     if (valor) actuales[clave] = valor;
   }
 
-  const opciones: OpcionRecintoSupervisor[] = recintos
+  const opciones: OpcionRecintoSupervisor[] = catalogo
     .map((item) => ({ id: item.siteId, nombre: item.siteName, sucursal: item.branchName }))
     .sort((a, b) => `${a.sucursal} ${a.nombre}`.localeCompare(`${b.sucursal} ${b.nombre}`, 'es'));
 
@@ -173,16 +249,20 @@ export async function SupervisorPanel({
           <span className="eyebrow">Mis recintos</span>
           <h2>Revisión de rondas e informes</h2>
         </div>
-        {/* La insignia solo se pinta si la consulta respondio. "0 recintos"
+        {/* La insignia solo se pinta si la consulta respondio: "0 recintos"
             cuando en realidad no pudimos preguntar es una afirmacion falsa.
-            Y dice "con rondas" porque eso es lo que cuenta: `compliance-by-site`
-            devuelve los recintos CON actividad en el periodo, no los asignados.
-            Un supervisor con 5 recintos y 2 con rondas leia "2 recintos". */}
-        {cumplimiento.estado === 'ok' ? (
+            Y cada fuente se nombra por lo que es. `/supervisor/sites` devuelve
+            los recintos ASIGNADOS; `compliance-by-site`, solo los que tuvieron
+            rondas en el periodo. Cuando hay que caer en el segundo, la insignia
+            dice "con rondas" en vez de mentir: un supervisor con 5 recintos y 2
+            con actividad leia "2 recintos". */}
+        {asignados.estado === 'ok' ? (
           <span className="status-pill">
-            {recintos.length === 1
-              ? '1 recinto con rondas'
-              : `${recintos.length} recintos con rondas`}
+            {plural(catalogo.length, 'recinto asignado', 'recintos asignados')}
+          </span>
+        ) : cumplimiento.estado === 'ok' ? (
+          <span className="status-pill">
+            {plural(conRondas.length, 'recinto con rondas', 'recintos con rondas')}
           </span>
         ) : null}
       </div>
@@ -192,15 +272,27 @@ export async function SupervisorPanel({
         entrega sus datos: no depende de esta pantalla.
       </p>
 
-      {/* De esta consulta salen el catalogo de recintos y el umbral vigente. Si
+      {/* De esta consulta salen las cifras del periodo y el umbral vigente. Si
           falla, las tarjetas de abajo pierden contexto y hay que decirlo aca
           arriba una vez, en vez de repetirlo en las tres. */}
       <EstadoSupervisor resultado={cumplimiento} />
 
+      {/* El catalogo de recintos es la otra consulta que sostiene la seccion, y
+          su falla se ve distinta: no faltan cifras, falta poder ELEGIR. Callarlo
+          dejaria una lista corta que se lee como "estos son mis recintos". */}
+      {asignados.estado !== 'ok' ? (
+        <p className="stats-estado aviso" role="status">
+          <strong>La lista de recintos puede estar incompleta.</strong> No pudimos consultar tus
+          recintos asignados, así que abajo solo aparecen los que tuvieron rondas en el período.
+          Actualiza la página en un momento más; mientras tanto, un recinto que no esté en la lista
+          se puede abrir igual con su enlace.
+        </p>
+      ) : null}
+
       <SupervisorOmisiones resultado={omitidos} reglas={reglasOmision} periodo={periodo} />
 
       <div className="stats-grid">
-        <SupervisorRutas resultado={rondas} recinto={recinto} umbral={umbral} />
+        <SupervisorRutas resultado={rutas} recinto={recinto} />
         <SupervisorInformes
           resultado={rondas}
           recinto={recinto}

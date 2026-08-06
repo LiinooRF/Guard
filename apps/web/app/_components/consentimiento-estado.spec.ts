@@ -116,7 +116,7 @@ describe('debeMostrarPuerta', () => {
   /*
    * gpsTrackingEnabled apagado = no se guarda ni un punto para nadie. Sin nada
    * que registrar no hay aviso previo que dar, y frenar la ronda por un tramite
-   * sin objeto seria puro estorbo. Ojo: esto NO es gpsSharingRequired, que es
+   * sin objeto seria puro estorbo. Ojo: esto NO es gpsSharingMandatory, que es
    * obligatorio vs opcional y con el que si se registra el recorrido de quien
    * acepta.
    */

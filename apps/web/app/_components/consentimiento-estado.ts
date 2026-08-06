@@ -5,13 +5,13 @@
  * "esta persona tiene que leer el aviso antes de seguir" es la unica parte de la
  * pantalla que puede equivocarse de forma silenciosa, y asi se puede probar.
  *
- * LA REGLA QUE SE LEE ACA ES gpsTrackingEnabled, NO gpsSharingRequired.
+ * LA REGLA QUE SE LEE ACA ES gpsTrackingEnabled, NO gpsSharingMandatory.
  * Son dos cosas distintas y confundirlas ya costo un aviso legal que mentia:
  *
  *   - `gpsTrackingEnabled` (llega como `tracking.enabled`) es el INTERRUPTOR:
  *     apagado no se guarda ni un punto para nadie. Sin nada que registrar no hay
  *     nada que informar por adelantado, asi que no se interrumpe el trabajo.
- *   - `gpsSharingRequired` es obligatorio vs OPCIONAL, y opcional NO es apagado:
+ *   - `gpsSharingMandatory` es obligatorio vs OPCIONAL, y opcional NO es apagado:
  *     a quien acepta se le registra el recorrido igual. Si la puerta se apoyara
  *     en esa regla, con GPS "opcional" el trabajador no veria el aviso mientras
  *     el servidor si estaria guardando su recorrido.

@@ -131,7 +131,7 @@ export class SupervisorService {
       refreshedAt: new Date().toISOString(),
       pollAfterMs: 5_000,
       patrols: rows.map((row) => {
-        // gpsTrackingEnabled y NO gpsSharingRequired: el segundo decide
+        // gpsTrackingEnabled y NO gpsSharingMandatory: el segundo decide
         // obligatorio vs OPCIONAL, no encendido vs apagado. Leerlo mal
         // aca esconde en el tablero a guardias que SI estan compartiendo
         // ubicacion, que es justo lo que el monitoreo en vivo debe mostrar.

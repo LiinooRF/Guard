@@ -79,7 +79,7 @@ export interface PuntoDeControlDelMapa {
    *   null  -> no sobreescribe nada: manda la regla (fuera de horario, o punto
    *            critico). Ver isPhotoRequired() en packages/shared/src/domain.ts.
    * Leerlo como interruptor encendido/apagado es exactamente el error que ya
-   * cometimos con gpsSharingRequired.
+   * cometimos con gpsSharingMandatory.
    */
   requiresPhoto?: boolean | null;
   /** `checkpoints.is_active` es `NOT NULL` y `listCheckpoints()` siempre lo manda. */

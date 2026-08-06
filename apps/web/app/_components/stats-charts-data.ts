@@ -91,6 +91,50 @@ export interface RankingGuardias {
   guards: GuardiaRanking[];
 }
 
+/**
+ * Una fila de `/api/stats/charts/compliance-by-route` (#99).
+ *
+ * `belowThreshold` es un CONTEO de rondas bajo el umbral, como en el ranking de
+ * guardias, y no el booleano de `RecintoCumplimiento`. Los dos campos se llaman
+ * igual y significan cosas distintas segun la grafica: es lo que responde la
+ * API, y confundirlos pinta "31 rondas bajo el umbral" como si fuera un si/no.
+ */
+export interface RutaCumplimiento {
+  routeId: string;
+  routeName: string;
+  siteId: string;
+  siteName: string;
+  branchName: string;
+  patrols: number;
+  completed: number;
+  incomplete: number;
+  expired: number;
+  guards: number;
+  ratedPatrols: number;
+  compliancePct: number | null;
+  belowThreshold: number;
+  /** Lo que la ruta dice durar (`routes.estimated_duration_min`). */
+  estimatedDurationMin: number;
+  /**
+   * Promedio real de `closed_at - started_at`, en minutos, sobre las rondas
+   * COMPLETAS. `null` cuando ninguna del período llegó a completarse.
+   *
+   * Las incompletas y las vencidas quedan fuera a propósito: se abandonaron a
+   * mitad de camino, así que su duración mide hasta dónde se llegó y no cuánto
+   * toma la ruta. Promediadas junto a las demás acortan el número justo en las
+   * rutas que peor cumplen.
+   */
+  avgDurationMin: number | null;
+  /** Cuántas rondas completas sostienen ese promedio. Con 0, `avgDurationMin` es `null`. */
+  durationSamples: number;
+}
+
+export interface CumplimientoPorRuta {
+  range: RangoApi;
+  threshold: number;
+  routes: RutaCumplimiento[];
+}
+
 /* ------------------------------------------------------------------ */
 /* Topes de rango                                                      */
 /* ------------------------------------------------------------------ */
@@ -107,6 +151,12 @@ export const TOPE_DIAS = {
   evolucion: 731,
   ranking: 366,
   omitidos: 92,
+  /**
+   * Cumplimiento por ruta (#99): se agrega en vivo sobre `patrols` con el umbral
+   * vigente, igual que el ranking, asi que comparte su tope. No lo dibuja
+   * `StatsCharts` sino el panel del supervisor — ver `graficasLimitadas()`.
+   */
+  rutas: 366,
 } as const;
 
 export type ClaveGrafica = keyof typeof TOPE_DIAS;
@@ -127,6 +177,8 @@ export const MOTIVO_TOPE: Record<ClaveGrafica, string> = {
     'El ranking de guardias se calcula ronda por ronda con el umbral vigente, así que cubre hasta un año.',
   omitidos:
     'Los puntos omitidos se revisan escaneo por escaneo, que es el registro más pesado del sistema. Por eso cubren hasta tres meses.',
+  rutas:
+    'El cumplimiento por ruta se calcula ronda por ronda con el umbral vigente, así que cubre hasta un año.',
 };
 
 /** Nombre de cada grafica tal como se lee en pantalla. */
@@ -135,17 +187,37 @@ export const NOMBRE_GRAFICA: Record<ClaveGrafica, string> = {
   evolucion: 'Evolución en el tiempo',
   ranking: 'Ranking de guardias',
   omitidos: 'Puntos más omitidos',
+  rutas: 'Cumplimiento por ruta',
 };
 
 /**
- * Que graficas quedan fuera con un periodo de `dias`.
+ * Las graficas que dibuja `StatsCharts`, en el orden en que aparecen.
+ *
+ * `TOPE_DIAS` tiene una entrada mas —`rutas`, del panel del supervisor— y por
+ * eso esta lista se escribe a mano en vez de recorrer las claves: el aviso del
+ * filtro nombra lo que hay en ESA pantalla, y prometerle a un admin que "no se
+ * podrá ver el cumplimiento por ruta" cuando esa tarjeta no existe en su panel
+ * es mandarlo a buscar algo que no está.
+ */
+const GRAFICAS_DEL_PANEL: readonly ClaveGrafica[] = [
+  'cumplimiento',
+  'evolucion',
+  'ranking',
+  'omitidos',
+];
+
+/**
+ * Que graficas de `StatsCharts` quedan fuera con un periodo de `dias`.
  *
  * Se usa dos veces y las dos importan: en el filtro, para avisar ANTES de
  * aplicar el periodo; y en el componente de servidor, para no llegar a pedir lo
  * que la API va a rechazar.
+ *
+ * Las tarjetas del panel del supervisor no salen aca: cada una comprueba su
+ * propio tope contra `TOPE_DIAS` y avisa dentro de si misma.
  */
 export function graficasLimitadas(dias: number): ClaveGrafica[] {
-  return (Object.keys(TOPE_DIAS) as ClaveGrafica[]).filter((clave) => dias > TOPE_DIAS[clave]);
+  return GRAFICAS_DEL_PANEL.filter((clave) => dias > TOPE_DIAS[clave]);
 }
 
 const MS_POR_DIA = 86_400_000;

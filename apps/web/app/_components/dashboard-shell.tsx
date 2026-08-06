@@ -16,6 +16,10 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#rondas', icon: '◎', label: 'Rondas' },
     { href: '#informes-evolucion', icon: '∿', label: 'Evolución' },
     { href: '#informes', icon: '▤', label: 'Informes' },
+    // Vista de envios de correo para soporte (#221). Va pegada a Informes: la
+    // pregunta que trae al ADMIN aca es «¿le llegó el informe al cliente?», y se
+    // la hace justo despues de mirar el informe.
+    { href: '#envios', icon: '✉', label: 'Envíos de correo' },
     { href: '#reglas', icon: '⚙', label: 'Reglas' },
     { href: '#usuarios', icon: '♙', label: 'Usuarios' },
     { href: '#recintos', icon: '▦', label: 'Recintos' },
@@ -36,6 +40,11 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     { href: '#monitoreo', icon: '●', label: 'Monitoreo en vivo' },
     { href: '#informes-evolucion', icon: '∿', label: 'Evolución' },
     { href: '#informes', icon: '▤', label: 'Informes' },
+    // La revision por recinto del supervisor (#99) se dibuja despues de
+    // StatsCharts y sin esta entrada solo se llega scrolleando. El panel
+    // existia armado y sin montar; montarlo sin como llegar es el mismo
+    // problema una casilla mas adelante.
+    { href: '#supervisor', icon: '⌸', label: 'Revision de rondas' },
     // El supervisor tambien opera desde la app y tambien se le registra el
     // recorrido: su propio aviso tiene que estar a la vista, no escondido.
     { href: '#consentimiento', icon: '⌖', label: 'Mi ubicación' },

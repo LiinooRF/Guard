@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
+import type { Env } from '../config/env';
 import { DatabaseModule } from '../database/database.module';
 import { RegistroEnviosProveedorController } from './registro-envios-proveedor.controller';
 import { RegistroEnviosController } from './registro-envios.controller';
@@ -8,6 +10,7 @@ import {
   registroCorrelacionRedisProvider,
 } from './registro-envios.correlacion';
 import { RegistroEnviosService } from './registro-envios.service';
+import { TRADUCTOR_WEBHOOK, crearTraductorWebhook } from './registro-envios.traductor';
 
 /**
  * Registro de envios de correo y estado por notificacion (#44).
@@ -25,6 +28,9 @@ import { RegistroEnviosService } from './registro-envios.service';
  * NO registra la conexion raiz de BullMQ: este modulo no encola nada. El cliente
  * Redis que si necesita es el del indice de correlacion, y es propio —mismo
  * criterio que AUTH_REDIS— para no depender del ciclo de vida de las colas.
+ *
+ * El traductor del webhook se arma en la fabrica, igual que PUSH_PROVIDER en
+ * PushModule: el controlador pide la interfaz y el entorno decide cual llega.
  */
 @Module({
   imports: [DatabaseModule],
@@ -33,6 +39,15 @@ import { RegistroEnviosService } from './registro-envios.service';
     registroCorrelacionRedisProvider,
     RegistroCorrelacionService,
     RegistroEnviosService,
+    {
+      provide: TRADUCTOR_WEBHOOK,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        crearTraductorWebhook({
+          NOTIF_WEBHOOK_DRIVER: config.get('NOTIF_WEBHOOK_DRIVER', { infer: true }),
+          NOTIF_WEBHOOK_SECRET: config.get('NOTIF_WEBHOOK_SECRET', { infer: true }),
+        }),
+    },
   ],
   // Se exporta porque quien escribe el registro es otro: MailQueueService al
   // encolar y MailProcessor al enviar o fallar.

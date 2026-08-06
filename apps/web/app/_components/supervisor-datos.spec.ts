@@ -12,21 +12,23 @@
 // implicito el `typecheck` del panel se cae segun donde este instalado.
 import { describe, expect, it } from '@jest/globals';
 
-import type { PuntoOmitido, RecintoCumplimiento } from './stats-charts-data';
+import type { PuntoOmitido, RecintoCumplimiento, RutaCumplimiento } from './stats-charts-data';
 import {
   TOPE_PUNTOS_OMITIDOS,
   TOPE_RONDAS_LISTADO,
-  agruparPorRuta,
+  TOPE_RUTAS,
   clasificarOmisiones,
   elegirRecinto,
   enlaceRecinto,
-  esCerrada,
   esUuid,
   etiquetaEstado,
+  excesoDeDuracion,
   leerReglasOmision,
   listadoTruncado,
   omisionesTruncadas,
   resumirOmisiones,
+  rutasTruncadas,
+  type RecintoDelCatalogo,
   type RondaSupervisor,
 } from './supervisor-datos';
 
@@ -75,6 +77,26 @@ function recinto(parcial: Partial<RecintoCumplimiento> & { siteId: string }): Re
   };
 }
 
+function ruta(parcial: Partial<RutaCumplimiento> & { routeId: string }): RutaCumplimiento {
+  return {
+    routeName: `Ruta ${parcial.routeId}`,
+    siteId: '11111111-2222-4333-8444-555555555555',
+    siteName: 'Recinto Norte',
+    branchName: 'Sucursal Centro',
+    patrols: 10,
+    completed: 8,
+    incomplete: 1,
+    expired: 1,
+    guards: 2,
+    ratedPatrols: 10,
+    compliancePct: 90,
+    belowThreshold: 0,
+    estimatedDurationMin: 45,
+    avgDurationMin: 45,
+    ...parcial,
+  };
+}
+
 const UUID_A = '11111111-2222-4333-8444-555555555555';
 const UUID_B = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
@@ -82,76 +104,58 @@ const UUID_B = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 /* Cumplimiento por ruta                                               */
 /* ------------------------------------------------------------------ */
 
-describe('agruparPorRuta', () => {
-  it('promedia solo las rondas terminadas, no las que estan en curso', () => {
-    // La ronda en curso trae porcentaje PARCIAL. Si entrara al promedio, una
-    // ruta se veria peor de lo que es solo por estar ejecutandose ahora.
-    const rutas = agruparPorRuta(
-      [
-        ronda({ routeName: 'Perímetro', status: 'completada', compliancePct: 100 }),
-        ronda({ routeName: 'Perímetro', status: 'incompleta', compliancePct: 50 }),
-        ronda({ routeName: 'Perímetro', status: 'en_curso', compliancePct: 20 }),
-        ronda({ routeName: 'Perímetro', status: 'pendiente', compliancePct: null }),
-      ],
-      70,
-    );
-
-    expect(rutas).toHaveLength(1);
-    expect(rutas[0]?.rondas).toBe(4);
-    expect(rutas[0]?.cerradas).toBe(2);
-    expect(rutas[0]?.abiertas).toBe(2);
-    expect(rutas[0]?.evaluadas).toBe(2);
-    expect(rutas[0]?.promedio).toBe(75);
-    expect(rutas[0]?.bajoUmbral).toBe(1);
+describe('excesoDeDuracion', () => {
+  it('dice cuantos minutos se pasa la ruta de lo que declara durar', () => {
+    expect(
+      excesoDeDuracion(ruta({ routeId: 'a', estimatedDurationMin: 45, avgDurationMin: 62.4 })),
+    ).toBe(17.4);
   });
 
-  it('ordena de peor a mejor y deja al final las rutas sin dato', () => {
-    const rutas = agruparPorRuta(
-      [
-        ronda({ routeName: 'Buena', compliancePct: 95 }),
-        ronda({ routeName: 'Sin cerrar', status: 'pendiente', compliancePct: null }),
-        ronda({ routeName: 'Mala', compliancePct: 40 }),
-      ],
-      70,
-    );
-
-    expect(rutas.map((ruta) => ruta.ruta)).toEqual(['Mala', 'Buena', 'Sin cerrar']);
-    expect(rutas[2]?.promedio).toBeNull();
+  it('una ruta que termina antes devuelve negativo, no cero', () => {
+    // Tambien dice algo: una ruta que se hace en la mitad del tiempo estimado o
+    // esta mal medida, o le faltan puntos.
+    expect(
+      excesoDeDuracion(ruta({ routeId: 'b', estimatedDurationMin: 60, avgDurationMin: 40 })),
+    ).toBe(-20);
   });
 
-  it('sin umbral no marca ninguna ronda bajo umbral, en vez de suponer uno', () => {
-    const rutas = agruparPorRuta([ronda({ routeName: 'Perímetro', compliancePct: 10 })], null);
-    expect(rutas[0]?.promedio).toBe(10);
-    expect(rutas[0]?.bajoUmbral).toBeNull();
+  it('sin duracion real no compara: ninguna ronda del periodo llego a iniciarse', () => {
+    // Es el caso de un recinto cuyas rondas del periodo quedaron todas
+    // `vencida`: nunca hubo `started_at`, asi que el servidor manda null.
+    expect(excesoDeDuracion(ruta({ routeId: 'c', avgDurationMin: null }))).toBeNull();
   });
 
-  it('cuenta guardias distintos por ruta', () => {
-    const rutas = agruparPorRuta(
-      [
-        ronda({ routeName: 'Perímetro', guardName: 'Ana', compliancePct: 80 }),
-        ronda({ routeName: 'Perímetro', guardName: 'Ana', compliancePct: 60 }),
-        ronda({ routeName: 'Perímetro', guardName: 'Beto', compliancePct: 40 }),
-      ],
-      70,
-    );
-    expect(rutas[0]?.guardias).toBe(2);
-    expect(rutas[0]?.promedio).toBe(60);
+  it('una ruta sin duracion declarada no se compara contra cero', () => {
+    // `routes.estimated_duration_min` es NOT NULL y CHECK > 0 en la migracion,
+    // pero el dato llega por la red. Un 0 aca dejaria TODA ruta marcada como
+    // pasada de tiempo y el aviso dejaria de significar nada.
+    expect(
+      excesoDeDuracion(ruta({ routeId: 'd', estimatedDurationMin: 0, avgDurationMin: 30 })),
+    ).toBeNull();
+    expect(
+      excesoDeDuracion(ruta({ routeId: 'e', estimatedDurationMin: Number.NaN, avgDurationMin: 30 })),
+    ).toBeNull();
   });
 
   it('redondea a un decimal, como el resto del panel', () => {
-    const rutas = agruparPorRuta(
-      [
-        ronda({ routeName: 'Perímetro', compliancePct: 33 }),
-        ronda({ routeName: 'Perímetro', compliancePct: 34 }),
-        ronda({ routeName: 'Perímetro', compliancePct: 34 }),
-      ],
-      null,
-    );
-    expect(rutas[0]?.promedio).toBe(33.7);
+    expect(
+      excesoDeDuracion(ruta({ routeId: 'f', estimatedDurationMin: 30, avgDurationMin: 30.06 })),
+    ).toBe(0.1);
+  });
+});
+
+describe('rutasTruncadas', () => {
+  it('avisa cuando la respuesta vino tocando el tope y puede faltar una ruta', () => {
+    const lleno = Array.from({ length: TOPE_RUTAS }, (_, indice) => ruta({ routeId: `r${indice}` }));
+    expect(rutasTruncadas(lleno)).toBe(true);
+    expect(rutasTruncadas(lleno.slice(1))).toBe(false);
+    expect(rutasTruncadas([])).toBe(false);
   });
 
-  it('un listado vacio no produce rutas ni revienta', () => {
-    expect(agruparPorRuta([], 70)).toEqual([]);
+  it('el tope pedido es el maximo que acepta el DTO del endpoint', () => {
+    // `TopQueryDto.limit` es `@Max(50)`: pedir mas devuelve 400. Si ese maximo
+    // cambia, esta prueba y el DTO tienen que moverse juntos.
+    expect(TOPE_RUTAS).toBe(50);
   });
 });
 
@@ -163,13 +167,15 @@ describe('listadoTruncado', () => {
   });
 });
 
-describe('esCerrada y etiquetaEstado', () => {
-  it('reconoce los mismos estados cerrados que la API', () => {
-    expect(esCerrada({ status: 'completada' })).toBe(true);
-    expect(esCerrada({ status: 'incompleta' })).toBe(true);
-    expect(esCerrada({ status: 'vencida' })).toBe(true);
-    expect(esCerrada({ status: 'en_curso' })).toBe(false);
-    expect(esCerrada({ status: 'pendiente' })).toBe(false);
+describe('etiquetaEstado', () => {
+  it('traduce los estados de la base, que es lo que responde la API', () => {
+    // El listado de rondas trae `completada` / `en_curso`, no `completed` /
+    // `in_progress`. Un mapa con las claves en ingles no revienta: deja pasar el
+    // valor crudo y nadie lo nota hasta que se lee la pantalla.
+    expect(etiquetaEstado('completada')).toBe('Completada');
+    expect(etiquetaEstado('incompleta')).toBe('Incompleta');
+    expect(etiquetaEstado('vencida')).toBe('Vencida');
+    expect(etiquetaEstado('pendiente')).toBe('Pendiente');
   });
 
   it('un estado desconocido se muestra tal cual, no como vacio', () => {
@@ -343,6 +349,20 @@ describe('elegirRecinto', () => {
     const elegido = elegirRecinto([recinto({ siteId: UUID_A, siteName: 'Bodega' })], '');
     expect(elegido?.id).toBe(UUID_A);
     expect(elegido?.nombre).toBe('Bodega');
+    expect(elegido?.confirmado).toBe(true);
+  });
+
+  it('acepta el catalogo que devuelve /supervisor/sites, no solo el de las graficas', () => {
+    // El catalogo de la pantalla salio primero de `compliance-by-site` —solo los
+    // recintos CON rondas en el periodo— y hoy sale de `/supervisor/sites`, que
+    // devuelve los asignados. Por eso el parametro es estructural: un supervisor
+    // con cinco recintos y dos con actividad tiene que poder elegir los cinco.
+    const desdeAsignados: RecintoDelCatalogo[] = [
+      { siteId: UUID_A, siteName: 'Bodega sin rondas', branchName: 'Sucursal Centro' },
+    ];
+    const elegido = elegirRecinto(desdeAsignados, '');
+    expect(elegido?.id).toBe(UUID_A);
+    expect(elegido?.nombre).toBe('Bodega sin rondas');
     expect(elegido?.confirmado).toBe(true);
   });
 

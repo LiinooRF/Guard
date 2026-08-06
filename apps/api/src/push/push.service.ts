@@ -105,6 +105,15 @@ export class PushService {
    * trabajan en el escritorio y solo tienen correo. Encolarles un job seria
    * dejar basura retenida en Redis para siempre.
    *
+   * Y SE SALTAN LOS DADOS DE BAJA (#43). Desactivar a una persona le revoca las
+   * sesiones (AdminService.setUserActive) pero no le quita el token: la app
+   * sigue instalada en el telefono y el token sigue vivo, asi que sin este
+   * filtro un guardia despedido seguiria recibiendo en su pantalla bloqueada el
+   * recinto y la hora de las rondas de la empresa. Es el mismo `is_active` que
+   * ya filtra SQL_DESTINATARIOS en alertas-ronda.service.ts, y PushProcessor lo
+   * vuelve a comprobar al entregar —esa segunda comprobacion es la que cubre lo
+   * que ya estaba encolado cuando se dio la baja—.
+   *
    * NO PROPAGA ERRORES. Este metodo lo llama el camino que registra un panico;
    * si Redis esta caido, el evento debe quedar guardado igual y el correo debe
    * salir igual. Perder el push es degradar el aviso; perder el evento es
@@ -126,9 +135,12 @@ export class PushService {
       const filas = await this.tenantContext.manager.query<
         Array<{ tenant_id: string; user_id: string }>
       >(
-        `SELECT DISTINCT app_tenant_id()::text AS tenant_id, user_id
-         FROM device_tokens
-         WHERE tenant_id = app_tenant_id() AND user_id = ANY($1::uuid[])`,
+        `SELECT DISTINCT app_tenant_id()::text AS tenant_id, dispositivo.user_id
+         FROM device_tokens dispositivo
+         JOIN users usuario ON usuario.id = dispositivo.user_id
+         WHERE dispositivo.tenant_id = app_tenant_id()
+           AND dispositivo.user_id = ANY($1::uuid[])
+           AND usuario.is_active`,
         [destinatarios],
       );
 

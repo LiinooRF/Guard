@@ -228,11 +228,11 @@ describe('traduccion de valores del historial', () => {
     expect(describeValue(false, null)).toBe('no');
   });
 
-  it('gpsSharingRequired se lee como obligatorio, no como interruptor', () => {
+  it('gpsSharingMandatory se lee como obligatorio, no como interruptor', () => {
     // La regla decide OBLIGATORIO vs OPCIONAL. Ponerla en "no" no significa que
     // se deje de registrar la ubicacion: eso lo decide gpsTrackingEnabled. El
     // texto sale del catalogo justamente para que nadie lo lea al reves.
-    expect(describeChange('reglas', 'gpsSharingRequired', true, false).summary).toBe(
+    expect(describeChange('reglas', 'gpsSharingMandatory', true, false).summary).toBe(
       'Exigir permiso de ubicacion: si -> no',
     );
     expect(describeChange('reglas', 'gpsTrackingEnabled', true, false).summary).toBe(

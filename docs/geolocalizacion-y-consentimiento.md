@@ -39,9 +39,21 @@ datos**, no con una promesa de la app:
 3. Toda fila cuelga de una `patrol_id` con `ON DELETE CASCADE`: no existe una
    traza sin ronda. Si no hay ronda en curso, no hay dónde guardar.
 
-Además, la regla de tenant `gpsSharingRequired` es el interruptor de la empresa:
-si está en `false`, el módulo no acumula traza continua aunque el trabajador
-haya consentido. La proporcionalidad la fija la empresa, no el dispositivo.
+Además hay **dos** reglas de empresa, y confundirlas ya costó tres errores en
+producción (aviso legal que mentía, PDF sin trayecto, tablero en vivo que
+escondía guardias). No son la misma:
+
+| Regla | Qué decide | En `false` |
+|---|---|---|
+| `gpsTrackingEnabled` | El **interruptor**: si se registra el recorrido. | No se guarda **ni un punto de nadie**, haya consentido o no. |
+| `gpsSharingMandatory` | Obligatorio vs **opcional**. | Compartir es **voluntario**: negarse no impide trabajar, y a quien acepta **se le registra el recorrido igual**. |
+
+Es decir: **opcional no es apagado**. El único que apaga la traza es
+`gpsTrackingEnabled`. La proporcionalidad la fija la empresa, no el dispositivo.
+
+> `gpsSharingMandatory` se llamó `gpsSharingRequired` hasta el renombre; el
+> historial de configuración anterior a esa fecha sigue guardado bajo el nombre
+> viejo (ver `docs/` de auditoría de configuración).
 
 La frecuencia del muestreo la fija `gpsTrackIntervalSeconds` (default 60 s) y la
 app la lee de `GET /api/geo/consent`: el intervalo no se codifica en el cliente.

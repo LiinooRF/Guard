@@ -8,7 +8,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * La traza y el consentimiento ya existian (#15, #134, migracion 1724511600000).
  * Lo que NO existia es la parte que el issue pide: que "compartir ubicacion
  * obligatorio u opcional" tenga efecto en el SERVIDOR al iniciar la ronda. Hasta
- * hoy `gpsSharingRequired` solo decidia si un escaneo sin fix se marcaba como
+ * hoy `gpsSharingMandatory` —que cuando se escribio esta migracion se llamaba
+ * `gpsSharingRequired`— solo decidia si un escaneo sin fix se marcaba como
  * anomalia; nadie impedia arrancar una ronda con el GPS apagado.
  *
  * DOS TABLAS Y POR QUE SON DOS

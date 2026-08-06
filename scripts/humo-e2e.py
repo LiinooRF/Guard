@@ -5,8 +5,26 @@ Prueba end-to-end contra un despliegue REAL. No mockea nada.
     python scripts/humo-e2e.py                       # contra staging
     VOXIA_BASE=https://otro.dominio python scripts/humo-e2e.py
 
-Variables: VOXIA_BASE (por defecto staging) y VOXIA_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo).
+Variables: VOXIA_BASE (por defecto staging), VOXIA_DEMO_PASSWORD (la misma
+DEMO_PASSWORD con que se sembraron las cuentas demo) y VOXIA_HUMO_ESTRICTO
+(ver "lo que no se pudo probar").
+
+LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
+es una comprobacion que pasa, y este script llego a saltarse cuatro en silencio
+—un renombre de regla que nadie propago hasta aca— mientras el resumen seguia
+diciendo "0 fallas". Por eso cada `omitido()` declara POR QUE no se pudo:
+
+  POR_EL_DESPLIEGUE  ese despliegue no da la condicion y es legitimo (no hay
+                     rondas a esta hora, el modulo esta apagado en el plan de
+                     esa empresa). Se lista al final y NO cuenta como falla.
+  POR_LA_PRUEBA      la prueba no pudo montar algo que ella misma controla, o
+                     la API le contesto algo que no esperaba. Eso no es "el
+                     despliegue es asi": es cobertura perdida. Devuelve 1.
+
+Una omision sin clasificar cuenta como POR_LA_PRUEBA: falla cerrada, igual que
+las politicas de RLS. Y `VOXIA_HUMO_ESTRICTO=1` hace que hasta lo ambiental
+cuente — asi conviene correrla contra staging sembrado, donde no hay ninguna
+razon legitima para saltarse nada.
 
 POR QUE EXISTE: dos bugs llegaron a produccion con CI en verde y 729 tests
 pasando —un SELECT de una columna que no existe y un volumen que el proceso no
@@ -56,9 +74,20 @@ CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
 # sumo uno, se reusa y queda desactivado.
 RECINTO_DESCARTABLE = 'Recinto descartable de la prueba e2e (no operativo)'
 
+# Con todo sembrado y todos los modulos encendidos —staging— no hay ninguna
+# razon legitima para saltarse una comprobacion, y ahi conviene que hasta lo
+# ambiental salga en rojo. Apagado por defecto porque esta misma prueba corre
+# contra despliegues con modulos apagados A PROPOSITO, y un rojo que todos saben
+# que no significa nada es como se pierde una prueba entera.
+ESTRICTO = os.environ.get('VOXIA_HUMO_ESTRICTO', '').strip().lower() in ('1', 'true', 'si')
+
+# Por que no se pudo probar. Es lo unico que decide si la corrida sigue en verde.
+POR_EL_DESPLIEGUE = 'despliegue'   # ese despliegue no da la condicion, y es legitimo
+POR_LA_PRUEBA = 'prueba'           # la prueba perdio cobertura: cuenta como falla
+
 ok = 0
 fallos = []
-omitidos = []
+omitidos = []   # (nombre, motivo, cuenta_como_falla)
 
 
 def check(nombre, condicion, detalle=''):
@@ -71,22 +100,39 @@ def check(nombre, condicion, detalle=''):
         print('  FALLA %s  %s' % (nombre, detalle))
 
 
-def omitido(nombre, motivo):
+def omitido(nombre, motivo, causa=None):
     """
-    Comprobacion que no se pudo ejecutar por el ESTADO del despliegue, no por un
-    fallo del producto. Se cuenta aparte y se lista al final: un resumen que dice
-    "todo OK" escondiendo lo que ni siquiera se intento es peor que una falla.
+    Comprobacion que no se ejecuto. Se cuenta aparte y se lista al final: un
+    resumen que dice "todo OK" escondiendo lo que ni siquiera se intento es peor
+    que una falla.
 
     `nombre` acepta una LISTA. Cuando se salta un bloque entero hay que pasar los
     nombres de todas las comprobaciones que ese bloque iba a hacer: si un bloque
     de catorce comprobaciones se anotara como un solo "sin probar", el recuento
     final diria 1 donde no se probaron 14, que es justo lo que este contador
     existe para evitar.
+
+    `causa` decide el codigo de salida y por eso no tiene default util:
+
+      POR_EL_DESPLIEGUE  la condicion no existe en ESE despliegue y esta bien
+                         que no exista. No cuenta como falla.
+      POR_LA_PRUEBA      la prueba no pudo montar una condicion que ella misma
+                         controla, o la API le contesto algo que no esperaba.
+                         Cuenta como falla.
+
+    Sin clasificar se trata como POR_LA_PRUEBA. Es a proposito y es la misma
+    regla que las politicas de RLS: lo que nadie declaro se cuenta como problema,
+    no como permiso. Quien agregue un `omitido()` nuevo tiene que decidir, y el
+    que se olvide se entera por el rojo, no seis semanas despues.
     """
+    if causa is None:
+        motivo = '%s — y la omision no declara causa' % motivo
+    cuenta = ESTRICTO or causa != POR_EL_DESPLIEGUE
+    etiqueta = 'FALTA' if cuenta else '--  '
     nombres = nombre if isinstance(nombre, (list, tuple)) else [nombre]
     for uno in nombres:
-        omitidos.append((uno, motivo))
-        print('  --   %s  (no se pudo probar: %s)' % (uno, motivo))
+        omitidos.append((uno, motivo, cuenta))
+        print('  %s %s  (no se pudo probar: %s)' % (etiqueta, uno, motivo))
 
 
 class Sesion:
@@ -222,7 +268,7 @@ if params:
 else:
     omitido(['cada parametro trae tipo, default y descripcion',
              'el catalogo dice en que niveles se configura cada parametro'],
-            'el catalogo de parametros vino vacio')
+            'el catalogo de parametros vino vacio', POR_LA_PRUEBA)
 
 s, reglas = admin.pedir('GET', '/rules/admin')
 check('reglas del tenant responden', s == 200, 'HTTP %s' % s)
@@ -242,7 +288,8 @@ print()
 print('=' * 72)
 print('3. ESTADISTICAS (#89) y GRAFICAS (#87)')
 print('=' * 72)
-for nombre in ['compliance-by-site', 'evolution', 'missed-checkpoints', 'guard-ranking']:
+for nombre in ['compliance-by-site', 'compliance-by-route', 'evolution',
+               'missed-checkpoints', 'guard-ranking']:
     s, d = admin.pedir('GET', '/stats/charts/%s' % nombre)
     check('grafica %s' % nombre, s == 200, 'HTTP %s %s' % (s, str(d)[:90]))
 
@@ -282,7 +329,7 @@ if lista_sitios:
           s in (403, 404), 'HTTP %s — si es 200 hay FUGA' % s)
 else:
     omitido('un GUARDIA no lee la bandeja de terreno de un recinto (ni el propio ni el ajeno)',
-            'la empresa no tiene ningun recinto')
+            'la empresa no tiene ningun recinto', POR_EL_DESPLIEGUE)
 
 inventado = str(uuid.uuid4())
 s, _ = admin.pedir('GET', '/evidence/patrols/%s/photos' % inventado)
@@ -388,7 +435,7 @@ foto_id = None
 if not event_id:
     omitido(FOTOS_DE_LA_NOVEDAD + ['el admin obtiene el enlace firmado']
             + ENLACE_FIRMADO + ['la verificacion de integridad dice que esta intacta'],
-            'la novedad del guardia no se pudo registrar')
+            'la novedad del guardia no se pudo registrar', POR_LA_PRUEBA)
 if event_id:
     s, foto = subir_foto(guardia, '/evidence/events/%s/photos' % event_id, png_minimo(7))
     check('el guardia sube la foto de su novedad', s in (200, 201),
@@ -408,14 +455,14 @@ if event_id:
 if event_id and not foto_id:
     omitido(['el admin obtiene el enlace firmado'] + ENLACE_FIRMADO
             + ['la verificacion de integridad dice que esta intacta'],
-            'no quedo ninguna foto subida a la que pedirle el enlace')
+            'no quedo ninguna foto subida a la que pedirle el enlace', POR_LA_PRUEBA)
 if foto_id:
     s, enlace = admin.pedir('GET', '/evidence/photos/%s/link' % foto_id)
     check('el admin obtiene el enlace firmado', s == 200 and 'url' in (enlace or {}),
           'HTTP %s %s' % (s, str(enlace)[:100]))
     url = (enlace or {}).get('url', '')
     if not url:
-        omitido(ENLACE_FIRMADO, 'la respuesta no trajo el enlace firmado')
+        omitido(ENLACE_FIRMADO, 'la respuesta no trajo el enlace firmado', POR_LA_PRUEBA)
     if url:
         anon = urllib.request.build_opener()  # SIN sesion, a proposito
         try:
@@ -465,7 +512,7 @@ else:
     # Un `print` suelto no lo cuenta nadie: sin rondas estas dos no se ejecutan
     # y tienen que aparecer en el recuento final como lo que son.
     omitido(['el PDF de una ronda se genera', 'el GUARDIA no puede bajar informes'],
-            'no hay rondas en el resumen de la empresa')
+            'no hay rondas en el resumen de la empresa', POR_EL_DESPLIEGUE)
 
 # --------------------------------------------------------------------------
 # DE AQUI EN ADELANTE: lo que entro despues y la prueba no cubria.
@@ -527,7 +574,7 @@ CASCADA_BORDES = [
 
 if not SITIO or not PUNTO or not param_punto:
     omitido(CASCADA_LECTURA + CASCADA_ESCRITURA + CASCADA_BORDES,
-            'faltan recinto, punto o un parametro configurable por punto')
+            'faltan recinto, punto o un parametro configurable por punto', POR_EL_DESPLIEGUE)
 else:
     LLAVE = param_punto['key']
     print('     (parametro de prueba: %s)' % LLAVE)
@@ -553,7 +600,7 @@ else:
 
     if valor_sitio is None or valor_punto is None:
         omitido(CASCADA_ESCRITURA,
-                'el catalogo no ofrece dos valores validos distintos del heredado')
+                'el catalogo no ofrece dos valores validos distintos del heredado', POR_LA_PRUEBA)
     else:
         try:
             s, tras_sitio = admin.pedir(
@@ -657,7 +704,8 @@ else:
     if not fuera_de_nivel:
         omitido(['una regla que no se configura por punto se rechaza ahi',
                  '  y el rechazo dice que es por el NIVEL, no por el rango'],
-                'el catalogo no trae ninguna regla que el punto de control no configure')
+                'el catalogo no trae ninguna regla que el punto de control no configure',
+                POR_LA_PRUEBA)
     else:
         s, motivo = admin.pedir(
             'PUT', '/rules/admin/checkpoints/%s' % PUNTO,
@@ -698,7 +746,7 @@ if modulos:
           str(modulos[0])[:150])
 else:
     omitido('cada modulo dice que hace y que deja de verse al apagarlo',
-            'el catalogo de modulos vino vacio')
+            'el catalogo de modulos vino vacio', POR_LA_PRUEBA)
 
 s, vista_g = guardia.pedir('GET', '/features')
 check('el guardia sabe que modulos tiene prendidos su empresa',
@@ -739,7 +787,7 @@ else:
     omitido(['el admin no puede encender lo que su plan no incluye',
              'el rechazo nombra el modulo como lo conoce el cliente',
              'el intento rechazado no dejo nada escrito'],
-            'la licencia de esta empresa incluye todos los modulos')
+            'la licencia de esta empresa incluye todos los modulos', POR_EL_DESPLIEGUE)
 
 # Apagar y volver a prender uno que SI esta en la licencia.
 apagable = next((k for k in editables if efectivos.get(k) is True), None)
@@ -747,7 +795,7 @@ if apagable is None:
     omitido(['el admin apaga un modulo incluido en su plan',
              'queda registrado que la decision fue del administrador',
              'la prueba deja los modulos como los encontro'],
-            'no hay ningun modulo prendido y editable')
+            'no hay ningun modulo prendido y editable', POR_EL_DESPLIEGUE)
 else:
     try:
         s, tras = admin.pedir('PUT', '/features/admin', dict(guardado, **{apagable: False}))
@@ -820,7 +868,7 @@ PUBLICACION_DEPENDIENTES = [
 # desde la app. Una prueba de humo que revoca eso en cada corrida no se puede
 # correr dos veces, que era justamente el criterio.
 #
-# Mismo patron que la seccion de gpsSharingRequired mas abajo: leer, tocar,
+# Mismo patron que la seccion de gpsSharingMandatory mas abajo: leer, tocar,
 # restaurar en `finally`, y comprobar despues que quedo igual.
 politica_id = None
 s, reglas_consent = admin.pedir('GET', '/rules/admin')
@@ -838,7 +886,7 @@ try:
         # abajo, porque politica_id se queda en None: aca solo va la publicacion.
         omitido(PUBLICACION_DEPENDIENTES[0],
                 'no se pudo apagar la reaceptacion: publicar habria revocado el '
-                'consentimiento de ubicacion de toda la empresa')
+                'consentimiento de ubicacion de toda la empresa', POR_LA_PRUEBA)
     else:
         s, publicado = admin.pedir('POST', '/consent/policies', {
             'version': version,
@@ -897,7 +945,7 @@ if politica_id:
     check('  y como maximo uno del historial figura como vigente',
           vigentes <= 1, 'vigentes: %d' % vigentes)
 else:
-    omitido(PUBLICACION_DEPENDIENTES[1:], 'no se pudo publicar el aviso')
+    omitido(PUBLICACION_DEPENDIENTES[1:], 'no se pudo publicar el aviso', POR_LA_PRUEBA)
 
 s, _ = admin.pedir('POST', '/consent/policies', {
     'version': 'e2e-corto-%s' % uuid.uuid4().hex[:6], 'body': 'Se registra el GPS.',
@@ -931,7 +979,7 @@ s, _ = guardia.pedir('GET', '/consent/policies')
 check('el GUARDIA no publica ni administra avisos', s == 403, 'HTTP %s' % s)
 
 # --- El aviso tiene que decir la VERDAD sobre si se registra ubicacion -------
-# gpsSharingRequired decide obligatorio vs OPCIONAL, y gpsTrackingEnabled decide
+# gpsSharingMandatory decide obligatorio vs OPCIONAL, y gpsTrackingEnabled decide
 # encendido vs apagado. Confundirlos ya llego a produccion tres veces, en tres
 # modulos distintos. Aca se comprueba contra el despliegue: se mueve cada una por
 # separado y se mira que dicen el aviso legal y el tablero en vivo.
@@ -945,10 +993,15 @@ s, reglas_actuales = admin.pedir('GET', '/rules/admin')
 overrides_empresa = cuerpo_dict(reglas_actuales).get('overrides') or {}
 try:
     s, _ = admin.pedir('PUT', '/rules/admin', dict(
-        overrides_empresa, gpsTrackingEnabled=True, gpsSharingRequired=False))
+        overrides_empresa, gpsTrackingEnabled=True, gpsSharingMandatory=False))
     if s != 200:
+        # El motivo dice el HTTP a proposito. Cuando el renombre de esta misma
+        # regla no llego hasta aca, el PUT empezo a devolver 400 (el schema del
+        # PUT es strict(): una clave que ya no existe es 400, no un descarte) y
+        # el motivo a secas no dejaba ver que lo roto era la prueba.
         omitido(AVISO_DICE_LA_VERDAD,
-                'no se pudo dejar la empresa con el seguimiento encendido')
+                'no se pudo dejar la empresa con el seguimiento encendido: HTTP %s' % s,
+                POR_LA_PRUEBA)
     else:
         s, aviso3 = guardia.pedir('GET', '/consent/policy')
         check('con la ubicacion OPCIONAL el aviso sigue diciendo que SI se registra',
@@ -964,10 +1017,10 @@ try:
                   str([r.get('gpsEnabled') for r in rondas])[:80])
         else:
             omitido('el tablero en vivo muestra el seguimiento encendido',
-                    'no hay rondas en curso ni programadas ahora')
+                    'no hay rondas en curso ni programadas ahora', POR_EL_DESPLIEGUE)
 
         s, _ = admin.pedir('PUT', '/rules/admin', dict(
-            overrides_empresa, gpsTrackingEnabled=False, gpsSharingRequired=True))
+            overrides_empresa, gpsTrackingEnabled=False, gpsSharingMandatory=True))
         s2, aviso4 = guardia.pedir('GET', '/consent/policy')
         check('con el seguimiento APAGADO el aviso dice que NO se registra, aunque la ubicacion sea obligatoria',
               s == 200 and s2 == 200
@@ -984,7 +1037,7 @@ try:
                   str([(r.get('gpsEnabled'), r.get('position')) for r in rondas2])[:100])
         else:
             omitido('el tablero en vivo deja de mostrar posiciones',
-                    'no hay rondas en curso ni programadas ahora')
+                    'no hay rondas en curso ni programadas ahora', POR_EL_DESPLIEGUE)
 finally:
     admin.pedir('PUT', '/rules/admin', dict(overrides_empresa))
 
@@ -1015,7 +1068,7 @@ ALERTAS_BLOQUE = [
 ]
 ALERTAS_DE_LA_MIA = ALERTAS_BLOQUE[5:9] + ['atender sin decir que se hizo se rechaza']
 if not SITIO:
-    omitido(ALERTAS_BLOQUE, 'no hay recintos')
+    omitido(ALERTAS_BLOQUE, 'no hay recintos', POR_EL_DESPLIEGUE)
 else:
     # Una novedad grave nueva en cada corrida genera una alerta nueva: asi el
     # "atender" se puede probar dos veces seguidas sin depender de que haya
@@ -1070,7 +1123,7 @@ else:
         check('  y ya no aparece entre lo pendiente', s == 200 and not sigue,
               'HTTP %s, sigue %d veces' % (s, len(sigue)))
     else:
-        omitido(ALERTAS_DE_LA_MIA, 'la novedad grave no genero alerta')
+        omitido(ALERTAS_DE_LA_MIA, 'la novedad grave no genero alerta', POR_LA_PRUEBA)
 
     s, _ = supervisor.pedir('POST', '/supervisor/alerts/%s/attend' % uuid.uuid4(),
                             {'comment': 'Atendida por la prueba de humo automatizada'})
@@ -1117,7 +1170,7 @@ if SITIO:
           s == 200 and isinstance(propia, bytes) and propia[:2] == b'PK',
           'HTTP %s' % s)
 else:
-    omitido('el supervisor exporta su recinto asignado', 'no hay recintos')
+    omitido('el supervisor exporta su recinto asignado', 'no hay recintos', POR_EL_DESPLIEGUE)
 
 s, _ = guardia.pedir('GET', '/reports/excel')
 check('el GUARDIA no baja la planilla de la empresa', s == 403, 'HTTP %s' % s)
@@ -1135,7 +1188,7 @@ if isinstance(envios, list) and envios:
           str(envios[0])[:150])
 else:
     omitido('cada envio dice plantilla, destinatario y en que quedo',
-            'todavia no hay correos registrados en esta empresa')
+            'todavia no hay correos registrados en esta empresa', POR_EL_DESPLIEGUE)
 
 s, _ = admin.pedir('GET', '/notif/envios?desde=2026-01-01')
 check('filtrar por fechas sin decir el recinto se rechaza (el dia es el del recinto)',
@@ -1151,7 +1204,8 @@ if patrols:
           s == 200 and d.get('patrolId') == patrols[0]['id'] and isinstance(d.get('envios'), list),
           'HTTP %s %s' % (s, str(d)[:120]))
 else:
-    omitido('se puede saber si le llego el informe de una ronda al cliente', 'no hay rondas')
+    omitido('se puede saber si le llego el informe de una ronda al cliente', 'no hay rondas',
+            POR_EL_DESPLIEGUE)
 
 s, _ = admin.pedir('GET', '/notif/rondas/%s/envios' % uuid.uuid4())
 check('preguntar por una ronda inexistente da 404 y no filtra', s == 404, 'HTTP %s' % s)
@@ -1198,7 +1252,7 @@ else:
              'el admin ve que se cae, en que version y en que telefono',
              'un reporte de caida que trae datos de una persona se rechaza',
              'el SUPERVISOR no ve el resumen de caidas de toda la empresa'],
-            'el modulo de reporte de caidas esta apagado en esta empresa')
+            'el modulo de reporte de caidas esta apagado en esta empresa', POR_EL_DESPLIEGUE)
 
 print()
 print('=' * 72)
@@ -1221,7 +1275,7 @@ if en_vivo:
 else:
     omitido(['cada ronda del tablero muestra su avance sobre los puntos esperados',
              'sin seguimiento encendido el tablero no muestra ninguna posicion'],
-            'no hay rondas en curso ni programadas ahora')
+            'no hay rondas en curso ni programadas ahora', POR_EL_DESPLIEGUE)
 
 s, mis_sitios = supervisor.pedir('GET', '/supervisor/sites')
 asignados = mis_sitios if isinstance(mis_sitios, list) else []
@@ -1232,7 +1286,7 @@ if asignados:
           all(r.get('timezone') for r in asignados), str(asignados[0])[:150])
 else:
     omitido('cada recinto asignado viene con su zona horaria',
-            'el supervisor no tiene ningun recinto asignado')
+            'el supervisor no tiene ningun recinto asignado', POR_EL_DESPLIEGUE)
 
 ids_asignados = {r.get('id') for r in asignados}
 ids_todos = {r.get('id') for r in lista_sitios}
@@ -1269,10 +1323,11 @@ if ajeno is None:
 
 if not ajeno:
     omitido(ALCANCE_SUPERVISOR,
-            'no se pudo disponer de un recinto sin asignar para probar el alcance')
+            'no se pudo disponer de un recinto sin asignar para probar el alcance', POR_LA_PRUEBA)
 elif ajeno in ids_asignados:
     omitido(ALCANCE_SUPERVISOR,
-            'el recinto descartable quedo asignado al supervisor: alguien lo asigno a mano')
+            'el recinto descartable quedo asignado al supervisor: alguien lo asigno a mano',
+            POR_LA_PRUEBA)
 else:
     try:
         s, _ = supervisor.pedir('GET', '/supervisor/sites/%s/alerts' % ajeno)
@@ -1300,7 +1355,8 @@ if SITIO:
           estado == 200 and 'text/event-stream' in tipo,
           'HTTP %s, tipo %s' % (estado, tipo))
 else:
-    omitido('el supervisor abre el flujo de novedades en vivo de su recinto', 'no hay recintos')
+    omitido('el supervisor abre el flujo de novedades en vivo de su recinto', 'no hay recintos',
+            POR_EL_DESPLIEGUE)
 
 s, _ = guardia.pedir('GET', '/supervisor/live')
 check('el GUARDIA no entra al tablero en vivo', s == 403, 'HTTP %s' % s)
@@ -1355,7 +1411,7 @@ else:
     omitido(['el GUARDIA no entra a la configuracion de un recinto',
              'el GUARDIA no cambia la configuracion de un recinto',
              'el GUARDIA no entra a la bandeja de alertas de un recinto'],
-            'no hay recintos')
+            'no hay recintos', POR_EL_DESPLIEGUE)
 if PUNTO:
     puertas += [
         ('la configuracion de un punto', 'GET', '/rules/admin/checkpoints/%s' % PUNTO, None),
@@ -1365,17 +1421,18 @@ if PUNTO:
 else:
     omitido(['el GUARDIA no entra a la configuracion de un punto de control',
              'el GUARDIA no cambia la configuracion de un punto de control'],
-            'no hay puntos de control')
+            'no hay puntos de control', POR_EL_DESPLIEGUE)
 if alerta_id:
     puertas.append(('atender una alerta', 'POST',
                     '/supervisor/alerts/%s/attend' % alerta_id, comentario))
 else:
-    omitido('el GUARDIA no entra a atender una alerta', 'no hay ninguna alerta contra la cual probar')
+    omitido('el GUARDIA no entra a atender una alerta',
+            'no hay ninguna alerta contra la cual probar', POR_EL_DESPLIEGUE)
 if patrols:
     puertas.append(('los correos de una ronda', 'GET',
                     '/notif/rondas/%s/envios' % patrols[0]['id'], None))
 else:
-    omitido('el GUARDIA no entra a los correos de una ronda', 'no hay rondas')
+    omitido('el GUARDIA no entra a los correos de una ronda', 'no hay rondas', POR_EL_DESPLIEGUE)
 
 for descripcion, metodo, ruta, cuerpo in puertas:
     s, d = ses_b.pedir(metodo, ruta, cuerpo)
@@ -1387,7 +1444,8 @@ if SITIO:
     check('el GUARDIA no se engancha al flujo en vivo de un recinto',
           estado in (403, 404), 'HTTP %s — si es 200 se abrio al rol de terreno' % estado)
 else:
-    omitido('el GUARDIA no se engancha al flujo en vivo de un recinto', 'no hay recintos')
+    omitido('el GUARDIA no se engancha al flujo en vivo de un recinto', 'no hay recintos',
+            POR_EL_DESPLIEGUE)
 
 print()
 print('=' * 72)
@@ -1404,7 +1462,7 @@ print('=' * 72)
 if not event_id:
     omitido(['la otra empresa no lee el acuse de una novedad ajena',
              'la otra empresa no cuelga una foto en una novedad ajena'],
-            'no se pudo registrar la novedad de demo-andina')
+            'no se pudo registrar la novedad de demo-andina', POR_LA_PRUEBA)
 else:
     s, d = ses_b.pedir('GET', '/guard/events/%s/acuse' % event_id)
     check('la otra empresa no lee el acuse de una novedad ajena', s == 404,
@@ -1416,7 +1474,7 @@ else:
 
 if not patrols:
     omitido('la otra empresa no lee el checklist de una ronda ajena',
-            'no hay rondas de demo-andina en el resumen')
+            'no hay rondas de demo-andina en el resumen', POR_EL_DESPLIEGUE)
 else:
     s, d = ses_b.pedir('GET', '/checklists/patrols/%s/template' % patrols[0]['id'])
     check('la otra empresa no lee el checklist de una ronda ajena', s == 404,
@@ -1454,16 +1512,30 @@ except Exception as e:
 
 print()
 print('=' * 72)
-print('RESULTADO: %d comprobaciones OK, %d fallas, %d sin poder probar'
-      % (ok, len(fallos), len(omitidos)))
+cobertura_perdida = [(n, m) for n, m, cuenta in omitidos if cuenta]
+toleradas = [(n, m) for n, m, cuenta in omitidos if not cuenta]
+print('RESULTADO: %d comprobaciones OK, %d fallas, %d sin poder probar '
+      '(%d de ellas cuentan como falla)'
+      % (ok, len(fallos), len(omitidos), len(cobertura_perdida)))
 if fallos:
     print()
     for n, d in fallos:
         print('  FALLA  %s  %s' % (n, d))
-if omitidos:
+if cobertura_perdida:
     print()
-    for n, m in omitidos:
+    print('  Esto NO se probo, y no porque el despliegue no diera la condicion: la prueba')
+    print('  perdio cobertura. Por eso la corrida sale en rojo aunque no haya fallas.')
+    for n, m in cobertura_perdida:
+        print('  SIN PROBAR (cuenta)  %s  (%s)' % (n, m))
+if toleradas:
+    print()
+    for n, m in toleradas:
         print('  SIN PROBAR  %s  (%s)' % (n, m))
+    print()
+    print('  Las %d de arriba no cuentan: ese despliegue no da la condicion. Contra staging'
+          % len(toleradas))
+    print('  sembrado, donde SI se pueden probar todas, corre con VOXIA_HUMO_ESTRICTO=1.')
 print('=' * 72)
 
-sys.exit(1 if fallos else 0)
+# Una comprobacion que no se ejecuto no es una comprobacion que paso.
+sys.exit(1 if fallos or cobertura_perdida else 0)

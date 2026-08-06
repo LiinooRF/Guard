@@ -11,7 +11,7 @@ import {
   type GpsPermissionStateOrMissing,
   type ReportGpsPermissionDto,
 } from './dto/gps-permission.dto';
-import { gpsRules, planDeMuestreo, type GpsSamplingPlan } from './gps-rules';
+import { planDeMuestreo, type GpsSamplingPlan } from './gps-rules';
 
 /** Obligatorio u opcional. Es el flag por tenant que pide el issue #77. */
 export type GpsSharingMode = 'obligatorio' | 'opcional';
@@ -112,7 +112,7 @@ export interface GpsPolicy {
  *
  * TRES DECISIONES QUE CONVIENE ENTENDER ANTES DE TOCAR ESTO
  * --------------------------------------------------------
- * 1. OPCIONAL NO ES APAGADO. `gpsSharingRequired` decide si se puede o no
+ * 1. OPCIONAL NO ES APAGADO. `gpsSharingMandatory` decide si se puede o no
  *    trabajar sin compartir ubicacion. Quien acepta compartirla queda con
  *    recorrido registrado en los dos modos. El interruptor de "esta empresa no
  *    rastrea a nadie" es `gpsTrackingEnabled`, aparte.
@@ -255,7 +255,6 @@ export class GpsPolicyService {
     }
 
     const reglas = await this.rules.effective({ siteId: ronda.site_id });
-    const gps = gpsRules(reglas);
     const plan = planDeMuestreo(reglas);
 
     const filas = await this.tenantContext.manager.query<FilaBateria[]>(
@@ -330,8 +329,8 @@ export class GpsPolicyService {
       drainPctPerHour: porHora === null ? null : redondear(porHora),
       referenceHours: horasReferencia,
       projectedDrainPct: proyectado,
-      budgetPct: gps.gpsBatteryBudgetPct,
-      withinBudget: proyectado === null ? null : proyectado <= gps.gpsBatteryBudgetPct,
+      budgetPct: reglas.gpsBatteryBudgetPct,
+      withinBudget: proyectado === null ? null : proyectado <= reglas.gpsBatteryBudgetPct,
       measurable: medible,
     };
   }
@@ -425,7 +424,6 @@ export class GpsPolicyService {
     });
 
     const reglas = await this.rules.effective({ siteId });
-    const gps = gpsRules(reglas);
     const totalRondas = dias.reduce((suma, dia) => suma + dia.patrols, 0);
     const totalConTraza = dias.reduce((suma, dia) => suma + dia.withTrack, 0);
 
@@ -435,7 +433,7 @@ export class GpsPolicyService {
       timezone: recinto.timezone,
       days,
       mode: modoDe(reglas),
-      trackingEnabled: gps.gpsTrackingEnabled,
+      trackingEnabled: reglas.gpsTrackingEnabled,
       patrols: totalRondas,
       withTrack: totalConTraza,
       coveragePct: totalRondas > 0 ? redondear((totalConTraza / totalRondas) * 100) : null,
@@ -469,13 +467,12 @@ export class GpsPolicyService {
     estado: { consentimiento: FilaConsentimiento | null; permiso: FilaPermiso | null },
     siteId: string | null,
   ): GpsPolicy {
-    const gps = gpsRules(reglas);
     const modo = modoDe(reglas);
 
     const reportadoEn = estado.permiso ? new Date(estado.permiso.reported_at) : null;
     const vencido =
       reportadoEn !== null &&
-      Date.now() - reportadoEn.getTime() > gps.gpsPermissionReportMaxAgeMin * 60_000;
+      Date.now() - reportadoEn.getTime() > reglas.gpsPermissionReportMaxAgeMin * 60_000;
 
     // Un reporte vencido se trata como no reportado: da lo mismo que hace tres
     // semanas el permiso estuviera concedido si hoy nadie lo confirma.
@@ -484,10 +481,13 @@ export class GpsPolicyService {
 
     const consintio = estado.consentimiento !== null;
     const comparte = ESTADOS_QUE_COMPARTEN.includes(estadoPermiso);
-    const registra = gps.gpsTrackingEnabled && consintio && comparte;
+    // Quien acepto y comparte queda con recorrido registrado en los DOS modos:
+    // aca no entra `gpsSharingMandatory`, que solo decide si se puede trabajar
+    // sin compartir. El interruptor de registrar o no es `gpsTrackingEnabled`.
+    const registra = reglas.gpsTrackingEnabled && consintio && comparte;
 
     let motivo: GpsBlockedReason | null = null;
-    if (gps.gpsTrackingEnabled && modo === 'obligatorio') {
+    if (reglas.gpsTrackingEnabled && modo === 'obligatorio') {
       // El consentimiento va primero: es el paso legal y ademas es lo unico que
       // el guardia puede resolver dentro de la app.
       if (!consintio) motivo = 'sin_consentimiento';
@@ -498,10 +498,10 @@ export class GpsPolicyService {
     return {
       siteId,
       mode: modo,
-      trackingEnabled: gps.gpsTrackingEnabled,
+      trackingEnabled: reglas.gpsTrackingEnabled,
       sampling: planDeMuestreo(reglas),
       retentionDays: reglas.gpsTrackRetentionDays,
-      batteryBudgetPct: gps.gpsBatteryBudgetPct,
+      batteryBudgetPct: reglas.gpsBatteryBudgetPct,
       referenceHours: reglas.maxPatrolDurationMin / 60,
       consent: {
         granted: consintio,
@@ -516,7 +516,7 @@ export class GpsPolicyService {
       tracksLocation: registra,
       canStartPatrol: motivo === null,
       blockedReason: motivo,
-      message: mensajeDe(motivo, gps.gpsTrackingEnabled, registra),
+      message: mensajeDe(motivo, reglas.gpsTrackingEnabled, registra),
     };
   }
 
@@ -576,7 +576,7 @@ export class GpsPolicyService {
 }
 
 function modoDe(reglas: PatrolRules): GpsSharingMode {
-  return reglas.gpsSharingRequired ? 'obligatorio' : 'opcional';
+  return reglas.gpsSharingMandatory ? 'obligatorio' : 'opcional';
 }
 
 function mensajeDe(

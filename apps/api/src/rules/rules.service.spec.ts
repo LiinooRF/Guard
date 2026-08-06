@@ -137,7 +137,7 @@ describe('RulesService.effectiveWithSource', () => {
     const query = capas(
       { scope: 'platform', overrides: { allowQrFallback: false } },
       { scope: 'tenant', overrides: { complianceThreshold: 85 } },
-      { scope: 'site', overrides: { complianceThreshold: 90, gpsSharingRequired: false } },
+      { scope: 'site', overrides: { complianceThreshold: 90, gpsSharingMandatory: false } },
     );
 
     const resultado = await servicio(query).effectiveWithSource({
@@ -151,12 +151,12 @@ describe('RulesService.effectiveWithSource', () => {
     expect(resultado.rules).toMatchObject({
       complianceThreshold: 90,
       allowQrFallback: false,
-      gpsSharingRequired: false,
+      gpsSharingMandatory: false,
     });
     expect(resultado.sources).toMatchObject({
       complianceThreshold: 'site',
       allowQrFallback: 'platform',
-      gpsSharingRequired: 'site',
+      gpsSharingMandatory: 'site',
       // nadie lo sobreescribio: viene del default del producto
       photoRetentionDays: 'default',
     });
@@ -209,7 +209,7 @@ describe('RulesService.updateOverrides', () => {
     const auditor = audit();
 
     await servicio(query, auditor).updateOverrides(
-      { reportRecipients: ['privado@cliente.cl'], gpsSharingRequired: true },
+      { reportRecipients: ['privado@cliente.cl'], gpsSharingMandatory: true },
       ACTOR,
     );
 
@@ -219,7 +219,7 @@ describe('RulesService.updateOverrides', () => {
       action: 'reglas.modificadas',
       entityType: 'tenant_rules',
       entityId: undefined,
-      summary: 'tenant: 2 regla(s) configurada(s): gpsSharingRequired, reportRecipients',
+      summary: 'tenant: 2 regla(s) configurada(s): gpsSharingMandatory, reportRecipients',
     });
     expect(JSON.stringify((auditor.record as jest.Mock).mock.calls)).not.toContain(
       'privado@cliente.cl',

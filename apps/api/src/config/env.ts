@@ -71,6 +71,42 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  // Webhook de estado de entrega del correo (#220). Mismo criterio que
+  // MAIL_DRIVER: el codigo va contra la interfaz TraductorWebhookCorreo y el
+  // proveedor NO esta decidido (#9).
+  //
+  //   interno  el contrato de ingesta que definimos nosotros, firmado con HMAC
+  //            y alimentado por un relay de una pagina desde el webhook del
+  //            proveedor que sea. Es el unico que se puede escribir sin
+  //            inventarse el formato de nadie.
+  //
+  // Se agrega un valor por proveedor recien cuando #9 se cierre; el `switch` de
+  // crearTraductorWebhook es exhaustivo, asi que agregarlo y olvidar el
+  // traductor no compila.
+  NOTIF_WEBHOOK_DRIVER: z.enum(['interno']).default('interno'),
+  // SECRETO: va en el gestor de secretos de Dokploy, nunca en el repositorio.
+  // Se comparte con el relay, que firma con el mismo HMAC.
+  //
+  // NO se exige, ni siquiera en produccion, y no es un olvido: sin el, el
+  // endpoint publico falla CERRADO con 503 en cada peticion (ver
+  // registro-envios.firma.ts). Un canal de notificaciones sin configurar no
+  // puede impedir que la API arranque — mismo criterio que PUSH_DRIVER.
+  //
+  // El minimo de largo si se exige cuando esta: un secreto compartido corto
+  // convierte el HMAC en un adorno, y es mejor descubrirlo al arrancar que
+  // cuando alguien escriba el estado de entrega de una empresa ajena.
+  //
+  // VACIO Y AUSENTE SON LO MISMO: canal apagado. `.env.example` la trae vacia y
+  // un `.min(32)` a secas dejaria sin arrancar a cualquiera que copie el
+  // ejemplo, que es como se levanta el entorno de desarrollo.
+  NOTIF_WEBHOOK_SECRET: z
+    .union([
+      z.literal(''),
+      z.string().min(32, 'NOTIF_WEBHOOK_SECRET debe tener al menos 32 caracteres'),
+    ])
+    .optional()
+    .transform((valor) => (valor ? valor : undefined)),
+
   // Notificaciones push (#113). Mismo criterio que el correo: el codigo va
   // contra la interfaz PushProvider y el proveedor NO esta decidido.
   //

@@ -22,8 +22,13 @@
  *   Por eso existen `TOPE_PUNTOS_OMITIDOS` y `omisionesTruncadas()`, y por eso
  *   la tarjeta lo dice en pantalla en vez de presentar la lista como completa.
  *   El arreglo de fondo es un `orderBy` en el endpoint, pedido en INTEGRACION.md.
- * · **Cumplimiento por ruta.** No existe endpoint que lo agregue; se arma con el
- *   listado de rondas del recinto, con sus dos limitaciones documentadas abajo.
+ * · **Cumplimiento por ruta.** Ya NO se calcula aca. Lo agrega el servidor en
+ *   `GET /api/stats/charts/compliance-by-route`, que agrupa por `routes.id`,
+ *   descarta las rondas voluntarias y las abiertas, y corta el periodo con
+ *   `sites.timezone`. Las tres cosas eran imposibles desde el navegador, porque
+ *   el listado de rondas del recinto no expone `route_id` ni `is_voluntary` y
+ *   viene ordenado por fecha programada, futuras incluidas. De la version
+ *   anterior solo quedan aca el tope de filas y la comparacion de duraciones.
  *
  * Lo que NO se hace aca, y es deliberado:
  *
@@ -36,7 +41,7 @@
  *   contra `sites.timezone`; el navegador manda dias `YYYY-MM-DD` y nada mas.
  */
 
-import type { PuntoOmitido, RecintoCumplimiento, ClaveGrafica } from './stats-charts-data';
+import type { PuntoOmitido, ClaveGrafica } from './stats-charts-data';
 
 /* ------------------------------------------------------------------ */
 /* Estado de una consulta                                              */
@@ -55,6 +60,24 @@ export type ResultadoSupervisor<T> =
   | { estado: 'rango-rechazado'; mensaje: string }
   | { estado: 'fuera-de-tope'; clave: ClaveGrafica }
   | { estado: 'error' };
+
+/* ------------------------------------------------------------------ */
+/* Recintos asignados                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Una fila de `GET /api/supervisor/sites`, tal como la arma
+ * `supervisor.service.ts -> listAssignedSites`: los recintos ACTIVOS que el
+ * usuario tiene en `supervisor_sites`, ordenados por sucursal y nombre.
+ *
+ * Solo se declara lo que esta pantalla usa. La respuesta trae ademas
+ * `address`, `latitude`, `longitude` y `timezone`, que son del mapa.
+ */
+export interface RecintoAsignado {
+  id: string;
+  name: string;
+  branchName: string;
+}
 
 /* ------------------------------------------------------------------ */
 /* Rondas de un recinto                                                */
@@ -85,14 +108,6 @@ export interface RondaSupervisor {
  */
 export const TOPE_RONDAS_LISTADO = 100;
 
-/**
- * Estados en que la ronda ya termino y su cumplimiento significa algo. Es la
- * misma lista que usa la API en `RONDAS_CERRADAS` (stats-charts.service.ts):
- * una ronda `pendiente` o `en_curso` tiene puntos sin marcar porque todavia no
- * le toca, no porque el guardia los haya saltado.
- */
-export const ESTADOS_CERRADOS = ['completada', 'incompleta', 'vencida'] as const;
-
 /** Como se lee cada estado en pantalla. Los valores son los de la base. */
 export const ETIQUETA_ESTADO: Record<string, string> = {
   pendiente: 'Pendiente',
@@ -106,10 +121,6 @@ export function etiquetaEstado(estado: string): string {
   return ETIQUETA_ESTADO[estado] ?? estado;
 }
 
-export function esCerrada(ronda: Pick<RondaSupervisor, 'status'>): boolean {
-  return (ESTADOS_CERRADOS as readonly string[]).includes(ronda.status);
-}
-
 /** `true` si el listado vino tocando el tope y por lo tanto puede faltar historia. */
 export function listadoTruncado(rondas: readonly RondaSupervisor[]): boolean {
   return rondas.length >= TOPE_RONDAS_LISTADO;
@@ -119,117 +130,40 @@ export function listadoTruncado(rondas: readonly RondaSupervisor[]): boolean {
 /* Cumplimiento por ruta                                               */
 /* ------------------------------------------------------------------ */
 
-export interface RutaCumplimiento {
-  ruta: string;
-  /** Todas las rondas del listado, terminadas o no. */
-  rondas: number;
-  cerradas: number;
-  /** Rondas con porcentaje calculado. Es el denominador del promedio. */
-  evaluadas: number;
-  completadas: number;
-  incompletas: number;
-  vencidas: number;
-  /** Pendientes y en curso: no entran en el promedio. */
-  abiertas: number;
-  promedio: number | null;
-  /** Rondas evaluadas que quedaron bajo el umbral. `null` si no hay umbral. */
-  bajoUmbral: number | null;
-  /** Cuantos guardias distintos hicieron esta ruta en el listado. */
-  guardias: number;
+/**
+ * Cuantas rutas se le piden a `GET /api/stats/charts/compliance-by-route`. Es el
+ * maximo que acepta su DTO (`TopQueryDto`, `@Max(50)`), no una decision de
+ * negocio.
+ *
+ * Se pide el maximo aunque la tarjeta mire un solo recinto: el servidor ordena
+ * de PEOR a mejor, asi que un corte por abajo deja fuera las rutas sanas y no
+ * las que hay que arreglar — pero si el recinto tuviera mas de 50 rutas, la
+ * ultima que se ve seria arbitraria y hay que decirlo.
+ */
+export const TOPE_RUTAS = 50;
+
+/** `true` si la respuesta vino tocando el tope y por lo tanto puede faltar alguna ruta. */
+export function rutasTruncadas(rutas: readonly unknown[]): boolean {
+  return rutas.length >= TOPE_RUTAS;
 }
 
 /**
- * Agrupa las rondas de un recinto por ruta.
+ * Minutos que la ruta se pasa —o le sobran— respecto de lo que dice durar.
  *
- * Se agrupa por NOMBRE porque `listPatrols` no expone `route_id`. Renombrar una
- * ruta es libre (`supervisor.service.ts` no exige unicidad y la tabla `routes`
- * no tiene UNIQUE sobre `name`), asi que dos rutas distintas llamadas igual se
- * funden en una fila. No se puede arreglar del lado del navegador: se declara en
- * la tarjeta y se pide `routeId` en INTEGRACION.md.
- *
- * El promedio es el simple de los porcentajes de cada ronda —cada ronda pesa
- * igual—, que es exactamente lo que hace `guardRanking` en el servidor con
- * `avg(p.compliance_pct)`. Ponderarlo por puntos daria otro numero y las dos
- * tarjetas del panel se contradirian.
- *
- * `umbral` viene de la respuesta de `/stats/charts/compliance-by-site`, que ya
- * lo resolvio por la cascada de reglas. Si llega `null` no se marca nada: es
- * preferible una columna sin dato a inventar un 70 que puede no ser el de esta
- * empresa.
+ * No es un juicio sobre el guardia: es la pregunta que pide el issue, la de las
+ * rutas poco realistas. Si el promedio real supera al estimado, la ruta no cabe
+ * en el tiempo que tiene asignado, y por eso queda a medias con guardias
+ * distintos; sacarle puntos o alargar la ventana arregla mas que hablar con la
+ * persona. Devuelve `null` cuando no hay con que comparar: ninguna ronda del
+ * periodo llego a iniciarse, o la ruta no declara duracion.
  */
-export function agruparPorRuta(
-  rondas: readonly RondaSupervisor[],
-  umbral: number | null,
-): RutaCumplimiento[] {
-  const acumulado = new Map<
-    string,
-    {
-      rondas: number;
-      cerradas: number;
-      suma: number;
-      evaluadas: number;
-      completadas: number;
-      incompletas: number;
-      vencidas: number;
-      abiertas: number;
-      bajoUmbral: number;
-      guardias: Set<string>;
-    }
-  >();
-
-  for (const ronda of rondas) {
-    const actual = acumulado.get(ronda.routeName) ?? {
-      rondas: 0,
-      cerradas: 0,
-      suma: 0,
-      evaluadas: 0,
-      completadas: 0,
-      incompletas: 0,
-      vencidas: 0,
-      abiertas: 0,
-      bajoUmbral: 0,
-      guardias: new Set<string>(),
-    };
-
-    actual.rondas += 1;
-    actual.guardias.add(ronda.guardName);
-    if (ronda.status === 'completada') actual.completadas += 1;
-    else if (ronda.status === 'incompleta') actual.incompletas += 1;
-    else if (ronda.status === 'vencida') actual.vencidas += 1;
-    else actual.abiertas += 1;
-    if (esCerrada(ronda)) actual.cerradas += 1;
-
-    // Una ronda abierta puede traer porcentaje parcial; no cuenta. El
-    // cumplimiento se mide sobre la ronda terminada, igual que en el servidor.
-    if (esCerrada(ronda) && ronda.compliancePct !== null && Number.isFinite(ronda.compliancePct)) {
-      actual.suma += ronda.compliancePct;
-      actual.evaluadas += 1;
-      if (umbral !== null && ronda.compliancePct < umbral) actual.bajoUmbral += 1;
-    }
-
-    acumulado.set(ronda.routeName, actual);
-  }
-
-  return [...acumulado.entries()]
-    .map(([ruta, datos]) => ({
-      ruta,
-      rondas: datos.rondas,
-      cerradas: datos.cerradas,
-      evaluadas: datos.evaluadas,
-      completadas: datos.completadas,
-      incompletas: datos.incompletas,
-      vencidas: datos.vencidas,
-      abiertas: datos.abiertas,
-      promedio: datos.evaluadas > 0 ? Math.round((datos.suma / datos.evaluadas) * 10) / 10 : null,
-      bajoUmbral: umbral === null ? null : datos.bajoUmbral,
-      guardias: datos.guardias.size,
-    }))
-    // Peor primero, y las rutas sin dato al final: al panel se entra a buscar el
-    // problema, no a felicitarse. Es el mismo criterio del resto de informes.
-    .sort(
-      (a, b) =>
-        (a.promedio ?? 101) - (b.promedio ?? 101) || a.ruta.localeCompare(b.ruta, 'es'),
-    );
+export function excesoDeDuracion(ruta: {
+  estimatedDurationMin: number;
+  avgDurationMin: number | null;
+}): number | null {
+  if (ruta.avgDurationMin === null) return null;
+  if (!Number.isFinite(ruta.estimatedDurationMin) || ruta.estimatedDurationMin <= 0) return null;
+  return Math.round((ruta.avgDurationMin - ruta.estimatedDurationMin) * 10) / 10;
 }
 
 /* ------------------------------------------------------------------ */
@@ -241,7 +175,7 @@ export function agruparPorRuta(
  *
  * Viven en `rules.ts` y llegan resueltos por la cascada en
  * `GET /api/rules/effective`. Se leen con nombre explicito y comentario para no
- * repetir el error de `gpsSharingRequired`, donde se confundio "obligatorio vs
+ * repetir el error de `gpsSharingMandatory`, donde se confundio "obligatorio vs
  * opcional" con "encendido vs apagado":
  *
  * · `umbralPct` NO es el umbral de cumplimiento de la ronda
@@ -443,6 +377,21 @@ export interface RecintoElegido {
 }
 
 /**
+ * Lo minimo que esta funcion necesita saber de un recinto.
+ *
+ * Se escribe estructural y no como `RecintoCumplimiento` porque el catalogo de
+ * recintos del panel salio primero de `/stats/charts/compliance-by-site` —que
+ * solo devuelve los que TUVIERON rondas en el periodo— y hoy sale de
+ * `GET /supervisor/sites`, que devuelve los asignados. Las dos formas entran
+ * aca sin que la funcion tenga que saber de cual viene.
+ */
+export interface RecintoDelCatalogo {
+  siteId: string;
+  siteName: string;
+  branchName: string;
+}
+
+/**
  * Decide que recinto miran las tarjetas de ruta e informes.
  *
  * Si el filtro no trae recinto y el supervisor tiene uno solo asignado, se abre
@@ -453,7 +402,7 @@ export interface RecintoElegido {
  * el periodo, y quien decide si se puede ver es el servidor, no esta funcion.
  */
 export function elegirRecinto(
-  recintos: readonly RecintoCumplimiento[],
+  recintos: readonly RecintoDelCatalogo[],
   pedido: string,
 ): RecintoElegido | null {
   if (!pedido || !esUuid(pedido)) {

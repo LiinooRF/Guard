@@ -5,8 +5,9 @@ import type { TenantContextService } from '../database/tenant-context/tenant-con
 import type { RulesService } from '../rules/rules.service';
 
 /**
- * Reglas efectivas del producto mas los campos que este modulo pide en
- * INTEGRACION.md (gpsTrackIntervalSeconds, gpsTrackRetentionDays y los de #77).
+ * Reglas efectivas del producto. Los siete parametros de #77 ya viven en
+ * `patrolRulesSchema`, asi que salen del parse como cualquier otro y no hay que
+ * inyectarlos a mano.
  */
 const reglas = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -18,6 +19,23 @@ const reglas = (overrides: Record<string, unknown> = {}) =>
     }),
   }) as unknown as RulesService;
 
+/**
+ * Reglas que dependen del recinto: `effective()` responde distinto segun le
+ * llegue o no un siteId. Es lo que distingue "resolvi la cascada del recinto" de
+ * "respondi lo del tenant", que con un mock de valor fijo no se puede ver.
+ */
+const reglasPorRecinto = (
+  empresa: Record<string, unknown>,
+  recinto: Record<string, unknown>,
+) => {
+  const effective = jest.fn(async (contexto?: { siteId?: string | null }) => ({
+    ...patrolRulesSchema.parse({}),
+    ...empresa,
+    ...(contexto?.siteId ? recinto : {}),
+  }));
+  return { servicio: { effective } as unknown as RulesService, effective };
+};
+
 function servicio(query: jest.Mock, overrides: Record<string, unknown> = {}) {
   return new GeoService(
     { manager: { query } } as unknown as TenantContextService,
@@ -25,8 +43,18 @@ function servicio(query: jest.Mock, overrides: Record<string, unknown> = {}) {
   );
 }
 
+function servicioCon(query: jest.Mock, reglasServicio: RulesService) {
+  return new GeoService(
+    { manager: { query } } as unknown as TenantContextService,
+    reglasServicio,
+  );
+}
+
 const RONDA_EN_CURSO = {
   id: 'patrol-1',
+  // patrols.site_id es NOT NULL desde la migracion 1722524400000: appendTrack lo
+  // lee para resolver el plan de muestreo con la cascada del recinto.
+  site_id: 'site-1',
   status: 'en_curso',
   started_at: new Date('2026-08-01T10:00:00Z'),
   scheduled_start_at: new Date('2026-08-01T10:00:00Z'),
@@ -82,7 +110,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
   });
 
   /**
-   * #77: "opcional" no es "apagado". Antes se miraba gpsSharingRequired aca y la
+   * #77: "opcional" no es "apagado". Antes se miraba gpsSharingMandatory aca y la
    * empresa que elegia NO obligar se quedaba sin traza para nadie, incluso para
    * el guardia que si habia aceptado compartir su ubicacion.
    */
@@ -93,7 +121,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
       .mockResolvedValueOnce([{ id: 't1' }]);
 
     await expect(
-      servicio(query, { gpsSharingRequired: false }).appendTrack('guard-1', 'patrol-1', [
+      servicio(query, { gpsSharingMandatory: false }).appendTrack('guard-1', 'patrol-1', [
         PUNTO(1),
       ]),
     ).resolves.toMatchObject({ received: 1, stored: 1 });
@@ -127,6 +155,72 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     );
     // params: [patrolId, guardId, instantes[], latitudes[], ...]
     expect(insert[1][2]).toEqual(['2026-08-01T10:01:00Z', '2026-08-01T10:02:00Z']);
+  });
+
+  /**
+   * El limite de "punto del futuro" era un 5 * 60_000 escrito en este archivo,
+   * y es exactamente el mismo concepto que `clockSkewToleranceMin`, que ya es
+   * configurable y ya la usa el escaneo (#73). Un telefono con el reloj
+   * adelantado es el mismo telefono en los dos flujos: la empresa que sube la
+   * tolerancia tiene que verla aplicada tambien aca.
+   */
+  it('la tolerancia de reloj del futuro sale de la regla, no de un número fijo', async () => {
+    const dentroDeDiezMinutos = {
+      ...PUNTO(1),
+      recordedAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    };
+
+    // Con la tolerancia por defecto (5 min) el punto viene demasiado adelantado.
+    const estricto = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO]);
+
+    await expect(
+      servicio(estricto).appendTrack('guard-1', 'patrol-1', [dentroDeDiezMinutos]),
+    ).resolves.toMatchObject({ received: 1, stored: 0, outsideShift: 1 });
+    expect(sqlDe(estricto).some((sql) => sql.includes('INSERT INTO patrol_tracks'))).toBe(false);
+
+    // Subiendo la MISMA regla a 15 minutos, el punto entra.
+    const tolerante = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([{ id: 't1' }]);
+
+    await expect(
+      servicio(tolerante, { clockSkewToleranceMin: 15 }).appendTrack('guard-1', 'patrol-1', [
+        dentroDeDiezMinutos,
+      ]),
+    ).resolves.toMatchObject({ received: 1, stored: 1, outsideShift: 0 });
+  });
+
+  /**
+   * `gpsTrackIntervalSeconds` se configura hasta el nivel de recinto. Si este
+   * endpoint respondiera el del tenant, el mismo telefono recibiria un intervalo
+   * aca y otro por GET /api/geo/policy, con el mismo nombre de campo.
+   */
+  it('devuelve el plan de muestreo resuelto en la cascada DEL RECINTO', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([{ id: 't1' }]);
+
+    const { servicio: reglasServicio, effective } = reglasPorRecinto(
+      { gpsTrackIntervalSeconds: 60, gpsTrackMinDistanceM: 15 },
+      { gpsTrackIntervalSeconds: 120, gpsTrackMinDistanceM: 40 },
+    );
+
+    const respuesta = await servicioCon(query, reglasServicio).appendTrack(
+      'guard-1',
+      'patrol-1',
+      [PUNTO(1)],
+    );
+
+    expect(respuesta.sampleIntervalSeconds).toBe(120);
+    expect(respuesta.sampling).toMatchObject({ intervalSeconds: 120, minDistanceM: 40 });
+    // El gate del interruptor va sin recinto —es SOLO_EMPRESA y corre antes de
+    // leer una fila—; el plan, con el recinto de la ronda.
+    expect(effective).toHaveBeenNthCalledWith(1);
+    expect(effective).toHaveBeenNthCalledWith(2, { siteId: 'site-1' });
   });
 
   it('el reenvío del mismo instante dentro del lote no duplica el punto', async () => {
@@ -222,6 +316,39 @@ describe('GeoService — distancia y duración de la traza', () => {
     expect(traza.pointCount).toBe(4);
     expect(traza.lowAccuracyPointCount).toBe(1);
     expect(traza.totalDistanceM).toBeCloseTo(222.4, 1);
+  });
+
+  /**
+   * `gpsTrackMaxAccuracyM` es HASTA_RECINTO: el estacionamiento subterraneo
+   * necesita mas margen que la porteria. Con el parametro fuera del schema, el
+   * override del recinto se descartaba en el parse y todos los recintos median
+   * con el mismo 100.
+   */
+  it('el override de precisión DEL RECINTO decide qué punto suma distancia', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'completada' },
+      ])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce(filas);
+
+    // El recinto exige 10 m; el punto de 12.00 m del medio deja de contar.
+    const { servicio: reglasServicio } = reglasPorRecinto(
+      { gpsTrackMaxAccuracyM: 100 },
+      { gpsTrackMaxAccuracyM: 10 },
+    );
+
+    const traza = await servicioCon(query, reglasServicio).patrolTrack('patrol-1', {
+      sub: 'supervisor-1',
+      role: 'SUPERVISOR',
+    });
+
+    expect(traza.maxAccuracyM).toBe(10);
+    expect(traza.pointCount).toBe(3);
+    // Quedan el primero (8.5 m) y el del medio (sin precision informada): un
+    // solo tramo de 111.19 m en vez de los 222.39 m de la serie completa.
+    expect(traza.lowAccuracyPointCount).toBe(1);
+    expect(traza.totalDistanceM).toBeCloseTo(111.2, 1);
   });
 
   it('una ronda sin puntos responde traza vacía, no error', async () => {
@@ -361,8 +488,32 @@ describe('GeoService — consentimiento', () => {
       policyVersion: 'v1',
       trackingEnabled: true,
       sharingMode: 'obligatorio',
+      siteId: null,
       sampleIntervalSeconds: 60,
       retentionDays: 90,
     });
+  });
+
+  /**
+   * Mismo campo, una sola verdad: si la app dice desde que recinto pregunta,
+   * `sampleIntervalSeconds` sale de la misma cascada que responde
+   * GET /api/geo/policy. Sin recinto sigue siendo el de la empresa, que es lo
+   * mas especifico que se puede afirmar cuando la pantalla se abre sin ronda.
+   */
+  it('con recinto, el estado responde el intervalo resuelto en ese recinto', async () => {
+    const query = jest.fn().mockResolvedValueOnce([]);
+    const { servicio: reglasServicio, effective } = reglasPorRecinto(
+      { gpsTrackIntervalSeconds: 60 },
+      { gpsTrackIntervalSeconds: 240 },
+    );
+
+    await expect(
+      servicioCon(query, reglasServicio).consentStatus('guard-1', 'site-1'),
+    ).resolves.toMatchObject({
+      granted: false,
+      siteId: 'site-1',
+      sampleIntervalSeconds: 240,
+    });
+    expect(effective).toHaveBeenCalledWith({ siteId: 'site-1' });
   });
 });

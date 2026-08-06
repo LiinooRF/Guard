@@ -64,7 +64,13 @@ describe('StatsChartsService — alcance y aislamiento', () => {
   });
 
   it('el filtro de recintos asignados va en TODAS las graficas', async () => {
-    for (const grafica of ['complianceBySite', 'evolution', 'missedCheckpoints', 'guardRanking'] as const) {
+    for (const grafica of [
+      'complianceBySite',
+      'evolution',
+      'missedCheckpoints',
+      'guardRanking',
+      'complianceByRoute',
+    ] as const) {
       const { service, query } = servicio();
       await service[grafica](SUPERVISOR, RANGO);
       const consultas = query.mock.calls.map((call) => String(call[0]));
@@ -187,8 +193,9 @@ describe('StatsChartsService — forma de la agregacion', () => {
     const { service, query } = servicio();
     await service.missedCheckpoints(ADMIN, RANGO);
     await service.guardRanking(ADMIN, RANGO);
+    await service.complianceByRoute(ADMIN, RANGO);
 
-    for (const consulta of [sql(query, 0), sql(query, 1)]) {
+    for (const consulta of [sql(query, 0), sql(query, 1), sql(query, 2)]) {
       expect(consulta).toContain('NOT p.is_voluntary');
       expect(consulta).toContain("p.status IN ('completada', 'incompleta', 'vencida')");
     }

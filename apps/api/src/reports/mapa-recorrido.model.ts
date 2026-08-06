@@ -202,7 +202,16 @@ export interface EntradaMapa {
   readonly maxErrorTrazaM: number;
   /** Tope de posiciones dibujadas (regla del tenant). */
   readonly maxPuntosTraza: number;
-  /** gpsSharingRequired del tenant: sin el no hay traza que dibujar. */
+  /**
+   * `gpsTrackingEnabled` del tenant: apagado no se guardo ni un punto, asi que
+   * no hay traza que dibujar.
+   *
+   * NO es `gpsSharingMandatory`: esa regla decide obligatorio vs OPCIONAL, y en
+   * modo opcional se registra igual el recorrido de quien acepto. Este
+   * comentario decia lo contrario y quien lo leyera creeria que un PDF sin
+   * trayecto se explica por tener el GPS en opcional. Lo que alimenta el campo
+   * es `reglas.gpsTrackingEnabled` (mapa-recorrido.service.ts).
+   */
   readonly trazaActivada: boolean;
   readonly spanMinimoM?: number;
 }
