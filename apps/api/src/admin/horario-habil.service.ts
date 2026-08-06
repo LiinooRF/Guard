@@ -18,6 +18,15 @@ interface FilaPunto {
   name: string;
   kind: 'normal' | 'acceso_critico';
   requires_photo: boolean | null;
+  /** Tiene fila propia en checkpoint_rules, o sea el ultimo nivel de la cascada. */
+  tiene_reglas_propias: boolean;
+}
+
+interface PuntoEvaluado {
+  name: string;
+  tieneOverride: boolean;
+  requiresPhoto: boolean;
+  decideElPunto: boolean;
 }
 
 /**
@@ -28,7 +37,9 @@ interface FilaPunto {
  * codigo que corre en terreno, no contra una copia de la regla escrita en el
  * navegador. Por eso este servicio no reimplementa nada: llama a
  * EvidenceService.isWithinBusinessHours() y a isPhotoRequired() de @voxia/shared,
- * que son exactamente los que decide el flujo de escaneo.
+ * que son exactamente los que decide el flujo de escaneo, y resuelve la cascada
+ * de reglas con el MISMO contexto que EvidenceService.requiresPhoto(): recinto
+ * para todos, y ademas el punto para los que tienen reglas propias.
  *
  * Es de solo lectura: no escribe ni una fila.
  */
@@ -54,34 +65,62 @@ export class HorarioHabilService {
     const withinBusinessHours = await this.evidence.isWithinBusinessHours(siteId, instante);
 
     /*
-     * Sin contexto de recinto ni de punto, A PROPOSITO: es lo mismo que hace
-     * EvidenceService.requiresPhoto(), que es quien decide en el escaneo. Si el
-     * panel resolviera la cascada mas fina que el terreno, mostraria una
-     * promesa que la ronda no cumple. Ver la nota de INTEGRACION.md: eso hoy
-     * ignora los overrides por recinto y por punto, y cuando se corrija allá,
-     * esta llamada tiene que cambiar en el mismo commit.
+     * CON contexto de recinto, que es la mitad de lo que pide en el escaneo
+     * EvidenceService.requiresPhoto({ siteId, checkpointId }). La otra mitad,
+     * el punto, se resuelve mas abajo punto por punto.
+     *
+     * Sin contexto la cascada se corta en plataforma+tenant: un tenant con
+     * photoRequiredOnCritical en «si» y un recinto que lo apaga en site_rules
+     * salia listado como «exige foto» mientras el guardia escaneaba sin que se
+     * la pidieran. El panel prometia lo que la ronda ya no cumplia.
      */
-    const rules = await this.rules.effective();
+    const rules = await this.rules.effective({ siteId });
 
     // En serie, no con Promise.all: el request corre dentro de UNA transaccion
     // con SET LOCAL app.tenant_id, y esa conexion atiende una consulta a la vez.
     const calendario = await this.leerCalendario(siteId, momento.local_date);
     const puntos = await this.leerPuntosActivos(siteId);
 
-    const evaluados = puntos.map((punto) => ({
-      name: punto.name,
-      /**
-       * El punto trae su propio «Foto: siempre/nunca» y ese valor gana sobre el
-       * horario en las dos direcciones (isPhotoRequired lo resuelve primero).
-       * null = no tiene override y lo decide el horario mas las reglas.
+    const evaluados: PuntoEvaluado[] = [];
+    for (const punto of puntos) {
+      const ficha = { kind: punto.kind, requiresPhoto: punto.requires_photo };
+
+      /*
+       * Solo el punto que tiene fila en checkpoint_rules paga su consulta: sin
+       * esa fila la cascada del punto devuelve exactamente lo mismo que la del
+       * recinto, y un recinto de 40 puntos no puede costar 40 consultas para
+       * llegar al mismo veredicto. En serie por lo mismo de arriba.
        */
-      tieneOverride: punto.requires_photo !== null,
-      requiresPhoto: isPhotoRequired({
-        checkpoint: { kind: punto.kind, requiresPhoto: punto.requires_photo },
+      const propias = punto.tiene_reglas_propias
+        ? await this.rules.effective({ siteId, checkpointId: punto.id })
+        : null;
+
+      const requiresPhoto = isPhotoRequired({
+        checkpoint: ficha,
         withinBusinessHours,
-        rules,
-      }),
-    }));
+        rules: propias ?? rules,
+      });
+
+      evaluados.push({
+        name: punto.name,
+        /**
+         * El punto trae su propio «Foto: siempre/nunca» y ese valor gana sobre el
+         * horario en las dos direcciones (isPhotoRequired lo resuelve primero).
+         * null = no tiene override y lo decide el horario mas las reglas.
+         */
+        tieneOverride: punto.requires_photo !== null,
+        requiresPhoto,
+        /**
+         * ¿El veredicto salio de las reglas DEL PUNTO? Se compara contra el
+         * veredicto con las del recinto en vez de mirar si la fila existe: un
+         * punto puede tener configurado el radio de GPS y nada que decir sobre
+         * la foto, y ahi el motivo sigue siendo el de arriba.
+         */
+        decideElPunto:
+          propias !== null &&
+          requiresPhoto !== isPhotoRequired({ checkpoint: ficha, withinBusinessHours, rules }),
+      });
+    }
 
     return {
       timezone: momento.timezone,
@@ -99,6 +138,12 @@ export class HorarioHabilService {
       hasSchedule: calendario.tramos > 0 || calendario.feriado !== null,
       weekdaySegments: calendario.tramosDelDia,
       holiday: calendario.feriado,
+      /**
+       * Las del RECINTO, ya con su override de site_rules aplicado: son las que
+       * rigen para todo punto que no tenga las suyas. Un punto con fila en
+       * checkpoint_rules puede apartarse de estas, y eso se lee en el motivo
+       * 'reglas-punto' de la lista de exentos.
+       */
       rules: {
         photoRequiredOutsideHours: rules.photoRequiredOutsideHours,
         photoRequiredOnCritical: rules.photoRequiredOnCritical,
@@ -113,18 +158,27 @@ export class HorarioHabilService {
          *
          *  - 'override': el punto tiene «Foto: nunca» propio. Queda exento a
          *    cualquier hora y cambiar el horario no lo toca.
-         *  - 'reglas': no la exige por como quedaron el horario y las reglas en
-         *    ESTE instante (tipico: punto normal dentro de horario). Nadie le
-         *    configuro nada al punto, y en otro instante puede exigirla.
+         *  - 'reglas-punto': lo exime la configuracion de reglas DE ESE PUNTO
+         *    (checkpoint_rules), no la del recinto. Depende del horario igual
+         *    que las de arriba, pero se corrige en el punto y no en el recinto.
+         *  - 'reglas': no la exige por como quedaron el horario y las reglas
+         *    heredadas en ESTE instante (tipico: punto normal dentro de
+         *    horario). Nadie le configuro nada al punto que cambie el veredicto,
+         *    y en otro instante puede exigirla.
          *
          * Adivinar 'override' para todos era prometer una configuracion que no
-         * existe.
+         * existe; mandar todo a 'reglas' mandaba al admin a revisar el recinto
+         * cuando lo que decidia era el punto.
          */
         exempt: evaluados
           .filter((punto) => !punto.requiresPhoto)
           .map((punto) => ({
             name: punto.name,
-            motivo: punto.tieneOverride ? ('override' as const) : ('reglas' as const),
+            motivo: punto.tieneOverride
+              ? ('override' as const)
+              : punto.decideElPunto
+                ? ('reglas-punto' as const)
+                : ('reglas' as const),
           })),
       },
     };
@@ -215,12 +269,24 @@ export class HorarioHabilService {
     };
   }
 
+  /**
+   * Los puntos activos y, de paso, cuales tienen reglas propias.
+   *
+   * El EXISTS no resuelve la cascada —eso sigue siendo trabajo de
+   * RulesService— sino que dice a quien hay que preguntarle por ella: sin fila
+   * en checkpoint_rules el veredicto del punto es el del recinto, palabra por
+   * palabra, y preguntar de nuevo seria una consulta por punto para nada.
+   */
   private leerPuntosActivos(siteId: string) {
     return this.tenantContext.manager.query<FilaPunto[]>(
-      `SELECT id, name, kind, requires_photo
-         FROM checkpoints
-        WHERE site_id = $1 AND is_active = true
-        ORDER BY suggested_order, name`,
+      `SELECT c.id, c.name, c.kind, c.requires_photo,
+              EXISTS (
+                SELECT 1 FROM checkpoint_rules r
+                 WHERE r.tenant_id = c.tenant_id AND r.checkpoint_id = c.id
+              ) AS tiene_reglas_propias
+         FROM checkpoints c
+        WHERE c.site_id = $1 AND c.is_active = true
+        ORDER BY c.suggested_order, c.name`,
       [siteId],
     );
   }

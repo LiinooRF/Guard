@@ -39,7 +39,7 @@ export class EvidenceService {
    * ANTERIOR, por eso la segunda rama del OR.
    *
    * Recinto sin horario definido: decide la regla businessHoursDefaultOpen
-   * del tenant, nunca un valor fijo en el codigo.
+   * DEL RECINTO, nunca un valor fijo en el codigo.
    */
   async isWithinBusinessHours(siteId: string, cuando: Date = new Date()): Promise<boolean> {
     const rows = await this.tenantContext.manager.query<
@@ -94,7 +94,10 @@ export class EvidenceService {
     if (!row) throw new NotFoundException('El recinto no existe');
 
     if (!row.has_hours) {
-      const rules = await this.rules.effective();
+      // businessHoursDefaultOpen se configura HASTA_RECINTO: sin el siteId, el
+      // recinto que la ajusta queda ignorado justo en la decision para la que
+      // la configuro. Y el siteId lo tenemos: es el parametro de esta funcion.
+      const rules = await this.rules.effective({ siteId });
       return rules.businessHoursDefaultOpen;
     }
     return row.within;
@@ -122,7 +125,14 @@ export class EvidenceService {
     if (!checkpoint) throw new NotFoundException('El punto de control no existe');
 
     const withinBusinessHours = await this.isWithinBusinessHours(checkpoint.site_id, cuando);
-    const rules = await this.rules.effective();
+    // La cascada completa: plataforma -> tenant -> RECINTO -> PUNTO. Sin el
+    // contexto, effective() devuelve solo los niveles plataforma y tenant, y un
+    // admin que apaga photoRequiredOnCritical en un recinto veia el cambio
+    // ignorado justo en la decision para la que lo configuro.
+    const rules = await this.rules.effective({
+      siteId: checkpoint.site_id,
+      checkpointId: checkpoint.id,
+    });
 
     return {
       required: isPhotoRequired({

@@ -88,7 +88,20 @@ export type PayloadNovedad = {
 export interface RespuestaEscaneo {
   replay: boolean;
   alertSent: boolean;
-  checkpoint: { id: string; name: string; kind: string };
+  /** Id del escaneo en el servidor: es donde se cuelga la foto del punto. */
+  scanId?: string | null;
+  checkpoint: {
+    id: string;
+    name: string;
+    kind: string;
+    /**
+     * Veredicto del servidor con el horario del recinto en ESTE instante. Manda
+     * sobre la política que vino en `GET /guard/home`, que es una foto fija que
+     * una ronda larga puede dejar vieja. `null`/ausente = no lo pudo resolver y
+     * decide el teléfono.
+     */
+    photoRequired?: boolean | null;
+  };
   anomalies: string[];
   progress: { scanned: number; expected: number; pct: number; missedCheckpointIds: string[] };
   patrol: { id: string; status: string; compliancePct: number | null };
@@ -420,6 +433,33 @@ export async function subirFotoNovedad(
   foto: File,
   takenAtDevice: string,
 ): Promise<boolean> {
+  return subirFoto(apiUrl, `/evidence/events/${eventId}/photos`, foto, takenAtDevice);
+}
+
+/**
+ * Foto de un PUNTO de la ronda: la del estado de la puerta en los accesos
+ * críticos, que es el requisito del producto.
+ *
+ * Cuelga del escaneo y no de la ronda, así que necesita el id que devuelve el
+ * servidor: `scanId` cuando el escaneo se mandó en línea, y el `serverId` del
+ * veredicto de `POST /sync/push` cuando viajó en la cola. Antes de tener ese id
+ * la foto espera en el almacén persistente, igual que la de una novedad.
+ */
+export async function subirFotoPunto(
+  apiUrl: string,
+  scanId: string,
+  foto: File,
+  takenAtDevice: string,
+): Promise<boolean> {
+  return subirFoto(apiUrl, `/evidence/scans/${scanId}/photos`, foto, takenAtDevice);
+}
+
+async function subirFoto(
+  apiUrl: string,
+  ruta: string,
+  foto: File,
+  takenAtDevice: string,
+): Promise<boolean> {
   const cuerpo = new FormData();
   cuerpo.append('foto', foto);
   // La hora de CAPTURA, que llega desde quien llama. Poner `new Date()` aca
@@ -427,10 +467,7 @@ export async function subirFotoNovedad(
   // las 07:00 quedaba con las 07:00, y eso invalida la evidencia.
   cuerpo.append('takenAtDevice', takenAtDevice);
   try {
-    const respuesta = await pedirApi(apiUrl, `/evidence/events/${eventId}/photos`, {
-      method: 'POST',
-      body: cuerpo,
-    });
+    const respuesta = await pedirApi(apiUrl, ruta, { method: 'POST', body: cuerpo });
     return respuesta.ok;
   } catch {
     return false;

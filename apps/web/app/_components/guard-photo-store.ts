@@ -28,11 +28,29 @@ const NOMBRE_BD = 'voxia.guard.fotos';
 const ALMACEN = 'fotos';
 const VERSION_BD = 1;
 
+/**
+ * A qué cuelga la foto, que es lo que decide el endpoint de subida:
+ * `/evidence/events/:id/photos` o `/evidence/scans/:id/photos`.
+ *
+ * Antes solo existían las de novedad, así que un registro guardado por una
+ * versión anterior no trae el campo: al leerlo se asume `'evento'`, que es lo
+ * que era. Por eso tampoco sube la versión de la base — cambiar el `keyPath`
+ * sería una migración, y perder fotos pendientes al actualizar es exactamente
+ * lo que este almacén existe para evitar.
+ */
+export type DestinoFoto = 'evento' | 'escaneo';
+
 export interface FotoPendiente {
+  /**
+   * Id de cliente de la operación a la que cuelga la foto: `clientEventId` en
+   * una novedad y `clientScanId` en un escaneo. El nombre quedó del primer caso
+   * porque es el `keyPath` de la base ya creada en los teléfonos.
+   */
   clientEventId: string;
-  /** `null` hasta que la novedad sincroniza y el servidor devuelve su id. */
+  /** `null` hasta que la operación sincroniza y el servidor devuelve su id. */
   serverId: string | null;
   takenAtDevice: string;
+  destino: DestinoFoto;
 }
 
 interface RegistroFoto extends FotoPendiente {
@@ -117,20 +135,28 @@ async function conRespaldo<T>(
   }
 }
 
-function metadatos({ clientEventId, serverId, takenAtDevice }: RegistroFoto): FotoPendiente {
-  return { clientEventId, serverId, takenAtDevice };
+function metadatos({
+  clientEventId,
+  serverId,
+  takenAtDevice,
+  destino,
+}: RegistroFoto): FotoPendiente {
+  // `destino` puede faltar en un registro escrito por la versión anterior:
+  // entonces era siempre la foto de una novedad.
+  return { clientEventId, serverId, takenAtDevice, destino: destino ?? 'evento' };
 }
 
 // ------------------------------------------------------------- API pública
 
-/** Guarda (o reemplaza) la foto de una novedad todavía sin subir. */
+/** Guarda (o reemplaza) una foto de evidencia todavía sin subir. */
 export function guardarFoto(
   clientEventId: string,
   blob: Blob,
   takenAtDevice: string,
   serverId: string | null = null,
+  destino: DestinoFoto = 'evento',
 ): Promise<void> {
-  const registro: RegistroFoto = { clientEventId, blob, serverId, takenAtDevice };
+  const registro: RegistroFoto = { clientEventId, blob, serverId, takenAtDevice, destino };
   return conRespaldo(
     async () => {
       await conAlmacen('readwrite', (almacen) => almacen.put(registro));
@@ -141,14 +167,20 @@ export function guardarFoto(
   );
 }
 
-/** Fija el id de servidor una vez que la novedad sincronizó. */
+/** Fija el id de servidor una vez que la operación sincronizó. */
 export async function fijarServerId(clientEventId: string, serverId: string): Promise<void> {
   const registro = await conRespaldo(
     () => conAlmacen<RegistroFoto | undefined>('readonly', (a) => a.get(clientEventId)),
     () => memoria.get(clientEventId),
   );
   if (!registro) return;
-  await guardarFoto(clientEventId, registro.blob, registro.takenAtDevice, serverId);
+  await guardarFoto(
+    clientEventId,
+    registro.blob,
+    registro.takenAtDevice,
+    serverId,
+    registro.destino ?? 'evento',
+  );
 }
 
 /** Devuelve el Blob de la foto, o `undefined` si ya no está. */
@@ -162,18 +194,19 @@ export async function fijarServerId(clientEventId: string, serverId: string): Pr
  */
 export function leerFoto(
   clientEventId: string,
-): Promise<{ blob: Blob; takenAtDevice: string } | undefined> {
+): Promise<{ blob: Blob; takenAtDevice: string; destino: DestinoFoto } | undefined> {
+  const leida = (registro: RegistroFoto | undefined) =>
+    registro
+      ? {
+          blob: registro.blob,
+          takenAtDevice: registro.takenAtDevice,
+          destino: registro.destino ?? ('evento' as const),
+        }
+      : undefined;
   return conRespaldo(
-    async () => {
-      const registro = await conAlmacen<RegistroFoto | undefined>('readonly', (a) =>
-        a.get(clientEventId),
-      );
-      return registro ? { blob: registro.blob, takenAtDevice: registro.takenAtDevice } : undefined;
-    },
-    () => {
-      const registro = memoria.get(clientEventId);
-      return registro ? { blob: registro.blob, takenAtDevice: registro.takenAtDevice } : undefined;
-    },
+    async () =>
+      leida(await conAlmacen<RegistroFoto | undefined>('readonly', (a) => a.get(clientEventId))),
+    () => leida(memoria.get(clientEventId)),
   );
 }
 
@@ -187,6 +220,37 @@ export function borrarFoto(clientEventId: string): Promise<void> {
       memoria.delete(clientEventId);
     },
   );
+}
+
+/**
+ * Subidas en curso, por foto. La MISMA foto no se manda dos veces a la vez: si
+ * dos caminos la agarran juntos, el segundo espera el desenlace del primero.
+ *
+ * No es teórico. Cuando el veredicto de la cola llega mientras la foto del punto
+ * todavía se procesa, quedan dos caminos con el id del escaneo en la mano y los
+ * dos a punto de subirla. Y el segundo POST no es inofensivo: la API rechaza con
+ * 409 el sha256 repetido —imagen reusada es LA marca de fraude de evidencia—,
+ * así que volvería como "no se pudo subir" y dejaría al guardia viendo «Falta la
+ * foto» de una foto que el servidor sí tiene.
+ */
+const subidasEnCurso = new Map<string, Promise<boolean | undefined>>();
+
+/**
+ * Corre la subida de esta foto una sola vez: quien llegue mientras está en vuelo
+ * recibe la misma promesa y, por lo tanto, el mismo desenlace.
+ */
+export function conSubidaExclusiva(
+  clientEventId: string,
+  subir: () => Promise<boolean | undefined>,
+): Promise<boolean | undefined> {
+  const enCurso = subidasEnCurso.get(clientEventId);
+  if (enCurso) return enCurso;
+
+  const subida = subir().finally(() => {
+    subidasEnCurso.delete(clientEventId);
+  });
+  subidasEnCurso.set(clientEventId, subida);
+  return subida;
 }
 
 /** Metadatos de todas las fotos pendientes, sin cargar los Blobs. */
@@ -208,5 +272,6 @@ export async function contarPendientes(): Promise<number> {
 /** Solo para pruebas: vacía el respaldo en memoria entre casos. */
 export function _reiniciarMemoria(): void {
   memoria.clear();
+  subidasEnCurso.clear();
   indexedDbUtilizable = undefined;
 }

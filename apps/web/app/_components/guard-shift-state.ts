@@ -1,6 +1,12 @@
 'use client';
 
-import type { ScanAnomaly } from '@voxia/shared';
+import {
+  DEFAULT_PATROL_RULES,
+  isPhotoRequired,
+  type CheckpointKind,
+  type PatrolRules,
+  type ScanAnomaly,
+} from '@voxia/shared';
 
 import { borrarClave, escribirJson, leerJson } from './guard-storage';
 import type { MetodoEscaneo } from './guard-escaneo-modelo';
@@ -49,9 +55,50 @@ export interface PuntoRuta {
   position: number;
   /** Al escanearlo, el servidor cierra la ronda. Llega en `GET /guard/home`. */
   isClosingPoint?: boolean;
+  /**
+   * `acceso_critico` = puerta, portería o acceso. Es el punto donde además de
+   * marcar hay que fotografiar el estado de la puerta. Llega en `GET /guard/home`.
+   */
+  kind?: CheckpointKind;
+  /** Override tri-estado del punto: `true`/`false` pisan la regla, `null` hereda. */
+  requiresPhoto?: boolean | null;
   /** Coordenadas para el visor de ruta (#76). `null`/ausente = punto sin ubicar. */
   latitude?: number | null;
   longitude?: number | null;
+}
+
+/**
+ * Lo que hace falta, además del punto, para saber si toca fotografiar. Llega
+ * resuelto por la API en `GET /guard/home` (`photoPolicy`): el horario hábil se
+ * calcula en la zona del RECINTO y con sus feriados, cosa que el teléfono no
+ * puede hacer solo.
+ */
+export interface PoliticaFoto {
+  withinBusinessHours: boolean;
+  /** Instante en que la API evaluó el horario. Una ronda larga lo puede cruzar. */
+  evaluatedAt?: string;
+  rules: Pick<PatrolRules, 'photoRequiredOutsideHours' | 'photoRequiredOnCritical'>;
+}
+
+/**
+ * ¿Este punto exige foto? La decisión NO se reimplementa acá: se delega en
+ * `isPhotoRequired()` de `@voxia/shared`, que es la misma función que corre en
+ * el servidor. Esto solo adapta la forma del punto que manda la API.
+ *
+ * Sin `politica` —API vieja frente a un portal nuevo— se asume horario hábil.
+ * Así siguen pidiendo foto los accesos críticos y los puntos con override, que
+ * es el mínimo que promete el producto, en vez de pedirla en los 40 puntos de
+ * la ronda y hacer que el guardia deje de creerle a la pantalla.
+ */
+export function puntoExigeFoto(punto: PuntoRuta, politica?: PoliticaFoto): boolean {
+  return isPhotoRequired({
+    checkpoint: {
+      kind: punto.kind ?? 'normal',
+      requiresPhoto: punto.requiresPhoto ?? null,
+    },
+    withinBusinessHours: politica?.withinBusinessHours ?? true,
+    rules: politica?.rules ?? DEFAULT_PATROL_RULES,
+  });
 }
 
 export type EstadoPunto = 'pendiente' | 'escaneado' | 'con_anomalia';
@@ -71,6 +118,31 @@ export interface RegistroPunto {
    * QR, que es evidencia más débil, pase por uno de etiqueta.
    */
   metodo?: MetodoEscaneo;
+  /**
+   * Si al escanear este punto tocaba fotografiar. Se congela con el registro: la
+   * deuda de evidencia es del momento en que el guardia estuvo ahí, y no puede
+   * desaparecer sola porque más tarde el recinto abriera.
+   */
+  fotoRequerida?: boolean;
+  /** `true` recién cuando el servidor recibió la foto de ESTE escaneo. */
+  fotoSubida?: boolean;
+  /** Id del escaneo en el servidor. Sin él la foto no tiene dónde colgarse. */
+  scanId?: string;
+}
+
+/**
+ * Puntos ya escaneados que debían foto y todavía no la tienen arriba. Es la
+ * deuda de evidencia del turno: se muestra en la lista y en el resumen, porque
+ * una foto obligatoria que nadie reclama es lo mismo que no exigirla.
+ */
+export function puntosSinFoto(
+  puntos: readonly PuntoRuta[],
+  registros: EstadoRonda['puntos'],
+): PuntoRuta[] {
+  return puntos.filter((punto) => {
+    const registro = registros[punto.id];
+    return registro !== undefined && registro.fotoRequerida === true && !registro.fotoSubida;
+  });
 }
 
 export interface NovedadLocal {
@@ -136,6 +208,10 @@ export function registrarEscaneo(
     confirmado: boolean;
     scannedAt: string;
     metodo: MetodoEscaneo;
+    /** Si este punto exigía foto. Queda escrito con el registro. */
+    fotoRequerida?: boolean;
+    /** Id del escaneo en el servidor, cuando el escaneo se pudo mandar. */
+    scanId?: string;
   },
 ): EstadoRonda {
   return {
@@ -149,6 +225,9 @@ export function registrarEscaneo(
         scannedAt: entrada.scannedAt,
         clientScanId: entrada.clientScanId,
         metodo: entrada.metodo,
+        ...(entrada.fotoRequerida === undefined ? {} : { fotoRequerida: entrada.fotoRequerida }),
+        ...(entrada.scanId ? { scanId: entrada.scanId } : {}),
+        fotoSubida: false,
       },
     },
   };
@@ -157,6 +236,24 @@ export function registrarEscaneo(
 /** Cuantos puntos de la ronda se marcaron con el respaldo por QR (#227). */
 export function puntosPorQr(estado: EstadoRonda): number {
   return Object.values(estado.puntos).filter((punto) => punto.metodo === 'qr').length;
+}
+
+/**
+ * La foto del punto llegó al servidor (o no). Se busca por `clientScanId` y no
+ * por el punto porque quien avisa es la cola de sincronización, que solo conoce
+ * el id de cliente de la operación.
+ */
+export function marcarFotoPuntoSubida(
+  estado: EstadoRonda,
+  clientScanId: string,
+  subida: boolean,
+): EstadoRonda {
+  const puntos = { ...estado.puntos };
+  for (const [checkpointId, registro] of Object.entries(puntos)) {
+    if (registro.clientScanId !== clientScanId) continue;
+    puntos[checkpointId] = { ...registro, fotoSubida: subida };
+  }
+  return { ...estado, puntos };
 }
 
 export function registrarCierre(estado: EstadoRonda, cierre: CierreRonda): EstadoRonda {
@@ -200,7 +297,13 @@ export function aplicarVeredictos(
     for (const [checkpointId, registro] of Object.entries(puntos)) {
       if (registro.clientScanId !== veredicto.clientId) continue;
       if (confirmado) {
-        puntos[checkpointId] = { ...registro, confirmado: true };
+        // El `serverId` del veredicto es el id del escaneo: es lo único que
+        // permite subir después la foto que quedó guardada sin señal.
+        puntos[checkpointId] = {
+          ...registro,
+          confirmado: true,
+          ...(veredicto.serverId ? { scanId: veredicto.serverId } : {}),
+        };
       } else {
         delete puntos[checkpointId];
       }
@@ -254,6 +357,15 @@ export function puntosFaltantes(
   return puntos.filter((punto) => registros[punto.id] === undefined);
 }
 
+/**
+ * Trabajo que todavía no llegó al servidor.
+ *
+ * NO incluye la foto obligatoria que el guardia nunca llegó a tomar: eso es una
+ * deuda de evidencia, no algo esperando en la cola, y contarlo acá dejaba el
+ * turno sin poder cerrarse nunca. Las fotos tomadas y sin subir sí se cuentan,
+ * pero desde el almacén persistente (`contarPendientes`), que es donde están.
+ * La deuda se muestra aparte, con `puntosSinFoto()`.
+ */
 export function hayPendientesDeSubir(estado: EstadoRonda): boolean {
   const puntosPendientes = Object.values(estado.puntos).some((punto) => !punto.confirmado);
   const novedadesPendientes = estado.novedades.some((novedad) => !novedad.confirmada);

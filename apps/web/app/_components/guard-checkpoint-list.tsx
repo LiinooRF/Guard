@@ -9,7 +9,9 @@ import {
 } from './guard-escaneo-modelo';
 import {
   describirAnomalia,
+  puntoExigeFoto,
   type EstadoRonda,
+  type PoliticaFoto,
   type PuntoRuta,
   type RegistroPunto,
 } from './guard-shift-state';
@@ -42,6 +44,8 @@ export function GuardCheckpointList({
   siguiente,
   fase,
   opciones,
+  politicaFoto,
+  esperandoFoto,
   aviso,
   error,
   anuncio,
@@ -55,6 +59,14 @@ export function GuardCheckpointList({
   fase: FaseEscaneo;
   /** Qué caminos ofrece la pantalla. Lo decide `opcionesDeEscaneo`. */
   opciones: OpcionesEscaneo;
+  /** Horario y reglas con que se decide, punto a punto, si toca fotografiar. */
+  politicaFoto?: PoliticaFoto;
+  /**
+   * Hay una foto obligatoria pendiente en pantalla: no se marca el punto
+   * siguiente hasta resolverla. Apaga los TRES caminos —NFC, QR de respaldo y
+   * QR único—, no solo el botón grande.
+   */
+  esperandoFoto?: boolean;
   aviso?: string;
   error?: string;
   anuncio: string;
@@ -64,7 +76,10 @@ export function GuardCheckpointList({
 }) {
   const total = puntos.length;
   const hechos = puntos.filter((punto) => registros[punto.id] !== undefined).length;
-  const ocupado = fase !== 'inactivo';
+  // `esperandoFoto` entra acá y no en cada botón: apagar el camino de marcado
+  // mientras falta una evidencia es lo mismo que estar ocupado escaneando, y
+  // así ningún camino nuevo se olvida de mirarlo.
+  const ocupado = fase !== 'inactivo' || esperandoFoto === true;
   const soloQr = opciones.modo === 'solo-qr';
 
   return (
@@ -77,6 +92,13 @@ export function GuardCheckpointList({
       </h2>
       {siguiente?.isClosingPoint ? (
         <p className="guardia-nota">Al escanear este punto se cierra la ronda.</p>
+      ) : null}
+      {/* Se avisa ANTES de llegar: el guardia tiene que saber que además de
+          marcar hay que fotografiar, no enterarse con la etiqueta ya leída. */}
+      {siguiente && puntoExigeFoto(siguiente, politicaFoto) ? (
+        <p className="guardia-nota">
+          Este punto exige foto del acceso. Se pide apenas quede marcado.
+        </p>
       ) : null}
 
       {/* Mientras el puente saluda —y en el escritorio del supervisor, donde no
@@ -154,6 +176,7 @@ export function GuardCheckpointList({
             punto={punto}
             registro={registros[punto.id]}
             esSiguiente={punto.id === siguiente?.id}
+            exigeFoto={puntoExigeFoto(punto, politicaFoto)}
           />
         ))}
       </ol>
@@ -165,12 +188,19 @@ function Punto({
   punto,
   registro,
   esSiguiente,
+  exigeFoto,
 }: {
   punto: PuntoRuta;
   registro: RegistroPunto | undefined;
   esSiguiente: boolean;
+  exigeFoto: boolean;
 }) {
   const estado = registro?.estado ?? 'pendiente';
+  // La deuda es la que quedó escrita al escanear, no la que se calcula ahora: un
+  // recinto que abrió mientras tanto no borra una evidencia que faltó.
+  const debeFoto = registro
+    ? registro.fotoRequerida === true && !registro.fotoSubida
+    : exigeFoto;
   return (
     <li
       className={`guardia-punto ${estado}${esSiguiente ? ' siguiente' : ''}`}
@@ -191,6 +221,11 @@ function Punto({
           ) : null}
           {registro && !registro.confirmado ? (
             <span className="guardia-chip sin-subir">Sin subir</span>
+          ) : null}
+          {debeFoto ? (
+            <span className="guardia-chip foto">
+              {registro ? 'Falta la foto' : 'Pide foto'}
+            </span>
           ) : null}
         </span>
         {registro?.anomalias.map((codigo) => (

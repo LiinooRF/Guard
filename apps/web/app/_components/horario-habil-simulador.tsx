@@ -46,10 +46,15 @@ export interface ComprobacionHorario {
     requirePhoto: number;
     /**
      * 'override' = el punto tiene «Foto: nunca» propio, que manda sobre el
-     * horario. 'reglas' = hoy no la exige por el horario y las reglas vigentes,
-     * sin que nadie le haya configurado nada al punto.
+     * horario. 'reglas' = hoy no la exige por el horario y las reglas heredadas
+     * del recinto, sin que nadie le haya configurado nada al punto.
+     * 'reglas-punto' = lo exime la configuracion de reglas DE ESE PUNTO, que se
+     * corrige en el punto y no en el recinto.
+     *
+     * Los tres se pintan: un motivo que esta pantalla no conozca deja al punto
+     * sin explicacion en la lista, contado pero invisible.
      */
-    exempt: Array<{ name: string; motivo: 'override' | 'reglas' }>;
+    exempt: Array<{ name: string; motivo: 'override' | 'reglas' | 'reglas-punto' }>;
   };
 }
 
@@ -241,11 +246,13 @@ export function HorarioHabilSimulador({
 function Veredicto({ respuesta }: { respuesta: ComprobacionHorario }) {
   const { checkpoints } = respuesta;
   const todos = checkpoints.total > 0 && checkpoints.requirePhoto === checkpoints.total;
-  // Dos motivos distintos y no se pueden mezclar en una sola frase: el override
-  // es configuracion del punto (no depende de la hora); el otro es consecuencia
-  // del horario de este instante.
+  // Tres motivos distintos y no se pueden mezclar en una sola frase, porque cada
+  // uno se corrige en otro lado: el override es configuracion del punto (no
+  // depende de la hora); 'reglas-punto' son las reglas de ese punto; 'reglas'
+  // son las del recinto en este instante.
   const porOverride = checkpoints.exempt.filter((punto) => punto.motivo === 'override');
   const porReglas = checkpoints.exempt.filter((punto) => punto.motivo === 'reglas');
+  const porReglasDelPunto = checkpoints.exempt.filter((punto) => punto.motivo === 'reglas-punto');
 
   return (
     // Verde = regimen normal; ambar = regimen estricto. No es un error: fuera
@@ -302,6 +309,14 @@ function Veredicto({ respuesta }: { respuesta: ComprobacionHorario }) {
             No la exigen en este instante: {porReglas.map((punto) => punto.name).join(', ')}. No es
             configuración de esos puntos: es el horario y las reglas de arriba, así que en otro
             momento sí pueden exigirla.
+          </li>
+        ) : null}
+        {porReglasDelPunto.length ? (
+          <li>
+            No la exigen por las reglas configuradas en el punto mismo:{' '}
+            {porReglasDelPunto.map((punto) => punto.name).join(', ')}. Se apartan de lo que dice el
+            recinto, así que cambiar la regla del recinto no los toca: se corrige entrando a cada
+            punto.
           </li>
         ) : null}
         {!respuesta.withinBusinessHours && !respuesta.rules.photoRequiredOutsideHours ? (

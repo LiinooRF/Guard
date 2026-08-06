@@ -3,6 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import type { CheckpointKind } from '@voxia/shared';
+
+import type { PoliticaFoto } from './guard-shift-state';
 import { useGuardBridge } from './use-guard-bridge';
 
 export interface GuardHomeData {
@@ -21,6 +24,11 @@ export interface GuardHomeData {
    * es peor que ofrecerle uno que la API podria rechazar.
    */
   qrFallbackEnabled?: boolean;
+  /**
+   * Horario habil del recinto y reglas de foto. Viaja hasta GuardShift, que es
+   * quien decide punto a punto con isPhotoRequired() de @voxia/shared.
+   */
+  photoPolicy?: PoliticaFoto;
   patrol?: {
     id: string;
     status: 'pendiente' | 'en_curso';
@@ -35,6 +43,10 @@ export interface GuardHomeData {
       name: string;
       position: number;
       isClosingPoint?: boolean;
+      // 'acceso_critico' = ademas de marcar hay que fotografiar la puerta.
+      kind?: CheckpointKind;
+      // Override tri-estado del punto sobre la regla de foto.
+      requiresPhoto?: boolean | null;
       // Un punto puede no estar geolocalizado; el mapa lo omite.
       latitude?: number | null;
       longitude?: number | null;

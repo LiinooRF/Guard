@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { computeCompliance, type ScanAnomaly } from '@voxia/shared';
+import { computeCompliance, type CheckpointKind, type PatrolRules, type ScanAnomaly } from '@voxia/shared';
 import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EscalationService } from '../escalation/escalation.service';
+import { EvidenceService } from '../evidence/evidence.service';
 import { GpsPolicyService } from '../geo/gps-policy.service';
 import { MailQueueService } from '../mail/mail-queue.service';
 import { EnvioInformeService } from '../reports/envio-informe.service';
@@ -30,12 +31,38 @@ interface PatrolRow {
     name: string;
     position: number;
     isClosingPoint: boolean;
+    // Criticidad del punto y override tri-estado de la foto. Sin estos dos
+    // campos el telefono NO puede saber que el punto exige fotografiar la
+    // puerta, que es el requisito del producto en los accesos criticos: la
+    // pantalla los pasa tal cual a isPhotoRequired() de @voxia/shared.
+    kind: CheckpointKind;
+    /** null = hereda la regla; true/false la pisan en cualquier direccion. */
+    requiresPhoto: boolean | null;
     // Coordenadas del punto para dibujarlo en el visor de ruta (#76). Pueden ser
     // null: un punto puede no estar geolocalizado y el mapa lo omite.
     latitude: number | null;
     longitude: number | null;
     tagUids: string[];
   }>;
+}
+
+/**
+ * Los INGREDIENTES con que el telefono decide si un punto exige foto, no el
+ * veredicto ya masticado punto por punto.
+ *
+ * Se mandan los ingredientes porque la ronda ocurre sin señal: el telefono
+ * tiene que poder decidir cuando ya no puede preguntar, y lo hace llamando a
+ * isPhotoRequired() de @voxia/shared — la misma funcion que usa el servidor.
+ * Mandar un booleano por punto obligaria a recalcularlo en el telefono cada vez
+ * que cambia algo, que es exactamente la regla reimplementada que hay que
+ * evitar.
+ */
+interface PoliticaDeFoto {
+  /** Evaluado en la zona horaria DEL RECINTO, no la del servidor ni la del telefono. */
+  withinBusinessHours: boolean;
+  /** Cuando se evaluo. Una ronda larga puede cruzar el cierre del recinto. */
+  evaluatedAt: string;
+  rules: Pick<PatrolRules, 'photoRequiredOutsideHours' | 'photoRequiredOnCritical'>;
 }
 
 @Injectable()
@@ -49,8 +76,12 @@ export class GuardService {
     private readonly escalation: EscalationService,
     private readonly gpsPolicy: GpsPolicyService,
     private readonly envioInforme: EnvioInformeService,
-    // Va al final y opcional: varios specs construyen el servicio por posicion.
+    // Van al final y opcionales: varios specs construyen el servicio por posicion.
     private readonly signatures?: DeviceSignatureService,
+    // Resuelve el horario habil del recinto y la foto obligatoria de un punto.
+    // Es quien llama a isPhotoRequired() de @voxia/shared: la decision no se
+    // reimplementa aca.
+    private readonly evidence?: EvidenceService,
   ) {}
 
   async getHome(guardId: string) {
@@ -74,6 +105,12 @@ export class GuardService {
                 'name', c.name,
                 'position', rc.position,
                 'isClosingPoint', rc.is_closing_point,
+                -- 'acceso_critico' es lo que hace obligatoria la foto de la
+                -- puerta, y requires_photo es el override del punto. Sin
+                -- mandarlos, la pantalla de terreno no tiene con que decidir y
+                -- el guardia nunca se entera de que debe fotografiar.
+                'kind', c.kind,
+                'requiresPhoto', c.requires_photo,
                 'latitude', c.latitude,
                 'longitude', c.longitude,
                 'tagUids', COALESCE((
@@ -123,6 +160,7 @@ export class GuardService {
     }
 
     const reglas = await this.rules.effective({ siteId: patrol.site_id });
+    const politicaFoto = await this.politicaDeFoto(patrol.site_id, reglas);
 
     return {
       hasAssignment: true as const,
@@ -175,9 +213,79 @@ export class GuardService {
        * va a rechazar.
        */
       qrFallbackEnabled: reglas.allowQrFallback,
+      /*
+       * Con que decidir, en el telefono y sin señal, en que puntos hay que
+       * fotografiar. Se omite si el horario del recinto no se pudo resolver: es
+       * mejor que la pantalla lo sepa y caiga en su respaldo a que reciba un
+       * horario inventado y deje de pedir la foto del acceso critico.
+       */
+      ...(politicaFoto ? { photoPolicy: politicaFoto } : {}),
       connection: { status: 'online' as const },
       synchronization: { pendingItems: 0 },
     };
+  }
+
+  /**
+   * Horario habil del recinto + las dos reglas de foto que el telefono le pasa
+   * a isPhotoRequired(). El horario se evalua UNA vez, al armar la pantalla.
+   *
+   * Una ronda de ocho horas puede cruzar el cierre del recinto y esta foto fija
+   * quedar vieja; por eso el escaneo EN LINEA devuelve `photoRequired`
+   * recalculado contra el horario del momento, y ese manda sobre esto. Sin
+   * señal, esta instantanea es lo unico que hay — y es infinitamente mejor que
+   * lo que habia, que era nada.
+   */
+  private async politicaDeFoto(
+    siteId: string,
+    reglas: PatrolRules,
+  ): Promise<PoliticaDeFoto | undefined> {
+    if (!this.evidence) return undefined;
+    try {
+      return {
+        withinBusinessHours: await this.evidence.isWithinBusinessHours(siteId),
+        evaluatedAt: new Date().toISOString(),
+        rules: {
+          photoRequiredOutsideHours: reglas.photoRequiredOutsideHours,
+          photoRequiredOnCritical: reglas.photoRequiredOnCritical,
+        },
+      };
+    } catch (error) {
+      // La pantalla del turno no se cae por no poder resolver el horario.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'politica_foto_no_resuelta',
+          site_id: siteId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * ¿Este punto exige foto AHORA? Lo resuelve EvidenceService con el horario
+   * real del recinto y isPhotoRequired() de @voxia/shared; aca no se recalcula
+   * nada.
+   *
+   * `null` = no se pudo resolver, y entonces el telefono decide con la politica
+   * que le llego en `GET /guard/home`. Un fallo consultando la foto NO puede
+   * tumbar el escaneo: el punto ya quedo registrado y eso es lo que no se puede
+   * perder.
+   */
+  private async exigeFoto(checkpointId: string): Promise<boolean | null> {
+    if (!this.evidence) return null;
+    try {
+      return (await this.evidence.requiresPhoto(checkpointId)).required;
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'foto_obligatoria_no_resuelta',
+          checkpoint_id: checkpointId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return null;
+    }
   }
 
   async startPatrol(patrolId: string, guardId: string) {
@@ -311,6 +419,23 @@ export class GuardService {
       if (driftMs > rules.clockSkewToleranceMin * 60_000) anomalies.push('reloj_desfasado');
     }
 
+    /*
+     * El veredicto de la foto se resuelve ANTES de escribir, y no es un detalle
+     * de orden: `exigeFoto()` hace un SELECT y se traga su error para no tumbar
+     * el escaneo. Pero tragarse la excepcion de JavaScript NO desaborta una
+     * transaccion que PostgreSQL ya marco, y todo el request corre dentro de
+     * UNA (tenant-context.interceptor.ts).
+     *
+     * Puesto despues del INSERT y del cierre —donde estaba— la secuencia era:
+     * se inserta el escaneo, se cierra la ronda, se ENCOLA el informe, falla el
+     * SELECT, el catch lo silencia, y el commit revienta con 25P02. Resultado:
+     * el guardia recibe 500 y vuelve a escanear, el escaneo se deshizo... y el
+     * correo con el informe ya habia salido.
+     *
+     * Aca adelante, si falla, no hay nada escrito que perder.
+     */
+    const photoRequired = await this.exigeFoto(target.checkpoint_id);
+
     const inserted = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `INSERT INTO scans (
         tenant_id, patrol_id, guard_id, checkpoint_id, tag_id, method, client_scan_id,
@@ -339,13 +464,24 @@ export class GuardService {
     );
     const replay = !inserted.length;
 
+    // Se piden tambien id y client_scan_id: el telefono necesita el id del
+    // escaneo para colgarle la foto (POST /evidence/scans/:scanId/photos), y en
+    // un reenvio el INSERT no devuelve nada. Sacarlo de esta consulta, que ya se
+    // hacia, evita un viaje mas a la base en el camino mas caliente del
+    // producto.
     const allScans = await this.tenantContext.manager.query<Array<{
+      id: string;
       checkpoint_id: string;
+      client_scan_id: string;
       anomalies: ScanAnomaly[];
     }>>(
-      `SELECT checkpoint_id, anomalies FROM scans WHERE patrol_id = $1`,
+      `SELECT id, checkpoint_id, client_scan_id, anomalies FROM scans WHERE patrol_id = $1`,
       [patrolId],
     );
+    const scanId =
+      inserted[0]?.id ??
+      allScans.find((s) => s.client_scan_id === input.clientScanId)?.id ??
+      null;
     const compliance = computeCompliance(
       patrol.expected_checkpoint_ids,
       allScans.map((s) => ({ checkpointId: s.checkpoint_id, anomalies: s.anomalies })),
@@ -397,10 +533,16 @@ export class GuardService {
     return {
       replay,
       alertSent: closed && compliance.belowThreshold,
+      // El id del escaneo recien creado (o el del original, si esto fue un
+      // reenvio). Es donde el telefono cuelga la foto del punto.
+      scanId,
       checkpoint: {
         id: target.checkpoint_id,
         name: target.checkpoint_name,
         kind: target.kind,
+        // Veredicto del servidor, con el horario del recinto en ESTE instante.
+        // `null` = no se pudo resolver y decide el telefono con su politica.
+        photoRequired,
       },
       anomalies,
       progress: {

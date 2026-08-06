@@ -1,11 +1,14 @@
 import { ForbiddenException } from '@nestjs/common';
 import { patrolRulesSchema } from '@voxia/shared';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { GpsPolicyService } from '../geo/gps-policy.service';
 import type { EnvioInformeService } from '../reports/envio-informe.service';
 import { GuardService } from './guard.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EscalationService } from '../escalation/escalation.service';
+import type { EvidenceService } from '../evidence/evidence.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
 import type { RulesService } from '../rules/rules.service';
 
@@ -161,6 +164,51 @@ describe('GuardService.registerScan', () => {
 
     expect(await anomaliasCon(30, 10)).not.toContain('reloj_desfasado');
     expect(await anomaliasCon(1, 10)).toContain('reloj_desfasado');
+  });
+
+  it('resuelve la exigencia de foto ANTES de escribir, no despues', async () => {
+    /*
+     * No es una preferencia de estilo. `exigeFoto()` hace un SELECT y se traga su
+     * error para no tumbar el escaneo — pero tragarse la excepcion de JavaScript
+     * NO desaborta una transaccion que PostgreSQL ya marco, y todo el request
+     * corre dentro de UNA.
+     *
+     * Con el SELECT despues del INSERT, la secuencia era: se inserta el escaneo,
+     * se cierra la ronda, se encola el informe, falla el SELECT, el catch lo
+     * silencia, y el COMMIT revienta con 25P02. El guardia recibia 500 y el
+     * correo con el informe ya habia salido.
+     *
+     * Aca se comprueba el orden real: la consulta de evidencia tiene que ocurrir
+     * antes de que se escriba una sola fila.
+     */
+    const orden: string[] = [];
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'acceso_critico', latitude: null, longitude: null, is_closing_point: false,
+      }])
+      .mockImplementation((sql: string) => {
+        if (String(sql).includes('INSERT INTO scans')) orden.push('escribe');
+        return Promise.resolve([{ id: 'scan-id' }]);
+      });
+    const evidencia = {
+      requiresPhoto: jest.fn().mockImplementation(() => {
+        orden.push('consulta-evidencia');
+        return Promise.resolve({ required: true });
+      }),
+      isWithinBusinessHours: jest.fn().mockResolvedValue(true),
+    };
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService, sinCorreo(), sinReglas(),
+      sinEscalamiento(), sinPuertaGps(), sinEnvioInforme(), undefined,
+      evidencia as never,
+    );
+
+    await service.registerScan('patrol-id', 'guard-id', dto()).catch(() => undefined);
+
+    expect(orden[0]).toBe('consulta-evidencia');
   });
 
   it('el arranque automatico pasa por la MISMA puerta de consentimiento que el boton', async () => {
@@ -441,5 +489,225 @@ describe('GuardService.registerScan', () => {
       sql.includes('INSERT INTO scans'));
     expect(insert?.[1][10]).toContain('fuera_de_radio_gps');
     expect(insert?.[1][10]).toContain('reloj_desfasado');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * La foto obligatoria del punto critico
+ *
+ * CLAUDE.md: "En los accesos criticos ademas debe fotografiar el estado de la
+ * puerta". El JSON de puntos no mandaba `kind` ni `requiresPhoto`, asi que la
+ * pantalla de terreno no tenia con que saberlo y nunca se la pedia al guardia.
+ * ------------------------------------------------------------------ */
+
+/** EvidenceService de mentira: resuelve horario y foto sin base ni disco. */
+const sinEvidencia = (opciones: { enHorario?: boolean; exigeFoto?: boolean } = {}) =>
+  ({
+    isWithinBusinessHours: jest.fn().mockResolvedValue(opciones.enHorario ?? true),
+    requiresPhoto: jest.fn().mockResolvedValue({
+      required: opciones.exigeFoto ?? false,
+      withinBusinessHours: opciones.enHorario ?? true,
+      checkpoint: { id: 'cp-1', kind: 'normal', requiresPhoto: null },
+    }),
+  }) as unknown as EvidenceService;
+
+const conEvidencia = (
+  manager: { query: jest.Mock },
+  evidencia: EvidenceService = sinEvidencia(),
+) =>
+  new GuardService(
+    { manager } as unknown as TenantContextService,
+    sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme(),
+    undefined, evidencia,
+  );
+
+/** Fila de ronda completa, para los casos que llegan hasta la respuesta. */
+const RONDA = {
+  id: 'patrol-id',
+  status: 'en_curso' as const,
+  site_id: 'site-id',
+  scheduled_start_at: new Date('2026-08-04T22:00:00-04:00'),
+  scheduled_end_at: new Date('2026-08-05T06:00:00-04:00'),
+  started_at: null,
+  site_name: 'Recinto',
+  site_timezone: 'America/Santiago',
+  route_name: 'Ronda nocturna',
+  estimated_duration_min: 30,
+  checkpoints: [],
+};
+
+describe('GuardService.getHome — foto obligatoria del punto', () => {
+  /**
+   * Un mock devuelve lo que le pidas y no sabe SQL. Los nombres de columna se
+   * comprueban contra la MIGRACION, que es la unica fuente de verdad: asi es
+   * como llego a produccion un SELECT de una columna que no existe, con la CI
+   * en verde y el mock devolviendo la columna inventada.
+   */
+  it('las columnas de checkpoints que pide existen en la migracion', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([]) };
+    await conEvidencia(manager).getHome('guard-id');
+
+    const sql = (manager.query.mock.calls[0]?.[0] as string).replace(/--.*$/gm, '');
+    const migracion = readFileSync(
+      join(__dirname, '../database/migrations/1722524400000-CreateDemoDomain.ts'),
+      'utf8',
+    );
+    const cuerpo = /CREATE TABLE checkpoints \(([\s\S]*?)\n {6}\)/.exec(migracion)?.[1] ?? '';
+    const columnas = new Set(
+      cuerpo
+        .split('\n')
+        .map((linea) => /^ {8}([a-z_]+) /.exec(linea)?.[1])
+        .filter((nombre): nombre is string => Boolean(nombre)),
+    );
+
+    // La migracion se leyo de verdad: si el regex fallara, el resto de este
+    // test pasaria sin comprobar nada.
+    expect(columnas.has('kind')).toBe(true);
+    expect(columnas.has('requires_photo')).toBe(true);
+
+    const pedidas = new Set(
+      Array.from(sql.matchAll(/\bc\.([a-z_]+)/g), (coincidencia) => coincidencia[1] as string),
+    );
+    expect(pedidas.has('kind')).toBe(true);
+    expect(pedidas.has('requires_photo')).toBe(true);
+    for (const columna of pedidas) expect(Array.from(columnas)).toContain(columna);
+  });
+
+  it('cada punto viaja con su criticidad y su override de foto', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([]) };
+    await conEvidencia(manager).getHome('guard-id');
+
+    const sql = (manager.query.mock.calls[0]?.[0] as string).replace(/--.*$/gm, '');
+    // Las CLAVES del jsonb son el contrato con el telefono: si se renombran, el
+    // punto llega sin criticidad y la foto deja de pedirse en silencio.
+    expect(sql).toContain("'kind', c.kind");
+    expect(sql).toContain("'requiresPhoto', c.requires_photo");
+  });
+
+  it('manda el horario del recinto y las reglas con que el telefono decide', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([RONDA]) };
+    const evidencia = sinEvidencia({ enHorario: false });
+
+    const home = await conEvidencia(manager, evidencia).getHome('guard-id');
+
+    expect(home).toMatchObject({
+      photoPolicy: {
+        withinBusinessHours: false,
+        rules: { photoRequiredOutsideHours: true, photoRequiredOnCritical: true },
+      },
+    });
+    // El horario es el DEL RECINTO de esta ronda, no uno cualquiera.
+    expect(evidencia.isWithinBusinessHours).toHaveBeenCalledWith('site-id');
+  });
+
+  it('si el horario no se puede resolver, la pantalla del turno igual carga', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([RONDA]) };
+    const evidencia = {
+      isWithinBusinessHours: jest.fn().mockRejectedValue(new Error('el recinto no existe')),
+      requiresPhoto: jest.fn(),
+    } as unknown as EvidenceService;
+
+    const home = await conEvidencia(manager, evidencia).getHome('guard-id');
+
+    expect(home).toMatchObject({ hasAssignment: true });
+    // Se omite en vez de inventar un horario: el telefono cae en su respaldo.
+    expect(home).not.toHaveProperty('photoPolicy');
+  });
+});
+
+describe('GuardService.registerScan — id del escaneo y foto del punto', () => {
+  const RONDA_ESCANEO = {
+    id: 'patrol-id',
+    status: 'en_curso',
+    route_id: 'route-id',
+    expected_checkpoint_ids: ['cp-1'],
+  };
+  const CLIENT_SCAN_ID = '3a0c8f7e-1111-4222-8333-444455556666';
+  const entrada = () => ({
+    uid: 'ABCD1234',
+    method: 'nfc' as const,
+    clientScanId: CLIENT_SCAN_ID,
+    latitude: -33.45,
+    longitude: -70.66,
+  });
+  const PUNTO_CRITICO = {
+    tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Porteria',
+    kind: 'acceso_critico', latitude: '-33.45', longitude: '-70.66',
+    is_closing_point: false,
+  };
+  const escaneoDeLaRonda = (id: string) => ({
+    id, checkpoint_id: 'cp-1', client_scan_id: CLIENT_SCAN_ID, anomalies: [],
+  });
+
+  it('devuelve el id del escaneo: sin el, la foto no tiene donde colgarse', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([RONDA_ESCANEO])
+      .mockResolvedValueOnce([PUNTO_CRITICO])
+      .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
+      .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
+
+    await expect(
+      conEvidencia(manager, sinEvidencia({ exigeFoto: true })).registerScan(
+        'patrol-id', 'guard-id', entrada(),
+      ),
+    ).resolves.toMatchObject({
+      scanId: 'scan-nuevo',
+      checkpoint: { kind: 'acceso_critico', photoRequired: true },
+    });
+  });
+
+  it('en el reenvio el id sale de la consulta que ya se hacia, sin viaje extra', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([RONDA_ESCANEO])
+      .mockResolvedValueOnce([PUNTO_CRITICO])
+      .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
+      .mockResolvedValueOnce([escaneoDeLaRonda('scan-original')]);
+
+    await expect(
+      conEvidencia(manager).registerScan('patrol-id', 'guard-id', entrada()),
+    ).resolves.toMatchObject({ replay: true, scanId: 'scan-original' });
+    // Las mismas 4 consultas de antes: el id no cuesta un viaje mas a la base.
+    expect(manager.query).toHaveBeenCalledTimes(4);
+  });
+
+  it('un fallo resolviendo la foto no tumba el escaneo, solo lo deja sin veredicto', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([RONDA_ESCANEO])
+      .mockResolvedValueOnce([PUNTO_CRITICO])
+      .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
+      .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
+    const evidencia = {
+      isWithinBusinessHours: jest.fn(),
+      requiresPhoto: jest.fn().mockRejectedValue(new Error('sin horario')),
+    } as unknown as EvidenceService;
+
+    await expect(
+      conEvidencia(manager, evidencia).registerScan('patrol-id', 'guard-id', entrada()),
+    ).resolves.toMatchObject({
+      replay: false,
+      // null y no false: "no lo se" no es "no hace falta". El telefono decide
+      // entonces con la politica que le llego en /guard/home.
+      checkpoint: { photoRequired: null },
+    });
+  });
+
+  it('sin EvidenceService inyectado responde null y no revienta', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([RONDA_ESCANEO])
+      .mockResolvedValueOnce([PUNTO_CRITICO])
+      .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
+      .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme(),
+    );
+
+    await expect(service.registerScan('patrol-id', 'guard-id', entrada())).resolves.toMatchObject({
+      checkpoint: { photoRequired: null },
+    });
   });
 });
