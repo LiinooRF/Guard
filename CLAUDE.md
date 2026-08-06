@@ -240,6 +240,81 @@ entregada por el admin.
 
 ---
 
+## Trampas de PostgreSQL que ya nos costaron un día (2026-08-05)
+
+Las cuatro comparten forma: **la base se comporta distinto de como el código cree**, y ningún test
+con mocks puede verlo. Las cuatro tienen ahora un guardia que las caza en CI; si tocas ese terreno,
+lee el guardia antes de pelearte con él.
+
+### Un `GRANT` no acota nada. Solo el `REVOKE` quita algo
+
+`docker/postgres/init/01-app-role.sh` reparte por *default privileges*
+`SELECT, INSERT, UPDATE, DELETE` sobre **toda tabla nueva** del esquema. Eso evita tener que
+acordarse de un GRANT en cada migración — pero significa que escribir `GRANT SELECT, INSERT` no
+restringe nada: solo repite dos de los cuatro permisos que el rol ya tiene.
+
+Cinco tablas creían ser más estrictas de lo que eran. Las dos graves se escriben **solo** desde
+funciones `SECURITY DEFINER` que validan quién eres antes de tocar la fila (`platform_rules` con
+`assert_platform_superadmin`, `auth_action_tokens` con la verificación del token): con `UPDATE`
+directo, esa validación era decorativa.
+
+Si tu tabla debe ser append-only o de solo lectura, **escribe el REVOKE**.
+Guardias: `apps/api/src/database/privilegios.spec.ts` (lee las migraciones) y
+`privilegios.integration.spec.ts` (le pide al rol real lo que no debe poder, esperando 42501).
+
+### Los límites `{m,n}` de un regex solo admiten 0..255
+
+Y el patrón **no se compila al crear la tabla**: se compila la primera vez que la restricción se
+**evalúa**, o sea en el primer INSERT. Un `CHECK (url ~* '^https://[^[:space:]]{4,500}$')` dejó el
+producto **sin poder publicar el aviso de GPS durante días** —y por lo tanto sin poder iniciar
+rondas— con 1473 tests en verde: la migración se aplicó sin quejarse, los SELECT respondían, y solo
+el INSERT reventaba con `invalid regular expression: invalid repetition count(s)`.
+
+El tope largo va en un `length()`, que no tiene ese límite.
+Guardia: `migrations.spec.ts`, prueba "ningún regex de PostgreSQL pide un límite mayor a 255".
+
+### El DTO y el CHECK tienen que medir lo MISMO
+
+El DTO validaba el largo sin recortar, el servicio guardaba con `.trim()` y el CHECK medía
+`length(trim(body))`. Un valor de exactamente el mínimo con espacios en las puntas pasaba la
+validación y reventaba en la base con 500. Aparecieron **10 casos** de la misma forma.
+Guardia: `apps/api/src/database/largos-dto-vs-check.spec.ts`.
+
+### Una sentencia que falla ABORTA la transacción entera
+
+Si estás dentro de un `BEGIN` y compruebas dos permisos seguidos, el segundo no devuelve `42501`
+sino `25P02` (*in_failed_sql_transaction*): dejaste de medir el permiso y pasaste a medir que la
+transacción ya estaba rota. Una prueba así **sigue en verde aunque el permiso se abra**. Cada
+comprobación va en su `SAVEPOINT`.
+
+Corolario que muerde en producción: `AuditService.record` se traga sus errores a propósito, pero
+tragarse la excepción de JavaScript **no desaborta** la transacción — el `commit` revienta después y
+el usuario ve un 500 sin una sola línea de error en el camino.
+
+---
+
+## Cómo se entrega trabajo hecho por varias personas o agentes a la vez
+
+**Entrega diffs, nunca archivos completos.** Un archivo copiado entero lleva dentro el estado del
+repo del momento en que lo leíste; si `staging` se movió, aplicarlo **revierte en silencio** lo que
+entró después. Pasó tres veces en un día, con un arreglo de seguridad de por medio.
+
+Dos archivos concentran casi todos los choques y conviene tratarlos aparte, entregando el diff para
+que los aplique quien integra:
+
+- `packages/shared/src/rules.ts` — es el contrato. Una clave en el zod **sin ficha** en
+  `PATROL_RULE_CATALOG` no compila (es un tipo mapeado), y una ficha con rangos distintos a los del
+  zod no pasa `rule-catalog.spec.ts`.
+- `apps/api/src/auth/authorization-matrix.spec.ts` — son tres ediciones, no una: el import, la fila
+  y la entrada en `CONTROLLERS`. El test falla tanto si sobra como si falta.
+
+Y elige el sello de una migración **al final**, no al empezar: dos carriles que entregan el mismo
+día eligen el mismo número. Renumerar es seguro mientras no se haya aplicado en ningún ambiente, y
+por eso ninguna prueba debe fijar un sello exacto con `toBe(...)` — lo que importa de un sello es el
+orden. `migrations.spec.ts` comprueba las colisiones y la coherencia entre archivo, clase y `name`.
+
+---
+
 ## Decisiones ya tomadas (no re-litigar)
 
 | Área | Decisión | Por qué |
@@ -392,46 +467,79 @@ tocar un componente.
 > podía escribir (solo aparece con el contenedor de verdad). Ninguno de los dos es detectable con
 > mocks.
 >
-> Por eso existe **`scripts/humo-e2e.py`**: habla con la API desplegada, sin mockear nada.
-> Córrelo después de desplegar, no antes:
+> Por eso hay **dos** guiones, y hacen cosas distintas. Los dos se corren después de desplegar:
 >
 > ```bash
-> python scripts/humo-e2e.py          # contra staging
+> python scripts/humo-e2e.py     # 162 comprobaciones, una por endpoint
+> python scripts/loop-e2e.py     # el recorrido completo del producto
 > ```
+>
+> `humo-e2e` mira cada endpoint por separado. `loop-e2e` mira la **costura entre endpoints**:
+> publicar el aviso → aceptarlo → confirmar el permiso del sistema → iniciar la ronda → escanear.
+> Esa distinción no es teórica: el agujero por el que un guardia podía saltarse el consentimiento de
+> geolocalización —escanear sin aceptar, y que el sistema empezara a registrar su ubicación— **no lo
+> veía ninguna de las 162 comprobaciones**, porque cada una miraba un endpoint y el agujero estaba
+> entre dos.
 >
 > Si tocaste una consulta SQL, **verifica los nombres de columna contra la migración**, no contra el
 > mock del test.
 
 Antes de abrir el PR:
 
-1. `npm run typecheck` y `npm run build` pasan.
-2. Si tocaste datos: la tabla nueva tiene `tenant_id` y política RLS, y existe un test que prueba que
-   el tenant A no lee nada del tenant B.
+1. `npm run typecheck`, `npm run lint` y `npm run build` pasan.
+2. Si tocaste datos: la tabla nueva tiene `tenant_id`, `ENABLE` **y `FORCE`** RLS, política que falla
+   cerrada, el `REVOKE` de lo que no debe poder hacerse, y un test que prueba que el tenant A no lee
+   nada del tenant B.
 3. Si tocaste la API: hay test de autorización para el endpoint nuevo, cubriendo los 4 roles y el caso
-   cross-tenant.
+   cross-tenant. Si es del `SUPERVISOR`, además el filtro por `supervisor_sites` — el rol no basta.
 4. Si tocaste la app: probado **sin conexión**.
-5. Si agregaste una regla de negocio: está en `rules.ts`, tiene default y es editable por el admin.
+5. Si agregaste una regla de negocio: está en `rules.ts`, tiene ficha en el catálogo, default, y es
+   editable por el admin.
+6. **Si el arreglo corrige un defecto, comprueba que tu test falla sin él.** Un test de regresión que
+   pasa con y sin el arreglo no prueba nada, y hoy encontramos dos así. Quita el arreglo, corre el
+   test, míralo fallar, vuelve a ponerlo.
 
 ---
 
-## Estado del scaffolding
+## Estado real (2026-08-05)
 
-Lo verificado y lo que no, para que no asumas de más:
+Lo verificado y lo que no, para que no asumas de más **en ninguna de las dos direcciones**: esta
+tabla estuvo meses diciendo que `apps/mobile` no existía cuando ya tenía el puente NFC entero, y eso
+manda a la gente a construir lo que ya está.
 
 | | Estado |
 |---|---|
-| `npm install`, `typecheck`, `build` de shared/api/web | **verificado en CI** |
-| Sintaxis del `docker-compose.yml` | **verificado en CI** |
-| Construcción de las imágenes de `api` y `web` | **verificado en CI** |
-| `docker compose up` levantando los servicios de verdad | **sin verificar** |
-| API respondiendo en runtime | **sin verificar** |
-| `apps/mobile` | **sin inicializar** — es el primer paso de #18 |
+| `typecheck`, `lint` y `build` de shared/api/web | **verificado en CI** |
+| Imágenes de `api` y `web`, y `docker-compose` | **verificado en CI** |
+| La API respondiendo en el despliegue | **verificado en cada deploy** — `scripts/humo-e2e.py`, 162 comprobaciones |
+| El loop del producto de punta a punta | **verificado en cada deploy** — `scripts/loop-e2e.py` |
+| RLS, privilegios y restricciones contra PostgreSQL real | **verificado en CI** — los `*.integration.spec.ts` |
+| `apps/mobile` | **construido**: WebView + puente nativo versionado, lector NFC, offline con cola y tarea en segundo plano, push con deep links, firma de dispositivo, iconos y splash |
+| La app en un **teléfono de verdad** | **SIN VERIFICAR.** Es el mayor riesgo abierto del proyecto (#217, #230) |
+| Publicación en Google Play | **sin empezar** — riesgo de calendario, no de código (#18) |
 
-Que la CI construya la imagen no es lo mismo que que el servicio arranque y responda: lo primero
-prueba que el Dockerfile compila, no que la aplicación funciona.
+Que CI construya la imagen no es lo mismo que que el servicio arranque y responda; y que el servicio
+responda no es lo mismo que que el producto sirva. Por eso hay dos guiones distintos y los dos corren
+después de cada despliegue.
 
-El scaffolding tiene dos endpoints de humo: `/health` y `/api/rules/defaults`. El segundo existe solo
-para probar que `@voxia/shared` se resuelve desde la API; se reemplaza al implementar #16.
+### La app móvil: qué falta para tener el compilado
+
+Todo el código está. Lo que falta es de cuenta, no de programación:
+
+1. **Cuenta de Expo y `eas login`.** `app.config.ts` declara `slug: 'voxia-control'` y
+   `package: 'com.voxtilabs.voxiacontrol'`, pero no hay `projectId` ni `owner`: el primer
+   `eas build` los vincula.
+2. **Árbol limpio**, porque `eas.json` tiene `requireCommit: true`.
+3. `npm run build:preview` desde `apps/mobile` — APK de **release** con distribución interna, ya
+   apuntando a staging. Es release a propósito: un APK de debug esconde justo lo que se rompe fuera
+   de debug (R8, tráfico en claro bloqueado, permisos).
+4. **Respaldar el keystore** que EAS genera en ese primer build. Es lo único de todo el proyecto que
+   no se puede rehacer: sin él no se puede volver a actualizar la app publicada, nunca.
+
+**Expo Go no sirve para el producto completo**: la Web NFC API no está expuesta dentro del WebView,
+así que el escaneo tiene que ser nativo y eso exige un *development build*. Expo Go sí sirve para
+probar la parte web —login, ver el turno, novedades, fotos—, y para eso está el perfil
+`development`. El detalle está en `apps/mobile/README.md`.
 
 ## Nombre del repo
 
