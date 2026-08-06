@@ -132,12 +132,19 @@ describeDatabase('purga por retencion (esquema real)', () => {
     await app.query('BEGIN');
     try {
       await app.query(`SELECT set_config('app.tenant_id', gen_random_uuid()::text, true)`);
-      await expect(
-        app.query(`SELECT retencion_dias_efectivos('scan_photos', 30)`),
-      ).rejects.toMatchObject({ code: '42501' });
-      await expect(
-        app.query(`SELECT retencion_marcar_barrido(gen_random_uuid())`),
-      ).rejects.toMatchObject({ code: '42501' });
+      // Cada comprobacion va en su SAVEPOINT. La primera sentencia que falla
+      // ABORTA la transaccion entera, asi que sin esto la segunda no devolvia
+      // 42501 sino 25P02 (in_failed_sql_transaction): dejaba de medir el
+      // cerrojo y pasaba a medir que la transaccion ya estaba rota. Lo cazo CI
+      // contra PostgreSQL de verdad; con mocks se veia igual de verde.
+      for (const sentencia of [
+        `SELECT retencion_dias_efectivos('scan_photos', 30)`,
+        `SELECT retencion_marcar_barrido(gen_random_uuid())`,
+      ]) {
+        await app.query('SAVEPOINT cerrojo');
+        await expect(app.query(sentencia)).rejects.toMatchObject({ code: '42501' });
+        await app.query('ROLLBACK TO SAVEPOINT cerrojo');
+      }
     } finally {
       await app.query('ROLLBACK');
     }
