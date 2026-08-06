@@ -63,11 +63,16 @@ const config: ExpoConfig = {
   name: 'VoxIA Control',
   slug: 'voxia-control',
   /**
-   * Cuenta de Expo dueña del proyecto. Va explicito porque de el depende **quien
-   * guarda el keystore**: si alguien construye desde otra cuenta, EAS genera una
-   * clave de firma distinta y esa build ya no puede actualizar la app publicada.
+   * Cuenta de Expo dueña del proyecto. Es la ORGANIZACION, no la cuenta
+   * personal: el `projectId` de abajo pertenece a `liinoos-team`, y EAS aborta
+   * el build si los dos no coinciden.
+   *
+   * Va explicito porque de la cuenta depende **quien guarda el keystore**. Con
+   * la cuenta personal, la clave de firma queda atada a una persona; con la
+   * organizacion, el equipo la administra. Dos builds firmadas con claves
+   * distintas no se pueden actualizar entre si en Play Store.
    */
-  owner: 'liinoo',
+  owner: 'liinoos-team',
   /**
    * El proyecto en EAS. `eas init` no lo puede escribir solo porque esta
    * configuracion es dinamica (TypeScript, no app.json), asi que va a mano.
