@@ -31,6 +31,17 @@ const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
  * que el guardia crea que la app se colgo.
  */
 const PACIENCIA_MS = 8_000;
+/*
+ * Deja inspeccionar el portal desde `chrome://inspect` de un PC, con DevTools
+ * completas: consola, red, elementos.
+ *
+ * Solo en los perfiles que NO son de tienda (`eas.json` lo pone en `preview` y
+ * no en `production`), y no es un detalle de comodidad: con la depuracion
+ * abierta, cualquiera con el telefono y un cable ve la sesion, las cookies y
+ * los datos del recinto. En un producto que vende trazabilidad de trabajadores
+ * eso es exactamente lo que no puede pasar.
+ */
+const DEPURABLE = process.env.EXPO_PUBLIC_DEPURABLE === '1';
 const APP_LIKE_DOCUMENT = `
   (function () {
     // Esto corre en document-start: \`document.head\` puede ser null todavia, y
@@ -237,6 +248,7 @@ export default function App() {
             mostrarFallo();
           }
         }}
+        webviewDebuggingEnabled={DEPURABLE}
         javaScriptEnabled
         domStorageEnabled
         // Sin esto el selector de archivos del WebView no entrega la foto.

@@ -29,7 +29,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_WEB_URL": "https://test-sentrycore.voxtilabs.cl"
+        "EXPO_PUBLIC_WEB_URL": "https://test-sentrycore.voxtilabs.cl",
+        "EXPO_PUBLIC_DEPURABLE": "1"
       }
     },
     "production": {
