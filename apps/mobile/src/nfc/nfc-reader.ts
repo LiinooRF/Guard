@@ -72,10 +72,45 @@ export function crearLectorNfc(puerto: PuertoNfc): LectorNfc {
 
   const iniciar = () => (inicio ??= puerto.iniciar());
 
+  /**
+   * Cuanto se espera a que el NFC del sistema conteste antes de darlo por
+   * ausente. Comprobado en un telefono real: cuando `NfcManager.start()` no
+   * resuelve, el saludo del puente NUNCA se responde — y como el portal
+   * deshabilita el escaneo hasta recibir `ready`, el guardia se queda sin poder
+   * hacer nada. Ni siquiera por QR, que es justo el respaldo que existe para
+   * los telefonos sin antena.
+   *
+   * Tres segundos: consultar el estado del NFC es una llamada local al sistema.
+   * Si tarda mas, no va a mejorar esperando.
+   */
+  const MS_ESPERA_NFC = 3_000;
+
+  async function conTope<T>(promesa: Promise<T>, alVencer: T): Promise<T> {
+    let temporizador: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promesa,
+        new Promise<T>((resolver) => {
+          temporizador = setTimeout(() => resolver(alVencer), MS_ESPERA_NFC);
+        }),
+      ]);
+    } finally {
+      if (temporizador) clearTimeout(temporizador);
+    }
+  }
+
+  /**
+   * Nunca se cuelga y nunca lanza: un telefono sin NFC, con el NFC apagado o
+   * con la pila del sistema colgada tiene que quedar como `tieneNfc: false`,
+   * no como un puente que no contesta. La diferencia entre las dos es que en la
+   * primera el guardia trabaja por QR, y en la segunda no trabaja.
+   */
   async function capacidades() {
-    await iniciar();
-    const tieneNfc = await puerto.soportado();
-    return { tieneNfc, nfcActivado: tieneNfc && await puerto.activado() };
+    const arrancado = await conTope(iniciar().then(() => true).catch(() => false), false);
+    if (!arrancado) return { tieneNfc: false, nfcActivado: false };
+    const tieneNfc = await conTope(puerto.soportado().catch(() => false), false);
+    if (!tieneNfc) return { tieneNfc: false, nfcActivado: false };
+    return { tieneNfc, nfcActivado: await conTope(puerto.activado().catch(() => false), false) };
   }
 
   async function escanear(timeoutMs: number): Promise<ResultadoEscaneoPayload> {
