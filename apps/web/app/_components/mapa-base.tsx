@@ -28,12 +28,17 @@
  *
  * ── De donde salen las imagenes ───────────────────────────────────────────────
  *
- * De `mapa-tiles.ts`, por configuracion de entorno, y NUNCA de
+ * De la prop `origen` si la hay, y si no del contexto que deja
+ * `ProveedorOrigenTiles` (`mapa-origen-tiles.tsx`), que lo resuelve en el
+ * SERVIDOR leyendo `MAP_TILE_URL` en cada request. Nunca de
  * `tile.openstreetmap.org` en produccion: su politica prohibe el trafico de
  * aplicaciones reales y bloquea al que la incumple. Sin proveedor configurado el
  * mapa se dibuja sin fondo —los puntos y el recorrido se siguen viendo— con un
  * aviso a la vista. Un mapa sin foto es molesto; que nos corten el servicio a
  * todos los clientes es un incidente.
+ *
+ * El proveedor elegido y sus costos estan en
+ * `docs/decisions/0002-proveedor-de-tiles-del-mapa.md`.
  *
  * ── Tres cosas que este archivo cuida ─────────────────────────────────────────
  *
@@ -69,7 +74,8 @@ import {
   type PuntoMapa,
   type TrazaMapa,
 } from './mapa-modelo';
-import { ZOOM_INICIAL, resolverOrigenTiles, type OrigenTiles } from './mapa-tiles';
+import { useOrigenTiles } from './mapa-origen-tiles';
+import { ZOOM_INICIAL, type OrigenTiles } from './mapa-tiles';
 
 export type {
   LineaMapa,
@@ -112,27 +118,17 @@ export interface MapaBaseProps {
    * solo tipo de marca es ruido.
    */
   leyenda?: ReadonlyArray<ItemLeyenda>;
-  /** Solo para pruebas y para un proveedor de tiles por empresa. */
+  /**
+   * Origen explicito. GANA sobre el contexto. Lo usa `RecorridoPatrulla`, que ya
+   * recibe la plantilla del servidor por su cuenta, y sirve para las pruebas y
+   * para un proveedor por empresa. Omitelo y se toma el del contexto.
+   */
   origen?: OrigenTiles;
 }
 
 /* ------------------------------------------------------------------ */
 /* Configuracion                                                       */
 /* ------------------------------------------------------------------ */
-
-/**
- * Se resuelve una sola vez, al cargar el modulo.
- *
- * `process.env.NEXT_PUBLIC_*` se reemplaza al COMPILAR y solo si se escribe
- * literal: nada de armar el nombre de la variable, porque queda `undefined` en
- * el navegador y el mapa se apaga sin explicacion.
- */
-const ORIGEN_DEL_ENTORNO = resolverOrigenTiles({
-  url: process.env.NEXT_PUBLIC_MAP_TILES_URL,
-  atribucion: process.env.NEXT_PUBLIC_MAP_TILES_ATTRIBUTION,
-  maxZoom: process.env.NEXT_PUBLIC_MAP_TILES_MAX_ZOOM,
-  produccion: process.env.NODE_ENV === 'production',
-});
 
 const LADO_MARCA = 26;
 const RELLENO_ENCUADRE: [number, number] = [28, 28];
@@ -159,7 +155,7 @@ export function MapaBase({
   interactivo = true,
   mensajeVacio = MENSAJE_VACIO_POR_DEFECTO,
   leyenda = [],
-  origen = ORIGEN_DEL_ENTORNO,
+  origen,
 }: MapaBaseProps) {
   const contenedorRef = useRef<HTMLDivElement | null>(null);
   const mapaRef = useRef<MapaLeaflet | null>(null);
@@ -175,9 +171,14 @@ export function MapaBase({
    */
   const [generacion, setGeneracion] = useState(0);
 
+  // El hook va SIEMPRE, aunque venga la prop: llamarlo dentro de un `if` romperia
+  // el orden de los hooks en cuanto una pantalla dejara de pasar `origen`.
+  const origenDelContexto = useOrigenTiles();
+  const origenEfectivo = origen ?? origenDelContexto;
+
   const zoom = zoomPorDefecto ?? ZOOM_INICIAL;
-  const urlTiles = origen.url;
-  const maxZoom = origen.maxZoom;
+  const urlTiles = origenEfectivo.url;
+  const maxZoom = origenEfectivo.maxZoom;
 
   const firma = useMemo(
     () => firmaDelContenido(puntos, trazas, centro),
@@ -342,7 +343,7 @@ export function MapaBase({
 
   return (
     <figure className="mapa" style={{ margin: 0 }}>
-      <MapaAviso aviso={origen.aviso} />
+      <MapaAviso aviso={origenEfectivo.aviso} />
 
       {hayMapa ? (
         <div style={{ position: 'relative' }}>
@@ -419,7 +420,7 @@ export function MapaBase({
 
       <ListaDeLugares puntos={puntos} abierta={estado === 'sin-libreria'} />
 
-      <MapaAtribucion origen={origen} />
+      <MapaAtribucion origen={origenEfectivo} />
     </figure>
   );
 }

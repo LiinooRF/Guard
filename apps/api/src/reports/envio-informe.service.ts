@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { createHash } from 'node:crypto';
 import { PassThrough } from 'node:stream';
@@ -14,6 +14,7 @@ import {
   ENVIO_INFORME_JOB_NAME,
   ENVIO_INFORME_QUEUE_NAME,
 } from './envio-informe.constants';
+import { DOMINIOS_NO_DESPACHABLES, separarPorDominio } from './envio-informe.dominios';
 import {
   INFORME_AL_CIERRE,
   INFORME_BAJO_UMBRAL,
@@ -42,6 +43,13 @@ import { PatrolReportService } from './patrol-report.service';
  *   3. `despachar()` resuelve reglas y destinatarios, genera el informe, deja
  *      una fila por destinatario y encola los correos.
  *
+ * EL BARRIDO ES LA RED, NO EL CAMINO. `envio-informe.barrido.ts` rescata cada
+ * diez minutos las rondas cerradas que quedaron sin informe, con 15 de gracia:
+ * si alguna vez vuelve a ser el unico que despacha —porque alguien saco la
+ * llamada del paso 1— el informe seguiria llegando, pero entre 15 y 25 minutos
+ * tarde y sin nada debajo el dia que el barrido falle. Que el paso 1 exista se
+ * fija en guard.service.spec.ts, no aca.
+ *
  * TRES CAPAS DE IDEMPOTENCIA, Y CADA UNA CUBRE UN AGUJERO DISTINTO
  *   - El job de despacho lleva jobId derivado del patrolId: reprocesar la misma
  *     ronda no crea un segundo despacho.
@@ -57,16 +65,20 @@ import { PatrolReportService } from './patrol-report.service';
  *     `reportRecipients`, que se configura por tenant y se pisa por recinto.
  *   - Alerta bajo umbral (OTRO asunto, mismo PDF): solo los administradores, y
  *     ademas del informe, no en vez de el.
+ *   - Nadie cuyo dominio no se despache. Ver envio-informe.dominios.ts: las
+ *     cuentas demo usan `@demo-andina.test` y cada correo a un TLD reservado es
+ *     un rebote duro que le cuesta la cuenta al proveedor de correo de TODA la
+ *     plataforma.
  *
  * CUANDO NO SE MANDA NADA, TAMBIEN QUEDA REGISTRO
  *   Si el despacho resuelve que no hay nada que mandar —el envio automatico esta
- *   apagado, o la empresa no tiene a quien escribirle— deja una fila en
- *   `report_dispatch_attempts`. No es telemetria: es lo unico que distingue "a
- *   esta ronda nunca se le despacho el informe" de "se le despacho y se decidio
- *   no mandar nada". Sin esa marca, el barrido de rezagadas
- *   (envio-informe.barrido.ts) volveria a levantar esas rondas cada diez minutos
- *   durante toda su ventana de rescate, ocupando el cupo de las que si se
- *   perdieron de verdad.
+ *   apagado, la empresa no tiene a quien escribirle, o todas sus direcciones son
+ *   de prueba— deja una fila en `report_dispatch_attempts`. No es telemetria: es
+ *   lo unico que distingue "a esta ronda nunca se le despacho el informe" de "se
+ *   le despacho y se decidio no mandar nada". Sin esa marca, el barrido de
+ *   rezagadas (envio-informe.barrido.ts) volveria a levantar esas rondas cada
+ *   diez minutos durante toda su ventana de rescate, ocupando el cupo de las que
+ *   si se perdieron de verdad.
  */
 
 /** Estados en los que una ronda ya termino y el informe tiene sentido. */
@@ -80,8 +92,16 @@ const RONDAS_CERRADAS = new Set(['completada', 'incompleta', 'vencida']);
  * y 'ronda_inexistente' no tiene ronda a la que apuntar la fila. Un despacho que
  * falla —error de red, PDF que no se pudo dibujar— tampoco deja marca, porque no
  * hubo decision: hubo accidente, y esa ronda debe seguir siendo rescatable.
+ *
+ * ESTA UNION Y EL CHECK DE LA TABLA SON UN SOLO CONTRATO EN DOS ARCHIVOS. Los
+ * valores permitidos salen de 1725472900000-CreateReportDispatchBacklog mas
+ * 1725822000000-AllowSuppressedDispatchReason. Agregar un motivo aca sin la
+ * migracion no rompe ningun test con mock: revienta el INSERT en produccion.
  */
-type MotivoAtendido = Extract<MotivoOmision, 'envio_desactivado' | 'sin_destinatarios'>;
+type MotivoAtendido = Extract<
+  MotivoOmision,
+  'envio_desactivado' | 'sin_destinatarios' | 'dominio_no_despachable'
+>;
 
 interface RondaRow {
   site_id: string;
@@ -103,6 +123,11 @@ interface EntregaRow {
   queued_at: Date;
 }
 
+interface MarcaRow {
+  reason: string;
+  attempted_at: Date;
+}
+
 @Injectable()
 export class EnvioInformeService {
   private readonly logger = new Logger(EnvioInformeService.name);
@@ -114,6 +139,13 @@ export class EnvioInformeService {
     private readonly informe: PatrolReportService,
     private readonly mail: MailQueueService,
     private readonly rules: RulesService,
+    /**
+     * Dominios que no se despachan. Se resuelve del entorno al armar el modulo,
+     * no en cada despacho: leerlo en caliente haria que dos rondas de la misma
+     * noche se comportaran distinto segun cuando arranco el proceso.
+     */
+    @Inject(DOMINIOS_NO_DESPACHABLES)
+    private readonly dominiosNoDespachables: readonly string[],
   ) {}
 
   // ------------------------------------------------------------------ disparo
@@ -182,40 +214,76 @@ export class EnvioInformeService {
     const reglas = await this.rules.effective({ siteId: ronda.site_id });
 
     const admins = await this.administradores();
-    const destinatarios = this.armarDestinatarios(admins, reglas.reportRecipients);
-    if (destinatarios.length === 0) {
-      // Sin correo no hay informe que mandar. Se registra porque casi siempre
-      // significa que el tenant se creo sin admin con correo, no que asi lo
-      // quisieron.
+    const candidatos = this.armarDestinatarios(admins, reglas.reportRecipients);
+
+    // El filtro de dominio va ANTES de cualquier decision de envio: lo que no se
+    // puede despachar no cuenta como destinatario para nada.
+    const { despachables: destinatarios, suprimidos } = separarPorDominio(
+      candidatos,
+      this.dominiosNoDespachables,
+    );
+    if (suprimidos.length > 0) {
+      // Conteos, nunca direcciones: el log lleva tenant_id y patrol_id, no datos
+      // de personas (CLAUDE.md, regla 5).
       this.logger.warn(
         JSON.stringify({
-          event: 'informe_sin_destinatarios',
+          event: 'informe_destinatarios_suprimidos',
           tenant_id: tenantId,
           patrol_id: patrolId,
+          suprimidos: suprimidos.length,
+          despachables: destinatarios.length,
         }),
       );
-      await this.marcarAtendida(patrolId, 'sin_destinatarios');
-      return omitir(patrolId, 'sin_destinatarios');
+    }
+
+    if (destinatarios.length === 0) {
+      // Los dos casos se marcan igual —para que el barrido no vuelva a levantar
+      // la ronda cada diez minutos— pero con motivos distintos, porque se
+      // arreglan al reves: uno pidiendo un correo de verdad y el otro
+      // NO cargandole mas direcciones de prueba al tenant demo.
+      const motivo: MotivoAtendido =
+        suprimidos.length > 0 ? 'dominio_no_despachable' : 'sin_destinatarios';
+      this.logger.warn(
+        JSON.stringify({
+          event:
+            motivo === 'dominio_no_despachable'
+              ? 'informe_solo_dominios_no_despachables'
+              : 'informe_sin_destinatarios',
+          tenant_id: tenantId,
+          patrol_id: patrolId,
+          suprimidos: suprimidos.length,
+        }),
+      );
+      await this.marcarAtendida(patrolId, motivo);
+      return omitir(patrolId, motivo, suprimidos.length);
     }
 
     // Chequeo barato ANTES de dibujar: si todo lo que corresponde mandar ya
     // quedo registrado, el reproceso no genera el PDF siquiera. Se usa el
     // cumplimiento que quedo persistido al cerrar; el definitivo se recalcula
     // despues, con el informe ya armado.
+    //
+    // SIN cumplimiento persistido se sigue de largo en vez de asumir que la
+    // ronda estuvo bien. Una ronda cerrada por el reloj puede quedar con
+    // `compliance_pct` en NULL, y tratar ese NULL como "sobre el umbral"
+    // apagaria la alerta justo en la ronda que mas falta hace avisar. El costo
+    // de equivocarse hacia el lado prudente es un PDF dibujado de mas.
     const pctPersistido = ronda.compliance_pct === null ? null : Number(ronda.compliance_pct);
+    const puedeEstarBajoUmbral =
+      pctPersistido === null || pctPersistido < reglas.complianceThreshold;
     const planTentativo = this.planificar(
       destinatarios,
-      pctPersistido !== null && pctPersistido < reglas.complianceThreshold,
+      puedeEstarBajoUmbral,
       reglas.autoSendReportOnClose,
     );
     if (planTentativo.length === 0) {
       await this.marcarAtendida(patrolId, 'envio_desactivado');
-      return omitir(patrolId, 'envio_desactivado');
+      return omitir(patrolId, 'envio_desactivado', suprimidos.length);
     }
 
     const yaRegistrados = await this.registradas(patrolId);
     if (planTentativo.every((destino) => yaRegistrados.has(clave(destino)))) {
-      return omitir(patrolId, 'ya_enviado');
+      return omitir(patrolId, 'ya_enviado', suprimidos.length);
     }
 
     const modelo = await this.informe.buildModel(patrolId, {
@@ -233,6 +301,32 @@ export class EnvioInformeService {
     // despacho pudo entrar un escaneo atrasado desde la sincronizacion offline.
     const bajoUmbral = modelo.compliance.pct < reglas.complianceThreshold;
     const plan = this.planificar(destinatarios, bajoUmbral, reglas.autoSendReportOnClose);
+
+    // El plan DEFINITIVO puede quedar vacio aunque el tentativo no lo estuviera.
+    // Pasa cuando el envio automatico esta apagado y el cumplimiento recien
+    // calculado quedo por encima del umbral: el tentativo planifico la alerta
+    // porque el persistido era mas bajo —o era NULL, que es el caso corriente de
+    // una ronda cerrada por el reloj— y el modelo la desactiva.
+    //
+    // Con `destinatarios` no vacio, `plan` vacio implica SIEMPRE
+    // `autoSendReportOnClose` apagado —con el prendido el informe va a todos y el
+    // plan nunca queda vacio—, y por eso lleva ese motivo. Lo acompaña una de dos:
+    // la ronda quedo por encima del umbral, o quedo por debajo pero ningun
+    // destinatario es administrador (la alerta solo va a los que tienen `userId`,
+    // ver `planificar()`). En ambos casos el hecho que se registra es el mismo que
+    // marca el camino tentativo: no habia nada que mandar.
+    //
+    // TIENE que dejar marca. Sin ella el bucle de mas abajo no escribe ninguna
+    // fila en `report_deliveries`, y `report_dispatch_backlog()` descuenta las
+    // rondas por entrega O por marca (1725472900000-CreateReportDispatchBacklog):
+    // sin ninguna de las dos, esta ronda vuelve a salir rezagada en CADA pasada
+    // del barrido durante toda la ventana de rescate, ocupando el cupo de las que
+    // si se perdieron. El PDF ya dibujado se tira, que es el costo asumido de
+    // decidir el veredicto con el cumplimiento recien calculado.
+    if (plan.length === 0) {
+      await this.marcarAtendida(patrolId, 'envio_desactivado');
+      return omitir(patrolId, 'envio_desactivado', suprimidos.length);
+    }
 
     const maxBytes = reglas.reportMailMaxAttachmentMB * 1024 * 1024;
     const adjuntar = pdf.length <= maxBytes;
@@ -300,11 +394,19 @@ export class EnvioInformeService {
         patrol_id: patrolId,
         informes,
         alertas,
+        suprimidos: suprimidos.length,
         adjunto: adjuntar,
       }),
     );
 
-    return { patrolId, informes, alertas, adjunto: adjuntar, omitido: null };
+    return {
+      patrolId,
+      informes,
+      alertas,
+      adjunto: adjuntar,
+      suprimidos: suprimidos.length,
+      omitido: null,
+    };
   }
 
   // ------------------------------------------------------------------ consulta
@@ -312,6 +414,12 @@ export class EnvioInformeService {
   /**
    * Que se envio de esa ronda y a quien. Lo consulta el panel para responder
    * "¿le llegó el informe al cliente?" sin abrir la bandeja de nadie.
+   *
+   * Devuelve TAMBIEN el caso negativo (`notDispatched`). Una respuesta con la
+   * lista de entregas vacia y nada mas no distingue "todavia no se despacho" de
+   * "se despacho y se decidio no mandar nada", que es justo la pregunta que
+   * llega a soporte. La marca vive en `report_dispatch_attempts` y trae el
+   * motivo escrito.
    *
    * El SUPERVISOR esta limitado a SUS recintos asignados: el permiso
    * reports:read no alcanza por si solo (ver CLAUDE.md y roles.ts).
@@ -333,6 +441,14 @@ export class EnvioInformeService {
        ORDER BY queued_at, kind, recipient_email`,
       [patrolId],
     );
+    // Una fila como maximo: la PK de la tabla es (tenant_id, patrol_id).
+    const marcas = await this.tenantContext.manager.query<MarcaRow[]>(
+      `SELECT reason, attempted_at
+       FROM report_dispatch_attempts
+       WHERE tenant_id = app_tenant_id() AND patrol_id = $1`,
+      [patrolId],
+    );
+    const marca = marcas[0];
 
     return {
       patrolId,
@@ -348,6 +464,10 @@ export class EnvioInformeService {
         attached: entrega.attached,
         queuedAt: entrega.queued_at,
       })),
+      notDispatched:
+        marca === undefined
+          ? null
+          : { reason: marca.reason, attemptedAt: marca.attempted_at },
     };
   }
 
@@ -480,6 +600,10 @@ export class EnvioInformeService {
    *
    * `ON CONFLICT DO NOTHING` porque el reproceso de la misma ronda vuelve a
    * pasar por aca, y la tabla no admite UPDATE ni para el rol de la aplicacion.
+   * Consecuencia asumida: si la primera pasada marco 'sin_destinatarios' y en la
+   * segunda ya hay direcciones de prueba cargadas, la marca conserva el motivo
+   * viejo. Es el precio de que la tabla sea bitacora y no estado, y no cambia
+   * ninguna decision de envio.
    */
   private async marcarAtendida(patrolId: string, motivo: MotivoAtendido): Promise<void> {
     await this.tenantContext.manager.query(

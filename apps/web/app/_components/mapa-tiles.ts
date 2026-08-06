@@ -16,11 +16,37 @@
  * en vez de caer solo a los tiles publicos. Preferimos un mapa sin foto satelital
  * a que nos corten el servicio.
  *
- * Variables de entorno (van al bundle, por eso llevan NEXT_PUBLIC_):
+ * La eleccion del proveedor esta en `docs/decisions/0002-proveedor-de-tiles-del-mapa.md`.
  *
- *   NEXT_PUBLIC_MAP_TILES_URL          plantilla XYZ, ej https://tiles.midominio.cl/{z}/{x}/{y}.png
- *   NEXT_PUBLIC_MAP_TILES_ATTRIBUTION  atribucion del proveedor, ADEMAS de la de OSM
- *   NEXT_PUBLIC_MAP_TILES_MAX_ZOOM     hasta que zoom sirve el proveedor (default 19)
+ * ── De donde se lee la configuracion, y por que hay dos juegos de variables ────
+ *
+ * `MAP_TILE_URL` / `MAP_ATTRIBUTION` / `MAP_TILES_MAX_ZOOM` son las variables de
+ * VERDAD: las leen los componentes de servidor en cada request y bajan por prop
+ * (ver `entornoDeTilesDelServidor`). Cambiar de proveedor es editar el entorno en
+ * Dokploy y reiniciar — sin reconstruir la imagen.
+ *
+ * `NEXT_PUBLIC_MAP_TILES_*` existe solo como comodidad de `npm run dev` y es el
+ * ULTIMO recurso. No sirve en produccion y conviene saber por que: Next reemplaza
+ * `NEXT_PUBLIC_*` al COMPILAR, y `Dockerfile.web` solo hornea
+ * `NEXT_PUBLIC_API_URL`. Ponerla en el `environment:` del compose no la hace
+ * llegar al navegador: para entonces el bundle ya esta escrito. Por eso el camino
+ * bueno es el del servidor.
+ *
+ * ── La plantilla puede ser del MISMO ORIGEN, y suele convenir ─────────────────
+ *
+ * `/tiles/{z}/{x}/{y}.png` es una plantilla valida y de primera clase. Es la
+ * forma que toma cualquier opcion donde la llave del proveedor NO puede viajar al
+ * navegador: el proxy inverso pone la llave del lado del servidor y el navegador
+ * solo ve una ruta nuestra. Tambien evita tener que abrir un host de terceros en
+ * `img-src` el dia que haya CSP, y hace que el cache del Service Worker de #76
+ * quede bajo nuestro propio origen.
+ *
+ * Variables (todas del servidor; ver `.env.example`):
+ *
+ *   MAP_TILE_URL        plantilla XYZ, ej https://tiles.midominio.cl/{z}/{x}/{y}.png
+ *                       o del mismo origen, ej /tiles/{z}/{x}/{y}.png
+ *   MAP_ATTRIBUTION     atribucion del proveedor, ADEMAS de la de OSM
+ *   MAP_TILES_MAX_ZOOM  hasta que zoom sirve el proveedor (default 19)
  */
 
 /**
@@ -110,6 +136,51 @@ const AVISO_INVALIDO =
 const AVISO_OSM_EN_PRODUCCION =
   'El mapa está configurado con los tiles públicos de OpenStreetMap, que no se pueden usar en producción: bloquean el servicio. Se muestran solo los puntos hasta que se configure un proveedor.';
 
+/* ------------------------------------------------------------------ */
+/* Lectura del entorno del SERVIDOR                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Las variables tal como las entrega el contenedor web. Se declaran aparte para
+ * poder probar la lectura sin tocar `process.env`, que es global y se filtra
+ * entre pruebas.
+ */
+export interface VariablesDeMapaDelServidor {
+  MAP_TILE_URL?: string | undefined;
+  MAP_ATTRIBUTION?: string | undefined;
+  MAP_TILES_MAX_ZOOM?: string | undefined;
+  NODE_ENV?: string | undefined;
+}
+
+/**
+ * Traduce el entorno del servidor a lo que espera `resolverOrigenTiles`.
+ *
+ * Existe para que el nombre de cada variable quede escrito UNA vez y contra el
+ * despliegue de verdad: `MAP_TILE_URL` y `MAP_ATTRIBUTION` son las que
+ * `docker-compose.dokploy.yml` y `docker-compose.production.yml` le pasan al
+ * contenedor, y las mismas que ya lee `app/app/[role]/page.tsx` para los
+ * componentes viejos de mapa. Que el mapa nuevo leyera OTRO nombre
+ * (`NEXT_PUBLIC_MAP_TILES_URL`, que ademas se hornea al compilar) es justo lo
+ * que dejaba el fondo apagado en produccion por mucho que el operador
+ * configurara bien Dokploy.
+ *
+ * OJO: llamala solo desde un componente de servidor que ya sea dinamico —los del
+ * panel lo son porque leen `cookies()`—. En una ruta prerenderizada, `process.env`
+ * se leeria al compilar y volveriamos al mismo problema.
+ */
+export function entornoDeTilesDelServidor(vars: VariablesDeMapaDelServidor): EntornoMapa {
+  return {
+    url: vars.MAP_TILE_URL,
+    atribucion: vars.MAP_ATTRIBUTION,
+    maxZoom: vars.MAP_TILES_MAX_ZOOM,
+    produccion: vars.NODE_ENV === 'production',
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Resolucion                                                          */
+/* ------------------------------------------------------------------ */
+
 /**
  * Resuelve de donde salen los tiles. Funcion pura: recibe el entorno ya leido,
  * porque `process.env.NEXT_PUBLIC_*` solo se reemplaza al compilar cuando se
@@ -128,7 +199,7 @@ export function resolverOrigenTiles(entorno: EntornoMapa): OrigenTiles {
         maxZoom,
         atribucionProveedor,
         aviso: AVISO_SIN_CONFIGURAR,
-        motivo: 'NEXT_PUBLIC_MAP_TILES_URL no esta definida',
+        motivo: 'MAP_TILE_URL no esta definida',
       };
     }
     return {
@@ -144,6 +215,20 @@ export function resolverOrigenTiles(entorno: EntornoMapa): OrigenTiles {
   const faltantes = MARCAS_OBLIGATORIAS.filter((marca) => !plantilla.includes(marca));
   if (faltantes.length > 0) {
     return invalido(maxZoom, atribucionProveedor, `la plantilla no trae ${faltantes.join(', ')}`);
+  }
+
+  // Ruta del mismo origen: la sirve nuestro propio proxy, asi que no hay host de
+  // terceros que revisar ni llave que se filtre al navegador. Se resuelve ANTES
+  // que `new URL()`, que con una ruta relativa lanza y la daria por invalida.
+  if (esRutaDelMismoOrigen(plantilla)) {
+    return {
+      estado: 'configurado',
+      url: plantilla,
+      maxZoom,
+      atribucionProveedor,
+      aviso: null,
+      motivo: null,
+    };
   }
 
   const anfitrion = anfitrionDe(plantilla);
@@ -213,6 +298,21 @@ function leerMaxZoom(valor: string | undefined): number {
   if (!Number.isFinite(numero)) return MAX_ZOOM_POR_DEFECTO;
   if (numero < MAX_ZOOM_MINIMO || numero > MAX_ZOOM_MAXIMO) return MAX_ZOOM_POR_DEFECTO;
   return numero;
+}
+
+/**
+ * `/tiles/{z}/{x}/{y}.png` si, `//otro.cl/...` NO.
+ *
+ * La segunda es una URL con protocolo heredado: el navegador la pide a OTRO
+ * dominio aunque parezca una ruta nuestra. Es la misma trampa que los redirect
+ * abiertos, y por eso tambien se rechaza `/\`, que varios navegadores normalizan
+ * a `//`. Solo pasa una barra sola seguida de algo que no sea barra ni
+ * contrabarra.
+ */
+function esRutaDelMismoOrigen(plantilla: string): boolean {
+  if (!plantilla.startsWith('/')) return false;
+  const segundo = plantilla.charAt(1);
+  return segundo !== '/' && segundo !== '\\';
 }
 
 /** `null` cuando la plantilla no es una URL que el navegador pueda pedir. */

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { MailQueueService } from '../mail/mail-queue.service';
+import type { ResultadoEncolado } from '../mail/mail-queue.types';
 
 @Injectable()
 export class MailService {
@@ -10,12 +11,22 @@ export class MailService {
     private readonly queue: MailQueueService,
   ) {}
 
+  /**
+   * El retorno es `ResultadoEncolado` y ya no `unknown` (#86).
+   *
+   * La invitacion es el correo que se manda al crear un tenant, y los tenants
+   * demo usan `@demo-andina.test`, que la cola SUPRIME. Con `unknown` el
+   * llamador no tenia forma de saberlo: el alta terminaba "bien" y la
+   * invitacion no existia. Devolver el resultado no obliga a nadie a mirarlo,
+   * pero permite hacerlo — hoy `admin.service.ts`, `provisioning.service.ts` y
+   * `auth.service.ts` lo descartan a proposito.
+   */
   invitation(
     recipient: string,
     token: string,
     tenantId: string,
     idempotencyKey: string,
-  ): Promise<unknown> {
+  ): Promise<ResultadoEncolado> {
     const link = `${this.publicWebUrl()}/#invite=${encodeURIComponent(token)}`;
     return this.queue.enqueue(
       {
@@ -34,12 +45,18 @@ export class MailService {
     );
   }
 
+  /**
+   * La recuperacion de contrasena responde igual exista o no la cuenta, a
+   * proposito: es lo que evita enumerar usuarios. Una supresion por dominio se
+   * ve igual desde fuera, asi que este retorno es para el log y las metricas
+   * del servidor, nunca para la respuesta HTTP.
+   */
   passwordReset(
     recipient: string,
     token: string,
     tenantId: string | null,
     idempotencyKey: string,
-  ): Promise<unknown> {
+  ): Promise<ResultadoEncolado> {
     const link = `${this.publicWebUrl()}/#reset=${encodeURIComponent(token)}`;
     return this.queue.enqueue(
       {

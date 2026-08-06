@@ -269,7 +269,7 @@ export class EscalationService {
       );
       if (!registrada.length) continue;
 
-      await this.mail.enqueue(
+      const encolado = await this.mail.enqueue(
         {
           to: destino.email,
           template: ALERTA_ESCALAMIENTO,
@@ -278,7 +278,11 @@ export class EscalationService {
         },
         { idempotencyKey: `escalation:${eventId}:${nivel.level}:${destino.email}` },
       );
-      enviados += 1;
+      // Suprimido por dominio (#86) no es enviado. La fila de
+      // `event_notifications` queda igual —es el acuse, y borrarla romperia la
+      // idempotencia del reintento—, pero este contador es lo que mira quien
+      // pregunta si la alerta salio. Un panico que no se notifico no se cuenta.
+      if (encolado.estado === 'encolado') enviados += 1;
     }
     return enviados;
   }
@@ -554,8 +558,9 @@ export class EscalationService {
         reason,
         at: new Date().toISOString(),
       };
+      let avisados = 0;
       for (const destino of destinos) {
-        await this.mail.enqueue(
+        const encolado = await this.mail.enqueue(
           {
             to: destino.recipient_email,
             template: ALERTA_FALSA_ALARMA,
@@ -564,8 +569,12 @@ export class EscalationService {
           },
           { idempotencyKey: `false-alarm:${correctionId}:${destino.id}` },
         );
+        // Antes devolvia `destinos.length` sin mirar nada: el numero era "a
+        // cuantos correspondia avisar", no "a cuantos se aviso". Con la
+        // supresion por dominio (#86) esa diferencia deja de ser teorica.
+        if (encolado.estado === 'encolado') avisados += 1;
       }
-      return destinos.length;
+      return avisados;
     } catch (error) {
       this.logger.warn(
         JSON.stringify({

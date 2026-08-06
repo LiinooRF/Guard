@@ -54,7 +54,11 @@ function servicio(
   query: jest.Mock,
   opciones: { notificar?: boolean; enqueue?: jest.Mock } = {},
 ) {
-  const enqueue = opciones.enqueue ?? jest.fn().mockResolvedValue({ jobId: 'mail-job' });
+  // La forma REAL de lo que devuelve MailQueueService.enqueue: union
+  // discriminada con `estado`. Un mock que solo devuelva `{ jobId }` haria
+  // pasar un test que en produccion no cuenta ningun envio.
+  const enqueue =
+    opciones.enqueue ?? jest.fn().mockResolvedValue({ estado: 'encolado', jobId: 'mail-job' });
   const publish = jest.fn();
   const service = new ChecklistsService(
     { manager: { query } } as unknown as TenantContextService,

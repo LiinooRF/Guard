@@ -109,6 +109,18 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-true}
+      # Dominios extra a los que no se despacha correo (#86). Los reservados por
+      # norma (.test, .invalid, .example) ya vienen bloqueados de fabrica y NO
+      # dependen de esta linea: sin ella la proteccion igual esta puesta.
+      #
+      # Va enumerada porque este `environment` es una lista explicita: una
+      # variable definida en el .env del servidor y no declarada aca no llega al
+      # contenedor, y el sintoma seria "la configure y no hace nada".
+      #
+      # MAIL_ALLOW_RESERVED_DOMAINS no se pasa: en produccion `validateEnv` la
+      # rechaza con MAIL_DRIVER=smtp, asi que ofrecerla aca solo serviria para
+      # que alguien la ponga y el despliegue no arranque.
+      MAIL_BLOCKED_DOMAINS: ${MAIL_BLOCKED_DOMAINS:-}
       WEB_PUBLIC_URL: https://${APP_DOMAIN:?APP_DOMAIN es obligatorio}
       STORAGE_DRIVER: local
       STORAGE_LOCAL_PATH: /app/storage

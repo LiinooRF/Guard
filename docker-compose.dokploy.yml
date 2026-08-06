@@ -165,6 +165,19 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_SECURE: ${SMTP_SECURE}
+      # Dominios extra a los que no se despacha correo (#86). Los reservados por
+      # norma (.test de las cuentas demo) ya vienen bloqueados de fabrica y NO
+      # dependen de esta linea.
+      #
+      # Tiene que estar enumerada aca: este `environment` es una lista explicita,
+      # asi que una variable puesta en Dokploy y no declarada en este archivo
+      # simplemente no entra al contenedor. Es el mismo modo de falla que dejo un
+      # Service Worker viviendo en el repositorio y no en produccion.
+      #
+      # MAIL_ALLOW_RESERVED_DOMAINS NO se pasa a proposito: la escotilla es para
+      # Mailpit en la maquina de alguien, no para un contenedor desplegado. Sin
+      # esta linea vale `false` siempre, que es como tiene que ser.
+      MAIL_BLOCKED_DOMAINS: ${MAIL_BLOCKED_DOMAINS:-}
     volumes:
       - evidence_data:/data/evidence
     depends_on:

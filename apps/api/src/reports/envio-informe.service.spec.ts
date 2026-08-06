@@ -1,9 +1,11 @@
+import { Logger } from '@nestjs/common';
 import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
 import type { Queue } from 'bullmq';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
 import type { RulesService } from '../rules/rules.service';
+import { resolverDominiosNoDespachables } from './envio-informe.dominios';
 import { EnvioInformeService } from './envio-informe.service';
 import { INFORME_AL_CIERRE, INFORME_BAJO_UMBRAL } from './envio-informe.plantillas';
 import type { InformeRonda } from './patrol-report.model';
@@ -28,6 +30,9 @@ import type { PatrolReportService } from './patrol-report.service';
 const TENANT = 'a0000000-0000-4000-8000-000000000001';
 const PATRULLA = 'b0000000-0000-4000-8000-000000000009';
 const SITIO = 'c0000000-0000-4000-8000-000000000007';
+
+/** La lista de fabrica: la que corre en staging si nadie configura nada. */
+const DOMINIOS_DE_FABRICA = resolverDominiosNoDespachables({});
 
 const MODELO: InformeRonda = {
   patrolId: PATRULLA,
@@ -88,13 +93,18 @@ interface Fixture {
   ronda?: unknown[];
   admins?: unknown[];
   entregas?: Array<{ kind: string; recipient_email: string }>;
+  /** Marca de "ya se atendio" que la base YA tenia antes de este despacho. */
+  marcas?: Array<{ reason: string; attempted_at: Date }>;
   reglas?: Partial<PatrolRules>;
   modelo?: InformeRonda;
   /** Bytes que "pesa" el PDF dibujado. */
   pesoPdf?: number;
+  /** Dominios que no se despachan. Por defecto, los de fabrica. */
+  dominios?: readonly string[];
 }
 
 const ADMIN = { id: 'u-admin', email: 'Jefa@Empresa.cl' };
+const ADMIN_DEMO = { id: 'u-demo', email: 'admin@demo-andina.test' };
 
 /**
  * Manager falso que responde por el CONTENIDO del SQL y no por el orden de las
@@ -119,6 +129,9 @@ function armar(fixture: Fixture = {}) {
         if (registradas.has(clave)) return [];
         registradas.add(clave);
         return [{ id: `entrega-${registradas.size}` }];
+      }
+      if (sql.includes('FROM report_dispatch_attempts')) {
+        return fixture.marcas ?? [];
       }
       if (sql.includes('FROM report_deliveries')) {
         return (fixture.entregas ?? []).map((e) => ({ ...e }));
@@ -170,6 +183,7 @@ function armar(fixture: Fixture = {}) {
     informe,
     mail as unknown as MailQueueService,
     rules,
+    fixture.dominios ?? DOMINIOS_DE_FABRICA,
   );
 
   return { service, manager, informe, mail, rules, queue, atendidas };
@@ -215,6 +229,7 @@ describe('EnvioInformeService', () => {
       expect(resultado.informes).toBe(2);
       expect(resultado.alertas).toBe(0);
       expect(resultado.adjunto).toBe(true);
+      expect(resultado.suprimidos).toBe(0);
       expect(mail.enqueue).toHaveBeenCalledTimes(2);
 
       const destinos = mail.enqueue.mock.calls.map(([datos]) => (datos as { to: string }).to);
@@ -320,6 +335,59 @@ describe('EnvioInformeService', () => {
       expect(datos.to).toBe('jefa@empresa.cl');
     });
 
+    it('con el envio apagado y SIN cumplimiento persistido, la alerta se decide con el informe', async () => {
+      // Una ronda cerrada por el reloj puede quedar con compliance_pct en NULL.
+      // Tratar ese NULL como "sobre el umbral" apagaria la alerta justo en la
+      // ronda que mas falta hace avisar, y ademas dejaria marca de atendida:
+      // el barrido no volveria a mirarla nunca.
+      const { service, mail, atendidas } = armar({
+        reglas: { autoSendReportOnClose: false },
+        modelo: modeloCon(0, ['cp-1', 'cp-2', 'cp-3', 'cp-4', 'cp-5']),
+        ronda: [
+          { tenant_id: TENANT, site_id: SITIO, status: 'vencida', compliance_pct: null },
+        ],
+      });
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(resultado.alertas).toBe(1);
+      expect(resultado.informes).toBe(0);
+      expect(atendidas).toEqual([]);
+      expect((mail.enqueue.mock.calls[0]?.[0] as { template: unknown }).template).toBe(
+        INFORME_BAJO_UMBRAL,
+      );
+    });
+
+    it('con el envio apagado y el informe POR ENCIMA del umbral, no manda pero deja marca', async () => {
+      // El otro lado de la misma moneda. `compliance_pct` en NULL hace que el
+      // plan tentativo incluya la alerta (por prudencia, no se asume que la ronda
+      // estuvo bien), pero el modelo recien calculado la deja sobre el umbral: el
+      // plan definitivo queda VACIO.
+      //
+      // Sin marca no se escribe ninguna fila en report_deliveries NI en
+      // report_dispatch_attempts, y report_dispatch_backlog() descuenta por una o
+      // por la otra: la ronda volveria a salir rezagada en cada pasada del
+      // barrido durante las 48 h de la ventana, ocupando el cupo de 200.
+      const { service, mail, informe, atendidas } = armar({
+        reglas: { autoSendReportOnClose: false },
+        modelo: modeloCon(80, ['cp-5']),
+        ronda: [
+          { tenant_id: TENANT, site_id: SITIO, status: 'incompleta', compliance_pct: null },
+        ],
+      });
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(resultado.omitido).toBe('envio_desactivado');
+      expect(resultado.informes).toBe(0);
+      expect(resultado.alertas).toBe(0);
+      expect(mail.enqueue).not.toHaveBeenCalled();
+      expect(atendidas).toEqual([{ patrolId: PATRULLA, motivo: 'envio_desactivado' }]);
+      // El PDF se dibujo y se tiro: es el costo asumido de decidir el veredicto
+      // con el cumplimiento recien calculado y no con el persistido.
+      expect(informe.buildModel).toHaveBeenCalledTimes(1);
+    });
+
     it('sin destinatarios no manda y lo deja registrado', async () => {
       const { service, mail, atendidas } = armar({ admins: [] });
 
@@ -386,6 +454,156 @@ describe('EnvioInformeService', () => {
       await service.despachar(TENANT, PATRULLA);
 
       expect(rules.effective).toHaveBeenCalledWith({ siteId: SITIO });
+    });
+  });
+
+  // --------------------------------------------------- dominios no despachables
+
+  describe('despachar — dominios que no se despachan', () => {
+    it('la cuenta demo no recibe NADA, ni informe ni alerta', async () => {
+      // `.test` esta reservado por RFC 6761 y nunca resuelve: cada correo a
+      // @demo-andina.test es un rebote duro, y los rebotes duros son lo que
+      // hace que el proveedor suspenda la cuenta de TODA la plataforma.
+      const { service, mail, atendidas } = armar({
+        admins: [ADMIN_DEMO],
+        modelo: modeloCon(60, ['cp-4', 'cp-5']),
+        ronda: [
+          { tenant_id: TENANT, site_id: SITIO, status: 'completada', compliance_pct: '60.00' },
+        ],
+      });
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(mail.enqueue).not.toHaveBeenCalled();
+      expect(resultado.omitido).toBe('dominio_no_despachable');
+      expect(resultado.suprimidos).toBe(1);
+      // Con marca, y con SU motivo: sin marca el barrido volveria a levantar
+      // esta ronda cada diez minutos durante 48 h.
+      expect(atendidas).toEqual([{ patrolId: PATRULLA, motivo: 'dominio_no_despachable' }]);
+    });
+
+    it('no se confunde con "sin destinatarios": son dos arreglos opuestos', async () => {
+      const demo = armar({ admins: [ADMIN_DEMO] });
+      const vacio = armar({ admins: [] });
+
+      const conDemo = await demo.service.despachar(TENANT, PATRULLA);
+      const sinNadie = await vacio.service.despachar(TENANT, PATRULLA);
+
+      expect(conDemo.omitido).toBe('dominio_no_despachable');
+      expect(sinNadie.omitido).toBe('sin_destinatarios');
+    });
+
+    it('con un admin real y uno de prueba, el real recibe igual', async () => {
+      const { service, mail } = armar({
+        admins: [ADMIN, ADMIN_DEMO],
+        reglas: { reportRecipients: ['qa@demo-andina.test', 'operaciones@cliente.cl'] },
+      });
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(resultado.informes).toBe(2);
+      expect(resultado.suprimidos).toBe(2);
+      const destinos = mail.enqueue.mock.calls.map(([datos]) => (datos as { to: string }).to);
+      expect(destinos).toEqual(['jefa@empresa.cl', 'operaciones@cliente.cl']);
+    });
+
+    it('el suprimido NO deja fila en report_deliveries', async () => {
+      // La bitacora es de correos DESPACHADOS. Anotar ahi al suprimido diria que
+      // se le mando, y ademas lo sacaria del barrido si algun dia se corrige la
+      // direccion.
+      const { service, manager } = armar({ admins: [ADMIN, ADMIN_DEMO] });
+
+      await service.despachar(TENANT, PATRULLA);
+
+      const insertados = manager.query.mock.calls
+        .filter(([sql]) => String(sql).includes('INSERT INTO report_deliveries'))
+        .map(([, params]) => String((params as unknown[])[2]));
+      expect(insertados).toEqual(['jefa@empresa.cl']);
+    });
+
+    it('el log de supresion no lleva ninguna direccion', async () => {
+      // CLAUDE.md, regla 5: los logs llevan tenant_id y request_id, no datos de
+      // personas. Un correo ES un dato de persona.
+      const escritos: string[] = [];
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation((mensaje: unknown) => {
+          escritos.push(String(mensaje));
+        });
+
+      try {
+        const { service } = armar({ admins: [ADMIN, ADMIN_DEMO] });
+        await service.despachar(TENANT, PATRULLA);
+      } finally {
+        warn.mockRestore();
+      }
+
+      expect(escritos.length).toBeGreaterThan(0);
+      for (const linea of escritos) {
+        expect(linea).not.toContain('@');
+        expect(linea).toContain(PATRULLA);
+      }
+    });
+
+    it('con la escotilla de desarrollo abierta, la demo si recibe', async () => {
+      // Es el caso de Mailpit en local: captura todo y no manda nada a internet.
+      const { service, mail } = armar({
+        admins: [ADMIN_DEMO],
+        dominios: resolverDominiosNoDespachables({ MAIL_ALLOW_RESERVED_DOMAINS: 'true' }),
+      });
+
+      const resultado = await service.despachar(TENANT, PATRULLA);
+
+      expect(resultado.informes).toBe(1);
+      expect(resultado.suprimidos).toBe(0);
+      expect((mail.enqueue.mock.calls[0]?.[0] as { to: string }).to).toBe(
+        'admin@demo-andina.test',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------- consulta
+
+  describe('estadoDeEnvio', () => {
+    const ADMIN_SESION = { sub: 'u-admin', role: 'ADMIN' as const };
+
+    it('lista lo entregado y no marca nada como no despachado', async () => {
+      const { service } = armar({
+        entregas: [{ kind: 'informe', recipient_email: 'jefa@empresa.cl' }],
+      });
+
+      const estado = await service.estadoDeEnvio(PATRULLA, ADMIN_SESION);
+
+      expect(estado.deliveries).toHaveLength(1);
+      expect(estado.notDispatched).toBeNull();
+    });
+
+    it('cuando no se despacho, dice POR QUE', async () => {
+      // Sin esto, "lista vacia" no distingue "todavia no se despacho" de "se
+      // despacho y se decidio no mandar nada", que es justo lo que llega a
+      // soporte como "no me llego el informe".
+      const cuando = new Date('2026-08-01T03:00:00.000Z');
+      const { service } = armar({
+        marcas: [{ reason: 'dominio_no_despachable', attempted_at: cuando }],
+      });
+
+      const estado = await service.estadoDeEnvio(PATRULLA, ADMIN_SESION);
+
+      expect(estado.deliveries).toEqual([]);
+      expect(estado.notDispatched).toEqual({
+        reason: 'dominio_no_despachable',
+        attemptedAt: cuando,
+      });
+    });
+
+    it('el SUPERVISOR sin el recinto asignado no la ve', async () => {
+      // El permiso reports:read no alcanza por si solo: el alcance por recinto
+      // se verifica aparte (CLAUDE.md, los 4 roles).
+      const { service } = armar();
+
+      await expect(
+        service.estadoDeEnvio(PATRULLA, { sub: 'u-super', role: 'SUPERVISOR' }),
+      ).rejects.toThrow('No tienes este recinto asignado');
     });
   });
 });
