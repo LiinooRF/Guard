@@ -317,6 +317,15 @@ a { color: inherit; text-decoration: none; }
 .guardia-boton-escanear, .guardia-boton-primario, .guardia-boton-secundario, .guardia-boton-panico, .guardia-boton-opcion { min-height: var(--guardia-toque); border-radius: .8rem; font-weight: 800; cursor: pointer; touch-action: manipulation; }
 .guardia-boton-escanear { display: block; width: 100%; min-height: 4.75rem; margin-top: .9rem; border: 0; color: white; background: var(--guardia-azul); font-size: 1.35rem; letter-spacing: .01em; }
 .guardia-boton-primario { display: block; width: 100%; margin-top: 1rem; border: 0; color: white; background: var(--guardia-azul); font-size: 1.1rem; }
+/* Respaldo por QR (#227). El azul es del camino normal —la etiqueta NFC— y el
+   respaldo NO puede verse igual: si los dos botones fueran iguales, nadie
+   compraria etiquetas y el producto perderia lo unico que obliga a pisar el
+   punto. Mismo tamano de objetivo tactil, otro color y su etiqueta encima. */
+.guardia-boton-escanear.respaldo { background: var(--guardia-ambar); }
+/* La regla de :disabled vive mas abajo y tiene la misma especificidad, asi que
+   sin esta linea el boton deshabilitado seguiria ambar y pareceria apretable. */
+.guardia-boton-escanear.respaldo:disabled { background: #6b7488; }
+.guardia-marca-respaldo { margin: .9rem 0 -.3rem; color: var(--guardia-ambar); font-size: .95rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .guardia-boton-secundario { display: block; border: 2px solid var(--guardia-ink); padding: 0 1rem; color: var(--guardia-ink); background: white; font-size: 1.05rem; }
 .guardia-boton-secundario.ancho { width: 100%; margin-top: .7rem; text-align: center; }
 /* El label de la cámara es un botón a los ojos del guardia; su input está oculto. */
@@ -346,6 +355,10 @@ label.guardia-boton-secundario { display: flex; align-items: center; justify-con
 .guardia-chip.escaneado { color: #063c24; background: #ccf0dd; }
 .guardia-chip.con_anomalia { color: #3a2400; background: #ffe0a6; }
 .guardia-chip.sin-subir { color: #3a2400; background: #ffd479; }
+/* Contorno y no relleno: los rellenos ambar de esta lista significan "pendiente
+   o con observacion", y un punto marcado por QR no es ninguna de las dos. Es
+   evidencia mas debil, que es otra cosa y se lee distinto. */
+.guardia-chip.por-qr { color: var(--guardia-ink); background: white; box-shadow: inset 0 0 0 2px var(--guardia-ink); }
 .guardia-chip.criticidad-info, .guardia-chip.criticidad-baja { color: #262d3d; background: #e6e9f0; }
 .guardia-chip.criticidad-media { color: #3a2400; background: #ffe0a6; }
 .guardia-chip.criticidad-alta { color: #5c0710; background: #ffd0d4; }
@@ -381,6 +394,7 @@ label.guardia-boton-secundario { display: flex; align-items: center; justify-con
 .guardia-cumplimiento strong { color: var(--guardia-ink); font-size: 3.2rem; letter-spacing: -.04em; }
 .guardia-cumplimiento span { color: var(--guardia-muted); font-size: 1.05rem; font-weight: 700; }
 .guardia-resumen-conteo { margin: .2rem 0 1rem; color: var(--guardia-ink); font-size: 1.2rem; font-weight: 700; }
+.guardia-resumen-conteo.por-qr { margin: -.7rem 0 1rem; color: var(--guardia-ambar); font-size: 1.05rem; }
 .guardia-faltantes h3, .guardia-novedades-turno h3, .guardia-checklist h3 { margin: 1.1rem 0 .5rem; color: var(--guardia-ink); font-size: 1.2rem; }
 .guardia-faltantes ul, .guardia-novedades-turno ul { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
 .guardia-faltantes li { border-left: .35rem solid var(--guardia-ambar); padding: .5rem .7rem; background: #fff4dc; font-size: 1.05rem; font-weight: 700; }

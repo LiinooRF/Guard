@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
+import {
+  motivoQrInvalido,
+  opcionesDeEscaneo,
+  type MetodoEscaneo,
+} from './guard-escaneo-modelo';
 import { GuardMapa } from './guard-mapa';
 import { PanicoPanel } from './panico-panel';
 import { SyncEstado } from './sync-estado';
@@ -47,6 +52,7 @@ import {
   ErrorEscaneoPortal,
   useGuardBridge,
   type ResultadoEscaneoPayload,
+  type ResultadoEscaneoQrPayload,
 } from './use-guard-bridge';
 
 /**
@@ -64,6 +70,13 @@ export interface GuardShiftData {
   shift?: { scheduledStartAt: string; scheduledEndAt: string };
   /** Presupuesto de la foto, resuelto por la API en la cascada del recinto. */
   photoBudget?: { targetBytes: number; maxBytes: number };
+  /**
+   * Regla `allowQrFallback` del recinto (#227). Si la API no la manda —portal
+   * nuevo contra API vieja, que dura lo que dura un deploy— se asume permitido:
+   * es el valor por omisión del catálogo y dejar al guardia sin ningún camino
+   * sería el peor de los dos errores posibles.
+   */
+  qrFallbackEnabled?: boolean;
   patrol?: {
     id: string;
     status: string;
@@ -121,6 +134,7 @@ export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: str
       apiUrl={apiUrl}
       patrol={data.patrol}
       shift={data.shift}
+      qrPermitido={data.qrFallbackEnabled !== false}
       {...(data.photoBudget ? { presupuestoFoto: data.photoBudget } : {})}
     />
   );
@@ -148,11 +162,13 @@ function Ronda({
   patrol,
   shift,
   apiUrl,
+  qrPermitido,
   presupuestoFoto,
 }: {
   patrol: NonNullable<GuardShiftData['patrol']>;
   shift: NonNullable<GuardShiftData['shift']>;
   apiUrl: string;
+  qrPermitido: boolean;
   presupuestoFoto?: GuardShiftData['photoBudget'];
 }) {
   const puente = useGuardBridge(apiUrl);
@@ -239,22 +255,60 @@ function Ronda({
 
   const siguiente = siguientePunto(puntos, estado.puntos);
 
-  async function escanear() {
+  // Qué caminos ofrece la pantalla: lo que puede el TELÉFONO (lo trae el puente)
+  // cruzado con lo que permite la EMPRESA (lo trae la API en la cascada del
+  // recinto). La decisión vive en `guard-escaneo-modelo` porque es la única
+  // parte de esto que se puede probar sin navegador.
+  const opcionesEscaneo = opcionesDeEscaneo({
+    hayPuente: puente.fase === 'listo',
+    tieneNfc: !puente.sinAntenaNfc,
+    puedeEscanearQr: puente.puedeEscanearQr,
+    qrPermitidoPorReglas: qrPermitido,
+  });
+  // Lo que diga el puente manda: "no hay app" o "el shell no respondió" explica
+  // mejor que cualquier texto sobre métodos de marcado.
+  const avisoPantalla = puente.aviso ?? opcionesEscaneo.aviso;
+
+  /**
+   * Marca el punto que toca. El MÉTODO no es un detalle de implementación: viaja
+   * a la API, queda en la fila del escaneo y sale en el informe. Un punto
+   * marcado por QR es evidencia más débil que uno de etiqueta —el QR se
+   * fotografía y se reusa— y el supervisor tiene derecho a distinguirlos (#227).
+   */
+  async function marcarPunto(metodo: MetodoEscaneo) {
     const destino = siguiente;
     if (destino === undefined) return;
+    const esQr = metodo === 'qr';
 
     setErrorEscaneo(undefined);
-    setFase('escaneando');
-    setAnuncio('Acerca el teléfono a la etiqueta del punto.');
+    setFase(esQr ? 'escaneando-qr' : 'escaneando');
+    setAnuncio(
+      esQr
+        ? 'Apunta la cámara al código QR pegado en el punto.'
+        : 'Acerca el teléfono a la etiqueta del punto.',
+    );
 
-    let lectura: ResultadoEscaneoPayload;
+    let lectura: ResultadoEscaneoPayload | ResultadoEscaneoQrPayload;
     try {
-      lectura = await puente.escanear(`Punto ${destino.name}`);
+      lectura = esQr
+        ? await puente.escanearQr(`Punto ${destino.name}`)
+        : await puente.escanear(`Punto ${destino.name}`);
     } catch (causa) {
       setFase('inactivo');
       const detalle = describirFalloDeEscaneo(causa);
       setAnuncio(detalle ?? 'Escaneo cancelado.');
       if (detalle !== undefined) setErrorEscaneo(detalle);
+      return;
+    }
+
+    // Un QR ajeno —un afiche pegado al lado del punto— se descarta acá y no en
+    // la API: sin señal el envío se encola y el guardia se iría creyendo que
+    // marcó, para descubrir horas después que ese punto quedó pendiente.
+    const invalido = esQr ? motivoQrInvalido(lectura.uid) : undefined;
+    if (invalido !== undefined) {
+      setFase('inactivo');
+      setErrorEscaneo(invalido);
+      setAnuncio(invalido);
       return;
     }
 
@@ -264,7 +318,7 @@ function Ronda({
     const clientScanId = lectura.clientScanId ?? nuevoUuid();
     const envio = await enviarEscaneo(apiUrl, patrol.id, {
       uid: lectura.uid,
-      method: 'nfc',
+      method: metodo,
       clientScanId,
       scannedAt: lectura.scannedAt,
       ...(lectura.latitude === undefined ? {} : { latitude: lectura.latitude }),
@@ -293,11 +347,15 @@ function Ronda({
           anomalias: [],
           confirmado: false,
           scannedAt: lectura.scannedAt,
+          metodo,
         });
         if (!destino.isClosingPoint) return conPunto;
         return registrarCierre(conPunto, cierreProvisional(conPunto, puntos, clientScanId));
       });
-      setAnuncio(`Punto ${destino.name} guardado sin señal. Se sube solo cuando vuelva.`);
+      setAnuncio(
+        `Punto ${destino.name} guardado sin señal${esQr ? ' por QR' : ''}. ` +
+          'Se sube solo cuando vuelva.',
+      );
       if (destino.isClosingPoint) setVista('resumen');
       return;
     }
@@ -311,6 +369,7 @@ function Ronda({
         anomalias: respuesta.anomalies,
         confirmado: true,
         scannedAt: lectura.scannedAt,
+        metodo,
       });
       if (!cerrada) return conPunto;
       return registrarCierre(conPunto, {
@@ -326,8 +385,10 @@ function Ronda({
     });
 
     const conObservacion = respuesta.anomalies.length ? ' con observación' : '';
+    // "por QR" se dice en voz alta: el guardia camina y no mira la pantalla, y
+    // esta es la única forma de que se entere de que quedó marcado como respaldo.
     setAnuncio(
-      `Punto ${respuesta.checkpoint.name} registrado${conObservacion}. ` +
+      `Punto ${respuesta.checkpoint.name} registrado${esQr ? ' por QR' : ''}${conObservacion}. ` +
         `${respuesta.progress.scanned} de ${respuesta.progress.expected}.`,
     );
     if (cerrada) setVista('resumen');
@@ -455,13 +516,14 @@ function Ronda({
           <GuardCheckpointList
             anuncio={anuncio}
             fase={fase}
-            onCancelar={puente.cancelarEscaneo}
-            onEscanear={() => void escanear()}
-            puedeEscanear={puente.puedeEscanear}
+            onCancelar={fase === 'escaneando-qr' ? puente.cancelarEscaneoQr : puente.cancelarEscaneo}
+            onEscanear={() => void marcarPunto('nfc')}
+            onEscanearQr={() => void marcarPunto('qr')}
+            opciones={opcionesEscaneo}
             puntos={puntos}
             registros={estado.puntos}
             siguiente={siguiente}
-            {...(puente.aviso ? { aviso: puente.aviso } : {})}
+            {...(avisoPantalla ? { aviso: avisoPantalla } : {})}
             {...(errorEscaneo ? { error: errorEscaneo } : {})}
           />
           <nav className="guardia-acciones" aria-label="Otras acciones">
@@ -546,7 +608,16 @@ function cierreProvisional(
  */
 function describirFalloDeEscaneo(causa: unknown): string | undefined {
   if (causa instanceof ErrorEscaneoPortal) {
-    return causa.codigo === 'cancelado' ? undefined : causa.message;
+    if (causa.codigo === 'cancelado') return undefined;
+    // El único permiso que se pide para marcar un punto es el de la cámara: NFC
+    // no tiene permiso en tiempo de ejecución en Android. Un permiso denegado no
+    // es una falla técnica, es algo que el guardia puede arreglar, así que el
+    // texto dice DÓNDE se arregla en vez de repetir el código del error.
+    if (causa.codigo === 'permiso-denegado') {
+      return 'La app no tiene permiso para usar la cámara. Actívalo en los ajustes del ' +
+        'teléfono, en Aplicaciones › VoxIA Control › Permisos, y vuelve a intentarlo.';
+    }
+    return causa.message;
   }
   if (causa instanceof Error && causa.message === 'sin-puente') {
     return 'Esta pantalla solo escanea desde la app VoxIA Control del teléfono.';

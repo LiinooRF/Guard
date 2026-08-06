@@ -9,6 +9,7 @@ import {
   ETIQUETAS_CRITICIDAD,
   hayPendientesDeSubir,
   olvidarEstadoRonda,
+  puntosPorQr,
   type EstadoRonda,
   type PuntoRuta,
 } from './guard-shift-state';
@@ -53,6 +54,7 @@ export function GuardShiftSummary({
 
   const faltantes = puntos.filter((punto) => cierre.faltantes.includes(punto.id));
   const pendientes = hayPendientesDeSubir(estado);
+  const porQr = puntosPorQr(estado);
 
   async function terminarJornada() {
     setMarcando(true);
@@ -85,6 +87,17 @@ export function GuardShiftSummary({
       <p className="guardia-resumen-conteo">
         {cierre.scanned} de {cierre.expected} puntos escaneados
       </p>
+
+      {/* El respaldo se dice en el cierre, no solo punto por punto: es el número
+          que el supervisor mira para saber si esa ronda vale lo mismo que las
+          otras, y es el que delata una etiqueta rota que nadie fue a cambiar. */}
+      {porQr > 0 ? (
+        <p className="guardia-resumen-conteo por-qr">
+          {porQr === 1
+            ? '1 punto marcado por QR (respaldo)'
+            : `${porQr} puntos marcados por QR (respaldo)`}
+        </p>
+      ) : null}
 
       {faltantes.length ? (
         <div className="guardia-faltantes">

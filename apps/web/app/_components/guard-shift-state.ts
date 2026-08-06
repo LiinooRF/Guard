@@ -3,6 +3,7 @@
 import type { ScanAnomaly } from '@voxia/shared';
 
 import { borrarClave, escribirJson, leerJson } from './guard-storage';
+import type { MetodoEscaneo } from './guard-escaneo-modelo';
 import type { Criticidad, VeredictoSync } from './guard-outbox';
 
 /**
@@ -62,6 +63,14 @@ export interface RegistroPunto {
   anomalias: string[];
   scannedAt: string;
   clientScanId: string;
+  /**
+   * Cómo se marcó el punto (#227). Opcional porque las rondas a medias que ya
+   * están guardadas en el teléfono se escribieron sin este campo: ahí queda
+   * `undefined` y la pantalla NO inventa un método. Decir "NFC" sin saberlo
+   * sería exactamente lo que este campo existe para evitar — que un escaneo por
+   * QR, que es evidencia más débil, pase por uno de etiqueta.
+   */
+  metodo?: MetodoEscaneo;
 }
 
 export interface NovedadLocal {
@@ -126,6 +135,7 @@ export function registrarEscaneo(
     anomalias: readonly string[];
     confirmado: boolean;
     scannedAt: string;
+    metodo: MetodoEscaneo;
   },
 ): EstadoRonda {
   return {
@@ -138,9 +148,15 @@ export function registrarEscaneo(
         anomalias: [...entrada.anomalias],
         scannedAt: entrada.scannedAt,
         clientScanId: entrada.clientScanId,
+        metodo: entrada.metodo,
       },
     },
   };
+}
+
+/** Cuantos puntos de la ronda se marcaron con el respaldo por QR (#227). */
+export function puntosPorQr(estado: EstadoRonda): number {
+  return Object.values(estado.puntos).filter((punto) => punto.metodo === 'qr').length;
 }
 
 export function registrarCierre(estado: EstadoRonda, cierre: CierreRonda): EstadoRonda {

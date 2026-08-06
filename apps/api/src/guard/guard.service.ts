@@ -162,6 +162,19 @@ export class GuardService {
         ),
         maxBytes: reglas.photoMaxSizeMB * 1024 * 1024,
       },
+      /*
+       * Si esta ronda admite el respaldo por QR (#227), resuelto en la cascada
+       * DEL RECINTO igual que el presupuesto de la foto.
+       *
+       * Va en esta respuesta y no en una consulta aparte del portal porque la
+       * pantalla la necesita para decidir que boton ofrece, y una segunda
+       * llamada seria una segunda oportunidad de quedarse sin señal justo antes
+       * de marcar un punto. Con `false` el telefono sin antena NFC queda sin
+       * ningun camino a proposito: la empresa decidio que un QR no vale como
+       * evidencia, y la pantalla lo dice en vez de ofrecer un boton que la API
+       * va a rechazar.
+       */
+      qrFallbackEnabled: reglas.allowQrFallback,
       connection: { status: 'online' as const },
       synchronization: { pendingItems: 0 },
     };

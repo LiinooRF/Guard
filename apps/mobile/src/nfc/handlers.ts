@@ -6,9 +6,18 @@ import type { ManejadoresNativos } from '../bridge/native';
 import { crearLectorNfc, type PuertoNfc } from './nfc-reader';
 import { borrarRutaOffline, guardarRutaOffline } from '../offline/route-store';
 import { borrarColaSync, encolarOperacion, sincronizarCola } from '../offline/sync-queue';
+import type { LectorQr } from '../qr/qr-reader';
 import { registrarClaveDispositivo } from '../security/device-signature';
 
-export function crearManejadoresNfc(puerto: PuertoNfc): ManejadoresNativos {
+/**
+ * Manejadores reales del shell: etiqueta NFC (#57) y respaldo por camara (#226).
+ *
+ * El lector de QR entra por parametro y NO es opcional a proposito. Si lo fuera,
+ * olvidar el cable en `App.tsx` compilaria igual y el shell anunciaria el minor 4
+ * —o sea, "se leer QR"— para despues fallar con `camara-no-disponible` con el
+ * guardia parado frente al punto. Obligatorio, ese olvido no compila.
+ */
+export function crearManejadoresNfc(puerto: PuertoNfc, lectorQr: LectorQr): ManejadoresNativos {
   const base = crearManejadoresBase();
   const lector = crearLectorNfc(puerto);
   return {
@@ -20,6 +29,8 @@ export function crearManejadoresNfc(puerto: PuertoNfc): ManejadoresNativos {
     }),
     escanearNfc: ({ timeoutMs }) => lector.escanear(timeoutMs),
     cancelarEscaneo: lector.cancelar,
+    escanearQr: ({ timeoutMs, titulo }) => lectorQr.escanear(timeoutMs, titulo),
+    cancelarEscaneoQr: lectorQr.cancelar,
     guardarRutaOffline,
     borrarRutaOffline: async () => {
       await borrarRutaOffline();

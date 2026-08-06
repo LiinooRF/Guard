@@ -20,12 +20,14 @@ import {
   type CodigoErrorEscaneo,
   type ErrorPuentePayload,
   type EscaneoNfcPayload,
+  type EscaneoQrPayload,
   type EstadoConexionPayload,
   type HolaPayload,
   type MensajeShell,
   type MotivoIncompatible,
   type Permiso,
   type ResultadoEscaneoPayload,
+  type ResultadoEscaneoQrPayload,
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
   type EncolarSyncPayload,
@@ -55,6 +57,14 @@ export interface ManejadoresNativos {
   /** Rechaza con `ErrorEscaneo`. El timeout lo aplica quien implementa. */
   readonly escanearNfc: (peticion: EscaneoNfcPayload) => Promise<ResultadoEscaneoPayload>;
   readonly cancelarEscaneo: () => void;
+  /**
+   * Respaldo por camara (#226). Va aparte de `escanearNfc` y no como un
+   * parametro suyo porque son dos recursos distintos del telefono, con dos
+   * cancelaciones distintas: cancelar el QR tiene que APAGAR la camara, que
+   * ademas de bateria esta tapando la pantalla del guardia.
+   */
+  readonly escanearQr: (peticion: EscaneoQrPayload) => Promise<ResultadoEscaneoQrPayload>;
+  readonly cancelarEscaneoQr: () => void;
   readonly pedirPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly consultarPermiso: (permiso: Permiso) => Promise<ResultadoPermisoPayload>;
   readonly estadoConexion: () => Promise<EstadoConexionPayload>;
@@ -162,15 +172,19 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
     inyectar(`window.__voxiaPuente && window.__voxiaPuente.recibir(${comoLiteralJs(mensaje)}); true;`);
   }
 
+  /**
+   * El error viaja por el MISMO canal que el escaneo que lo produjo: quien pidio
+   * `qr.scan.start` espera `qr.scan.result` o `qr.scan.error`, y un error del QR
+   * contestado como `nfc.scan.error` deja al portal esperando hasta el timeout.
+   */
   function responderError(
+    tipo: 'nfc.scan.error' | 'qr.scan.error',
     replyTo: string,
     codigo: CodigoErrorEscaneo,
     mensaje: string,
     reintentable: boolean,
   ): void {
-    enviar(
-      armarSobre('nfc.scan.error', { codigo, mensaje, reintentable }, { replyTo, prefijo: 'err' }),
-    );
+    enviar(armarSobre(tipo, { codigo, mensaje, reintentable }, { replyTo, prefijo: 'err' }));
   }
 
   function responderErrorPuente(replyTo: string): void {
@@ -238,11 +252,25 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
       enviar(armarSobre('nfc.scan.result', resultado, { replyTo: id, prefijo: 'scn' }));
     } catch (error) {
       if (error instanceof ErrorEscaneo) {
-        responderError(id, error.codigo, error.message, error.reintentable);
+        responderError('nfc.scan.error', id, error.codigo, error.message, error.reintentable);
         return;
       }
       registrar('puente.escaneo.error-no-tipado');
-      responderError(id, 'error-desconocido', 'No se pudo leer la etiqueta.', true);
+      responderError('nfc.scan.error', id, 'error-desconocido', 'No se pudo leer la etiqueta.', true);
+    }
+  }
+
+  async function atenderEscaneoQr(id: string, payload: EscaneoQrPayload): Promise<void> {
+    try {
+      const resultado = await manejadores.escanearQr(payload);
+      enviar(armarSobre('qr.scan.result', resultado, { replyTo: id, prefijo: 'qrs' }));
+    } catch (error) {
+      if (error instanceof ErrorEscaneo) {
+        responderError('qr.scan.error', id, error.codigo, error.message, error.reintentable);
+        return;
+      }
+      registrar('puente.escaneo-qr.error-no-tipado');
+      responderError('qr.scan.error', id, 'error-desconocido', 'No se pudo leer el código.', true);
     }
   }
 
@@ -320,6 +348,12 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         return;
       case 'nfc.scan.cancel':
         manejadores.cancelarEscaneo();
+        return;
+      case 'qr.scan.start':
+        void atenderEscaneoQr(mensaje.id, mensaje.payload);
+        return;
+      case 'qr.scan.cancel':
+        manejadores.cancelarEscaneoQr();
         return;
       case 'permission.request': {
         /**
