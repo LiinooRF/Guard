@@ -240,12 +240,6 @@ jobs:
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
 
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
       - uses: android-actions/setup-android@v3
 
       - name: Instalar dependencias aisladas
@@ -267,6 +261,19 @@ jobs:
           NODE_ENV: production
           EXPO_PUBLIC_WEB_URL: https://control.example.test
         run: npx expo prebuild --platform android --clean --no-install
+
+      # setup-java va DESPUES del prebuild, y no es cosmetico: con `cache: gradle`
+      # la accion busca **/*.gradle para calcular la llave de cache, y antes del
+      # prebuild esos archivos no existen —android/ esta en .gitignore a
+      # proposito, se regenera en cada corrida—. Fallaba con "No file matched" y
+      # tumbaba el job entero en CADA merge a staging: 11 corridas rojas
+      # seguidas. Un check que siempre esta rojo entrena a todo el mundo a
+      # ignorar el rojo, que es peor que no tener el check.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
       # La plantilla de Expo firma el buildType `release` con la clave de
       # DEPURACION. Por eso este job construye sin tocar credenciales.
