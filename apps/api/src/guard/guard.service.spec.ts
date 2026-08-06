@@ -131,6 +131,38 @@ describe('GuardService', () => {
 });
 
 describe('GuardService.registerScan', () => {
+  it('la tolerancia de reloj sale de la regla, no de un numero fijo', async () => {
+    // Estaba quemada en 5 minutos, mientras SyncService ya usaba
+    // `clockSkewToleranceMin` para ESTA misma comprobacion: el mismo escaneo
+    // salia marcado o limpio segun por donde entrara. Con la regla en 30, un
+    // desfase de 10 minutos NO es anomalia; con la regla en 1, si.
+    async function anomaliasCon(toleranciaMin: number, desfaseMin: number) {
+      const manager = { query: jest.fn() };
+      manager.query
+        .mockResolvedValueOnce([PATROL])
+        .mockResolvedValueOnce([{
+          tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+          kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
+        }])
+        .mockResolvedValueOnce([{ id: 'scan-id' }])
+        .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
+      const reglas = {
+        effective: jest.fn().mockResolvedValue(
+          patrolRulesSchema.parse({ clockSkewToleranceMin: toleranciaMin }),
+        ),
+      } as unknown as RulesService;
+      const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), reglas, sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+      await service.registerScan('patrol-id', 'guard-id', dto({
+        scannedAt: new Date(Date.now() - desfaseMin * 60_000).toISOString(),
+      }));
+      const insercion = manager.query.mock.calls[2]?.[1] as unknown[];
+      return JSON.stringify(insercion);
+    }
+
+    expect(await anomaliasCon(30, 10)).not.toContain('reloj_desfasado');
+    expect(await anomaliasCon(1, 10)).toContain('reloj_desfasado');
+  });
+
   it('el arranque automatico pasa por la MISMA puerta de consentimiento que el boton', async () => {
     // El agujero que existia: `startPatrol()` exigia el consentimiento de
     // ubicacion, pero escanear con la ronda en 'pendiente' la arrancaba sola sin
