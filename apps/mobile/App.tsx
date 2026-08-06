@@ -81,6 +81,28 @@ export default function App() {
   }), [manejadores, portal.origin]);
 
   useEffect(() => puente.detener, [puente]);
+
+  /*
+   * Si la carga no termina, se avisa. Antes la pantalla giraba para siempre.
+   *
+   * No es hipotetico: en un Android 9 con Chrome 124 de proveedor de WebView, el
+   * componente **no llega a inicializarse** —`NoClassDefFoundError:
+   * android/webkit/PacProcessor`, una clase que existe desde Android 10— asi que
+   * `onLoadEnd` no dispara nunca y la app se queda en "Abriendo VoxIA Control..."
+   * sin un solo mensaje. A un guardia con un telefono viejo le pasa lo mismo, y
+   * lo unico que puede reportar es "no abre".
+   *
+   * 20 segundos: una ronda empieza en la puerta del recinto, donde la señal
+   * suele ser mala. Menos que eso convierte una red lenta en un falso error.
+   */
+  useEffect(() => {
+    if (!loading || failed) return undefined;
+    const aviso = setTimeout(() => {
+      setLoading(false);
+      setFailed(true);
+    }, 20_000);
+    return () => clearTimeout(aviso);
+  }, [loading, failed]);
   useEffect(() => {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
@@ -180,9 +202,18 @@ export default function App() {
         </ScrollView>
       ) : failed ? (
         <View accessibilityRole="alert" style={styles.overlay}>
-          <Text style={styles.title}>Sin conexión</Text>
+          <Text style={styles.title}>No pudimos abrir el portal</Text>
+          {/*
+            Se nombran las DOS causas porque desde adentro no se distinguen, y
+            decir solo "revisa tu conexión" manda a la persona a mirar donde no
+            es. El componente WebView del sistema puede estar desactualizado o
+            ser incompatible con la version de Android — ahi la señal esta
+            perfecta y no hay nada que revisar en la red.
+          */}
           <Text style={styles.description}>
-            No pudimos abrir el portal. Revisa tu conexión y vuelve a intentarlo.
+            Revisa tu conexión y vuelve a intentarlo. Si tienes señal y sigue sin
+            abrir, actualiza «Android System WebView» desde la Play Store y
+            reinicia el teléfono.
           </Text>
           <Pressable
             accessibilityRole="button"
