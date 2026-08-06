@@ -91,6 +91,19 @@ export function crearManejadoresBase(): ManejadoresNativos {
       );
     },
     cancelarEscaneo: () => undefined,
+    // Igual que el NFC: el puerto seguro FALLA con un código del contrato en vez
+    // de quedarse callado. Un shell que anuncia el minor 4 y no responde a
+    // `qr.scan.start` deja al portal esperando el timeout completo, parado
+    // frente al punto. Quien monta la cámara de verdad sustituye este puerto
+    // (`src/qr/camara.tsx`).
+    escanearQr: async () => {
+      throw new ErrorEscaneo(
+        'camara-no-disponible',
+        'Esta versión de la app todavía no puede leer códigos QR. Actualízala desde Google Play.',
+        false,
+      );
+    },
+    cancelarEscaneoQr: () => undefined,
     pedirPermiso: (permisoSolicitado) => permiso(permisoSolicitado, true),
     consultarPermiso: (permisoSolicitado) => permiso(permisoSolicitado, false),
     estadoConexion: async () => normalizarConexion(await Network.getNetworkStateAsync()),

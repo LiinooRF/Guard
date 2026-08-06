@@ -16,6 +16,7 @@ import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
 import { crearManejadoresNfc } from './src/nfc/handlers';
 import { puertoNfcAndroid } from './src/nfc/native-port';
+import { crearCamaraQr, VistaCamaraQr } from './src/qr/camara';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import { sincronizarCola } from './src/offline/sync-queue';
 import { registrarSincronizacionBackground } from './src/offline/sync-task';
@@ -59,7 +60,14 @@ export default function App() {
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
-  const manejadores = useMemo(() => crearManejadoresNfc(puertoNfcAndroid), []);
+  // La cámara del respaldo por QR (#226) vive fuera del árbol de React: el
+  // puente resuelve el escaneo con una promesa y un componente que se desmonta
+  // no puede resolverla. `VistaCamaraQr` solo la mira.
+  const camaraQr = useMemo(crearCamaraQr, []);
+  const manejadores = useMemo(
+    () => crearManejadoresNfc(puertoNfcAndroid, camaraQr.lector),
+    [camaraQr],
+  );
   const puente = useMemo(() => crearPuenteNativo({
     portalOrigen: portal.origin,
     appVersion: mobilePackage.version,
@@ -185,6 +193,10 @@ export default function App() {
           </Pressable>
         </View>
       ) : null}
+
+      {/* Va sobre el WebView: mientras se lee el QR, la vista previa tapa la
+          pantalla del guardia y se cierra sola al terminar o al cancelar. */}
+      <VistaCamaraQr camara={camaraQr} />
 
       {bloqueo ? (
         <View accessibilityRole="alert" style={styles.overlay}>

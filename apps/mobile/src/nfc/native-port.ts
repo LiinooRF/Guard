@@ -1,8 +1,8 @@
-import * as Location from 'expo-location';
 import { Vibration } from 'react-native';
 import NfcManager, { NfcError, NfcTech } from 'react-native-nfc-manager';
 
 import type { FalloNfcNativo, PuertoNfc } from './nfc-reader';
+import { posicionDelEscaneo } from '../geo/posicion';
 import { firmarEscaneo } from '../security/device-signature';
 
 function clasificarError(causa: unknown): FalloNfcNativo {
@@ -30,19 +30,9 @@ export const puertoNfcAndroid: PuertoNfc = {
     return NfcManager.getTag();
   },
   cancelar: () => NfcManager.cancelTechnologyRequest({ throwOnError: false }),
-  posicion: async () => {
-    const permiso = await Location.getForegroundPermissionsAsync();
-    if (permiso.status !== 'granted') return undefined;
-    const posicion = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-      mayShowUserSettingsDialog: true,
-    });
-    return {
-      latitude: posicion.coords.latitude,
-      longitude: posicion.coords.longitude,
-      ...(posicion.coords.accuracy === null ? {} : { accuracyM: posicion.coords.accuracy }),
-    };
-  },
+  // Misma lectura de GPS que el respaldo por QR: las anomalias que calcula el
+  // servidor tienen que salir del mismo dato, no de dos copias que se separen.
+  posicion: posicionDelEscaneo,
   confirmar: () => Vibration.vibrate(80),
   firmar: firmarEscaneo,
   clasificarError,

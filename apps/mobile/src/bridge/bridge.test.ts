@@ -21,9 +21,13 @@ function esperarMensajes() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+const CODIGO_QR = 'VXQ-ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 function setup() {
   const inyectados: string[] = [];
   let escaneos = 0;
+  let escaneosQr = 0;
+  let cancelacionesQr = 0;
   const operaciones = new Set<string>();
   const manejadores: ManejadoresNativos = {
     capacidades: async () => ({
@@ -39,6 +43,16 @@ function setup() {
       };
     },
     cancelarEscaneo: () => undefined,
+    escanearQr: async () => {
+      escaneosQr += 1;
+      return {
+        uid: CODIGO_QR, tech: 'qr', scannedAt: new Date().toISOString(),
+        clientScanId: '5a0c8f7e-1111-4222-8333-444455556666',
+        deviceId: '4a0c8f7e-1111-4222-8333-444455556666',
+        signature: 'c'.repeat(64),
+      };
+    },
+    cancelarEscaneoQr: () => { cancelacionesQr += 1; },
     pedirPermiso: async (permiso) => ({
       permiso, estado: 'concedido', puedeVolverAPedir: true,
     }),
@@ -64,7 +78,14 @@ function setup() {
     alIncompatible: () => undefined,
     msEsperaSaludo: 60_000,
   });
-  return { puente, inyectados, escaneos: () => escaneos, operaciones };
+  return {
+    puente,
+    inyectados,
+    escaneos: () => escaneos,
+    escaneosQr: () => escaneosQr,
+    cancelacionesQr: () => cancelacionesQr,
+    operaciones,
+  };
 }
 
 test('rechaza payloads mal formados antes de llegar a los módulos nativos', () => {
@@ -127,6 +148,81 @@ test('saluda y entrega un escaneo correlacionado en menos de 300 ms', async () =
   assert.match(inyectados[1] ?? '', /nfc\\\.scan\\\.result|nfc\.scan\.result/);
   assert.ok(Date.now() - inicio < 300);
   puente.detener();
+});
+
+test('el respaldo por QR responde por su propio canal y llega marcado como qr', async () => {
+  const { puente, inyectados, escaneos, escaneosQr } = setup();
+  puente.alRecibirMensaje(evento(
+    armarSobre('hello', { portalBuild: 'test', requiere: { major: 1, minMinor: 0 } }),
+  ));
+  await esperarMensajes();
+  puente.alRecibirMensaje(evento(armarSobre('qr.scan.start', { timeoutMs: 10_000 })));
+  await esperarMensajes();
+
+  assert.equal(escaneosQr(), 1);
+  // El lector NFC no se toca: son dos recursos distintos del teléfono.
+  assert.equal(escaneos(), 0);
+  const respuesta = inyectados[1] ?? '';
+  assert.match(respuesta, /qr\\?\.scan\\?\.result/);
+  assert.match(respuesta, /VXQ-/);
+  // Si esto dijera 'nfc', un código fotografiado valdría lo mismo que la
+  // etiqueta pegada y el informe no podría distinguirlos.
+  assert.doesNotMatch(respuesta, /nfc\\?\.scan\\?\.result/);
+  puente.detener();
+});
+
+test('cancelar el QR llega al manejador que apaga la cámara', async () => {
+  const { puente, cancelacionesQr } = setup();
+  puente.alRecibirMensaje(evento(
+    armarSobre('hello', { portalBuild: 'test', requiere: { major: 1, minMinor: 0 } }),
+  ));
+  await esperarMensajes();
+  puente.alRecibirMensaje(evento(armarSobre('qr.scan.cancel', {})));
+  await esperarMensajes();
+
+  assert.equal(cancelacionesQr(), 1);
+  puente.detener();
+});
+
+test('los dos escaneos no se cruzan de formato: cada uid tiene su patrón', () => {
+  // Un uid de etiqueta NFC no pasa por el canal del QR...
+  assert.equal(
+    leerMensajeShell(JSON.stringify(armarSobre('qr.scan.result', {
+      uid: '04AABBCCDD', tech: 'qr', scannedAt: '2026-08-05T01:00:00.000Z',
+    }))).ok,
+    false,
+  );
+  // ...ni el código impreso pasa por el del NFC.
+  assert.equal(
+    leerMensajeShell(JSON.stringify(armarSobre('nfc.scan.result', {
+      uid: CODIGO_QR, tech: 'nfc', scannedAt: '2026-08-05T01:00:00.000Z',
+    }))).ok,
+    false,
+  );
+  // El QR de un afiche cualquiera tampoco: el shell filtra antes de responder,
+  // pero el contrato no confía en eso.
+  assert.equal(
+    leerMensajeShell(JSON.stringify(armarSobre('qr.scan.result', {
+      uid: 'https://promo.example.cl', tech: 'qr', scannedAt: '2026-08-05T01:00:00.000Z',
+    }))).ok,
+    false,
+  );
+  assert.equal(
+    leerMensajeShell(JSON.stringify(armarSobre('qr.scan.result', {
+      uid: CODIGO_QR, tech: 'qr', scannedAt: '2026-08-05T01:00:00.000Z',
+    }))).ok,
+    true,
+  );
+});
+
+test('agregar los mensajes qr.* es aditivo: un portal del minor 0 sigue entrando', () => {
+  // La ventana de gracia es lo único que impide que una app publicada en Play
+  // deje de escanear por un deploy del portal. Si esto se rompe, el guardia se
+  // queda sin ronda y NO se arregla con un deploy.
+  assert.equal(verificarCompatibilidad({ major: 1, minMinor: 0 }).ok, true);
+  assert.equal(verificarCompatibilidad({ major: 1, minMinor: 4 }).ok, true);
+  const futuro = verificarCompatibilidad({ major: 1, minMinor: 5 });
+  assert.equal(futuro.ok ? undefined : futuro.motivo, 'app-antigua');
 });
 
 test('clasifica app antigua y portal antiguo sin confundir la solución', () => {

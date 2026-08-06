@@ -5,12 +5,16 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   EstadoConexionPayload,
   ResultadoEscaneoPayload,
+  ResultadoEscaneoQrPayload,
   RutaOfflinePayload,
 } from '../_lib/bridge/protocol';
 import { crearClientePuente } from '../_lib/bridge/web-client';
 
 export { ErrorEscaneoPortal } from '../_lib/bridge/web-client';
-export type { ResultadoEscaneoPayload } from '../_lib/bridge/protocol';
+export type {
+  ResultadoEscaneoPayload,
+  ResultadoEscaneoQrPayload,
+} from '../_lib/bridge/protocol';
 
 /**
  * El puente nativo visto desde React (#91, #94).
@@ -27,11 +31,17 @@ export type { ResultadoEscaneoPayload } from '../_lib/bridge/protocol';
 
 const SIN_PUENTE =
   'Esta pantalla escanea solo desde la app VoxIA Control instalada en el teléfono.';
-const SIN_ANTENA =
-  'Este teléfono no tiene antena NFC y no puede registrar puntos. Avisa a tu supervisor.';
 const NFC_APAGADO = 'El NFC está apagado. Actívalo en los ajustes del teléfono para escanear.';
 const SIN_RESPUESTA =
   'La app del teléfono no respondió. Ciérrala y vuelve a abrirla antes de seguir la ronda.';
+
+/**
+ * MINOR del protocolo que trajo `qr.scan.start` (#226). Pedirlo a un shell
+ * anterior no da error: el shell descarta el mensaje por tipo desconocido y el
+ * portal se queda esperando hasta el timeout, con la ronda detenida. Por eso el
+ * respaldo por QR solo se ofrece cuando el `ready` anuncia este minor.
+ */
+const MINOR_CON_QR = 4;
 
 export type FasePuente = 'conectando' | 'sin-puente' | 'listo' | 'incompatible';
 
@@ -39,11 +49,21 @@ export interface PuenteGuardia {
   fase: FasePuente;
   /** `true` solo cuando el shell saludó y el equipo tiene antena. */
   puedeEscanear: boolean;
+  /**
+   * `true` cuando el shell sabe leer QR y el equipo tiene camara (#227). Es
+   * capacidad del TELEFONO: si la empresa permite o no el respaldo lo decide la
+   * regla `allowQrFallback`, y eso lo cruza `guard-escaneo-modelo.ts`.
+   */
+  puedeEscanearQr: boolean;
+  /** El equipo no trae antena NFC. Sin QR, este guardia no puede marcar puntos. */
+  sinAntenaNfc: boolean;
   /** Texto listo para mostrar. En 'incompatible' lo redacta el shell, no el portal. */
   aviso?: string;
   conexion: EstadoConexionPayload;
   escanear: (titulo: string) => Promise<ResultadoEscaneoPayload>;
+  escanearQr: (titulo: string) => Promise<ResultadoEscaneoQrPayload>;
   cancelarEscaneo: () => void;
+  cancelarEscaneoQr: () => void;
   guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<boolean>;
 }
 
@@ -54,6 +74,8 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   const [fase, setFase] = useState<FasePuente>('conectando');
   const [aviso, setAviso] = useState<string>();
   const [puedeEscanear, setPuedeEscanear] = useState(false);
+  const [puedeEscanearQr, setPuedeEscanearQr] = useState(false);
+  const [sinAntenaNfc, setSinAntenaNfc] = useState(false);
   const [soportaRutaOffline, setSoportaRutaOffline] = useState(false);
   // Valor fijo en el primer render: leer `navigator` acá rompería la hidratación.
   const [conexion, setConexion] = useState<EstadoConexionPayload>({
@@ -91,10 +113,17 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
       setFase('listo');
       setSoportaRutaOffline(estado.info.protocolo.minor >= 1);
       const { dispositivo } = estado.info;
-      if (!dispositivo.tieneNfc) {
-        setAviso(SIN_ANTENA);
-        return;
-      }
+
+      /*
+       * Las capacidades se publican ANTES de mirar la antena. Antes de #227 un
+       * teléfono sin NFC salía por un `return` acá mismo: se quedaba sin firma
+       * de dispositivo, sin el estado de conexión que empuja el shell y —lo
+       * peor— sin ningún camino para marcar un punto, mirando un botón que no
+       * respondía.
+       */
+      setSinAntenaNfc(!dispositivo.tieneNfc);
+      setPuedeEscanearQr(estado.info.protocolo.minor >= MINOR_CON_QR && dispositivo.tieneCamara);
+
       if (estado.info.protocolo.minor >= 3 && apiUrl && typeof window !== 'undefined') {
         try {
           await cliente.registrarFirma({
@@ -107,9 +136,13 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
         }
       }
       // Con la antena apagada se deja intentar igual: el shell responde
-      // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto.
-      setAviso(dispositivo.nfcActivado ? undefined : NFC_APAGADO);
-      setPuedeEscanear(true);
+      // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto. Sin
+      // antena no hay aviso acá: el texto depende de si la empresa permite el
+      // respaldo por QR, y eso lo redacta `guard-escaneo-modelo.ts`.
+      if (dispositivo.tieneNfc) {
+        setAviso(dispositivo.nfcActivado ? undefined : NFC_APAGADO);
+        setPuedeEscanear(true);
+      }
 
       const conectividad = await cliente.estadoConexion().catch(() => undefined);
       if (conectividad && !cancelado) setConexion(conectividad);
@@ -141,7 +174,12 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
     (titulo: string) => cliente.escanearNfc({ titulo }),
     [cliente],
   );
+  const escanearQr = useCallback(
+    (titulo: string) => cliente.escanearQr({ titulo }),
+    [cliente],
+  );
   const cancelarEscaneo = useCallback(() => cliente.cancelarEscaneo(), [cliente]);
+  const cancelarEscaneoQr = useCallback(() => cliente.cancelarEscaneoQr(), [cliente]);
   const guardarRutaOffline = useCallback(async (ruta: RutaOfflinePayload) => {
     if (!soportaRutaOffline) return false;
     await cliente.guardarRutaOffline(ruta);
@@ -151,10 +189,14 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   return {
     fase,
     puedeEscanear,
+    puedeEscanearQr,
+    sinAntenaNfc,
     ...(aviso ? { aviso } : {}),
     conexion,
     escanear,
+    escanearQr,
     cancelarEscaneo,
+    cancelarEscaneoQr,
     guardarRutaOffline,
   };
 }

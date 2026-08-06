@@ -8,8 +8,9 @@
  *
  * SI NO HAY PUENTE, NO ES UN ERROR. El mismo portal se abre en el navegador de
  * escritorio del ADMIN y del SUPERVISOR, donde no existe shell nativo. En ese
- * caso `conectar()` responde `sin-puente` y la interfaz debe ofrecer el camino
- * de respaldo (etiqueta QR por camara web), no un mensaje de fallo.
+ * caso `conectar()` responde `sin-puente`: ahi no se escanea —ni por NFC ni por
+ * QR, que tambien pasa por el puente— y la pantalla lo dice sin pintar una
+ * falla.
  */
 import {
   MAX_BYTES_MENSAJE,
@@ -23,6 +24,7 @@ import {
   type MensajeShell,
   type Permiso,
   type ResultadoEscaneoPayload,
+  type ResultadoEscaneoQrPayload,
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
   type EncolarSyncPayload,
@@ -94,7 +96,17 @@ export interface ClientePuente {
     readonly timeoutMs?: number;
     readonly titulo?: string;
   }) => Promise<ResultadoEscaneoPayload>;
+  /**
+   * Respaldo por camara (#227). Solo se puede llamar cuando el shell anuncio
+   * `minor >= 4` en `ready`: un shell anterior no conoce `qr.scan.start`, lo
+   * descarta en silencio y quien llame se queda esperando hasta el timeout.
+   */
+  readonly escanearQr: (opciones?: {
+    readonly timeoutMs?: number;
+    readonly titulo?: string;
+  }) => Promise<ResultadoEscaneoQrPayload>;
   readonly cancelarEscaneo: () => void;
+  readonly cancelarEscaneoQr: () => void;
   /**
    * `divulgacionMostrada` es una afirmacion con consecuencias: el shell rechaza
    * el pedido de `ubicacion-segundo-plano` si viene en `false`. Ponerlo en
@@ -232,11 +244,38 @@ export function crearClientePuente(): ClientePuente {
       throw new ErrorEscaneoPortal('error-desconocido', 'Respuesta inesperada del shell.', true);
     },
 
+    escanearQr: async (opciones) => {
+      const timeoutMs = opciones?.timeoutMs ?? MS_ESCANEO_DEFECTO;
+      const payload =
+        opciones?.titulo === undefined ? { timeoutMs } : { timeoutMs, titulo: opciones.titulo };
+      const respuesta = await pedir('qr.scan.start', payload, timeoutMs + 5_000);
+      if (respuesta.type === 'qr.scan.result') {
+        return respuesta.payload;
+      }
+      if (respuesta.type === 'qr.scan.error') {
+        throw new ErrorEscaneoPortal(
+          respuesta.payload.codigo,
+          respuesta.payload.mensaje,
+          respuesta.payload.reintentable,
+        );
+      }
+      throw new ErrorEscaneoPortal('error-desconocido', 'Respuesta inesperada del shell.', true);
+    },
+
     cancelarEscaneo: () => {
       if (puente === undefined) {
         return;
       }
       puente.enviar(JSON.stringify(armarSobre('nfc.scan.cancel', {}, { prefijo: 'web' })));
+    },
+
+    // Cancelar el QR es MAS urgente que cancelar el NFC: lo que queda abierto no
+    // es una antena sino la camara, encima de la pantalla del guardia.
+    cancelarEscaneoQr: () => {
+      if (puente === undefined) {
+        return;
+      }
+      puente.enviar(JSON.stringify(armarSobre('qr.scan.cancel', {}, { prefijo: 'web' })));
     },
 
     pedirPermiso: async (permiso, divulgacionMostrada) => {

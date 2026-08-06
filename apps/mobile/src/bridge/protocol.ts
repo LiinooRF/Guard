@@ -46,9 +46,15 @@
 
 export const PUENTE = 'voxia.bridge' as const;
 
-/** Version que habla ESTE build del shell. */
+/**
+ * Version que habla ESTE build del shell.
+ *
+ * MINOR 4 agrega la familia `qr.*` (respaldo por camara, issues #226 y #227).
+ * Es aditivo: el portal viejo no la pide y el shell viejo nunca la recibe, asi
+ * que ningun telefono instalado se rompe mientras el parque se actualiza.
+ */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 3;
+export const PROTOCOLO_MINOR = 4;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -113,6 +119,18 @@ export interface EscaneoNfcPayload {
   readonly titulo?: string;
 }
 
+/**
+ * Respaldo por QR (#226, #227). Se declara aparte de `EscaneoNfcPayload` aunque
+ * hoy tengan la misma forma: lo que se apaga al vencer el plazo no es la antena
+ * sino la CAMARA, que ademas de bateria deja una vista previa encima de la
+ * pantalla del guardia hasta que alguien la cierra.
+ */
+export interface EscaneoQrPayload {
+  readonly timeoutMs: number;
+  /** Texto que el shell muestra sobre la vista previa de la camara. */
+  readonly titulo?: string;
+}
+
 export interface PedirPermisoPayload {
   readonly permiso: Permiso;
   /**
@@ -166,6 +184,8 @@ export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
   | Sobre<'nfc.scan.cancel', Record<string, never>>
+  | Sobre<'qr.scan.start', EscaneoQrPayload>
+  | Sobre<'qr.scan.cancel', Record<string, never>>
   | Sobre<'permission.request', PedirPermisoPayload>
   | Sobre<'permission.query', ConsultarPermisoPayload>
   | Sobre<'offline.route.save', RutaOfflinePayload>
@@ -179,6 +199,8 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'hello',
   'nfc.scan.start',
   'nfc.scan.cancel',
+  'qr.scan.start',
+  'qr.scan.cancel',
   'permission.request',
   'permission.query',
   'offline.route.save',
@@ -194,7 +216,12 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
 // ---------------------------------------------------------------------------
 
 export interface CapacidadesDispositivo {
-  /** El equipo trae antena NFC. `false` = este guardia no puede hacer rondas. */
+  /**
+   * El equipo trae antena NFC. `false` NO deja al guardia sin ronda: desde el
+   * MINOR 4 el portal ofrece el respaldo por QR (`qr.scan.start`). Sigue siendo
+   * respaldo y no camino normal — un QR se fotografia y se reusa, la etiqueta
+   * pegada hay que ir a tocarla.
+   */
   readonly tieneNfc: boolean;
   /** Trae antena pero esta apagada en Ajustes. Se resuelve, no es fatal. */
   readonly nfcActivado: boolean;
@@ -240,8 +267,53 @@ export interface ResultadoEscaneoPayload {
 }
 
 /**
+ * Lectura de la etiqueta QR de respaldo (#227).
+ *
+ * Tipo aparte y no un `tech` mas en `ResultadoEscaneoPayload` porque los dos
+ * identificadores no se parecen: el UID NFC es hexadecimal puro y el del QR es
+ * el texto impreso en la etiqueta (`VXQ-` + base32). Fundirlos obligaria a
+ * aflojar la validacion del UID NFC, que es la evidencia fuerte, para que
+ * aceptara guiones y letras — exactamente al reves de lo que conviene.
+ */
+export interface ResultadoEscaneoQrPayload {
+  /** Contenido del QR tal cual, ya filtrado por `esCodigoQrDePunto`. */
+  readonly uid: string;
+  readonly tech: 'qr';
+  /** Hora del telefono al leer el codigo, ISO-8601. */
+  readonly scannedAt: string;
+  /** Igual que en NFC: la posicion viaja con la lectura, no en otra consulta. */
+  readonly latitude?: number;
+  readonly longitude?: number;
+  readonly accuracyM?: number;
+  readonly clientScanId?: string;
+  readonly deviceId?: string;
+  readonly signature?: string;
+}
+
+/**
+ * Prefijo con el que la API emite las etiquetas QR (`apps/api/src/qr/qr.service.ts`).
+ *
+ * Vive en el contrato porque lo necesitan los DOS lados: el shell para seguir
+ * mirando cuando entra al cuadro un afiche o una promocion pegada al lado del
+ * punto, y el portal para no mandar a la API algo que ya sabe que no resuelve.
+ * Si la API cambiara el prefijo, hay que cambiarlo aca y esperar a que el parque
+ * de telefonos se actualice: las etiquetas viejas siguen pegadas en la pared.
+ */
+export const PREFIJO_QR = 'VXQ-';
+
+/** `true` si el texto leido es una etiqueta de punto de este producto. */
+export function esCodigoQrDePunto(texto: string): boolean {
+  return /^VXQ-[A-Z2-7]{8,56}$/.test(texto);
+}
+
+/**
  * Codigos de error del escaneo. Son cerrados a proposito: el portal decide que
  * mostrar segun el codigo y nunca parseando el texto del mensaje.
+ *
+ * Los tres ultimos son del respaldo por camara y solo viajan en `qr.scan.error`,
+ * que un portal anterior al MINOR 4 nunca pide. Asi un shell nuevo no le manda a
+ * un portal viejo un codigo que su validador descarta y que lo dejaria esperando
+ * una respuesta que nunca llega.
  */
 export type CodigoErrorEscaneo =
   | 'nfc-no-disponible'
@@ -250,7 +322,10 @@ export type CodigoErrorEscaneo =
   | 'cancelado'
   | 'timeout'
   | 'etiqueta-ilegible'
-  | 'error-desconocido';
+  | 'error-desconocido'
+  | 'camara-no-disponible'
+  | 'camara-ocupada'
+  | 'codigo-ilegible';
 
 export interface ErrorEscaneoPayload {
   readonly codigo: CodigoErrorEscaneo;
@@ -303,6 +378,8 @@ export type MensajeShell =
   | Sobre<'incompatible', IncompatiblePayload>
   | Sobre<'nfc.scan.result', ResultadoEscaneoPayload>
   | Sobre<'nfc.scan.error', ErrorEscaneoPayload>
+  | Sobre<'qr.scan.result', ResultadoEscaneoQrPayload>
+  | Sobre<'qr.scan.error', ErrorEscaneoPayload>
   | Sobre<'permission.result', ResultadoPermisoPayload>
   | Sobre<'offline.route.saved', RutaOfflineGuardadaPayload>
   | Sobre<'offline.route.cleared', Record<string, never>>
@@ -317,6 +394,8 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'incompatible',
   'nfc.scan.result',
   'nfc.scan.error',
+  'qr.scan.result',
+  'qr.scan.error',
   'permission.result',
   'offline.route.saved',
   'offline.route.cleared',
@@ -368,9 +447,10 @@ export type Veredicto =
  *   Shell: pantalla bloqueante, sin WebView, con boton a Play Store. No se
  *     sigue: dejar entrar a un portal que va a pedir mensajes inexistentes
  *     termina en una app que no responde y en un guardia sin ronda registrada.
- *   Portal: al recibir `incompatible` deja de ofrecer escaneo NFC y muestra el
- *     camino de respaldo (etiqueta QR por camara web) y el aviso de actualizar.
- *     Lo relevante es que el portal NO puede asumir que el shell le mostro algo.
+ *   Portal: al recibir `incompatible` deja de ofrecer escaneo y muestra el aviso
+ *     de actualizar. El respaldo por QR TAMPOCO sirve aca: tambien viaja por el
+ *     puente, y el puente es justamente lo que quedo bloqueado. Lo relevante es
+ *     que el portal NO puede asumir que el shell le mostro algo.
  *
  * `portal-antiguo` — el portal habla una version mayor que este shell ya retiro
  *   (pasa despues de una reversion del deploy web).
@@ -460,13 +540,17 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
         Number.isInteger(requiere['major']) && Number.isInteger(requiere['minMinor']) &&
         Number(requiere['major']) >= 0 && Number(requiere['minMinor']) >= 0;
     }
+    // Una sola rama para los dos escaneos: los payloads son identicos y
+    // duplicar la validacion es como se desincronizan los limites.
     case 'nfc.scan.start':
+    case 'qr.scan.start':
       return clavesPermitidas(payload, ['timeoutMs', 'titulo']) &&
         Number.isInteger(payload['timeoutMs']) && Number(payload['timeoutMs']) >= 1_000 &&
         Number(payload['timeoutMs']) <= 120_000 &&
         (payload['titulo'] === undefined ||
           (typeof payload['titulo'] === 'string' && payload['titulo'].length <= 120));
     case 'nfc.scan.cancel':
+    case 'qr.scan.cancel':
     case 'offline.route.clear':
     case 'sync.queue.flush':
     case 'connectivity.query':
@@ -538,19 +622,12 @@ function payloadShellValido(type: string, payload: unknown): boolean {
         typeof payload['mensaje'] === 'string';
     case 'nfc.scan.result':
       return typeof payload['uid'] === 'string' && /^[0-9A-F]{4,64}$/.test(payload['uid']) &&
-        payload['tech'] === 'nfc' && typeof payload['scannedAt'] === 'string' &&
-        !Number.isNaN(Date.parse(payload['scannedAt'])) &&
-        ((payload['clientScanId'] === undefined && payload['deviceId'] === undefined &&
-          payload['signature'] === undefined) ||
-         (esUuid(payload['clientScanId']) && esUuid(payload['deviceId']) &&
-          typeof payload['signature'] === 'string' && /^[0-9a-f]{64}$/.test(payload['signature']))) &&
-        (payload['latitude'] === undefined ||
-          (typeof payload['latitude'] === 'number' && payload['latitude'] >= -90 && payload['latitude'] <= 90)) &&
-        (payload['longitude'] === undefined ||
-          (typeof payload['longitude'] === 'number' && payload['longitude'] >= -180 && payload['longitude'] <= 180)) &&
-        (payload['accuracyM'] === undefined ||
-          (typeof payload['accuracyM'] === 'number' && payload['accuracyM'] >= 0));
+        payload['tech'] === 'nfc' && restoDelEscaneoValido(payload);
+    case 'qr.scan.result':
+      return typeof payload['uid'] === 'string' && esCodigoQrDePunto(payload['uid']) &&
+        payload['tech'] === 'qr' && restoDelEscaneoValido(payload);
     case 'nfc.scan.error':
+    case 'qr.scan.error':
       return CODIGOS_ESCANEO.includes(payload['codigo'] as CodigoErrorEscaneo) &&
         typeof payload['mensaje'] === 'string' && typeof payload['reintentable'] === 'boolean';
     case 'permission.result':
@@ -577,6 +654,29 @@ function payloadShellValido(type: string, payload: unknown): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Lo que comparten `nfc.scan.result` y `qr.scan.result`: hora, posicion opcional
+ * y la terna de firma del dispositivo, que va COMPLETA o no va —media firma no
+ * se puede verificar y es peor que ninguna, porque parece evidencia.
+ *
+ * Lo unico que cambia entre los dos mensajes es la forma del identificador
+ * leido, y eso lo valida cada rama con su propio patron.
+ */
+function restoDelEscaneoValido(payload: Record<string, unknown>): boolean {
+  return typeof payload['scannedAt'] === 'string' &&
+    !Number.isNaN(Date.parse(payload['scannedAt'])) &&
+    ((payload['clientScanId'] === undefined && payload['deviceId'] === undefined &&
+      payload['signature'] === undefined) ||
+     (esUuid(payload['clientScanId']) && esUuid(payload['deviceId']) &&
+      typeof payload['signature'] === 'string' && /^[0-9a-f]{64}$/.test(payload['signature']))) &&
+    (payload['latitude'] === undefined ||
+      (typeof payload['latitude'] === 'number' && payload['latitude'] >= -90 && payload['latitude'] <= 90)) &&
+    (payload['longitude'] === undefined ||
+      (typeof payload['longitude'] === 'number' && payload['longitude'] >= -180 && payload['longitude'] <= 180)) &&
+    (payload['accuracyM'] === undefined ||
+      (typeof payload['accuracyM'] === 'number' && payload['accuracyM'] >= 0));
 }
 
 function esTexto(valor: unknown, maximo: number): valor is string {
@@ -619,6 +719,7 @@ function esPortalOrigin(valor: string): boolean {
 const CODIGOS_ESCANEO: readonly CodigoErrorEscaneo[] = [
   'nfc-no-disponible', 'nfc-desactivado', 'permiso-denegado', 'cancelado',
   'timeout', 'etiqueta-ilegible', 'error-desconocido',
+  'camara-no-disponible', 'camara-ocupada', 'codigo-ilegible',
 ];
 const ESTADOS_PERMISO: readonly EstadoPermiso[] = [
   'concedido', 'denegado', 'denegado-definitivo', 'no-aplica',

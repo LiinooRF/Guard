@@ -14,6 +14,13 @@ export interface GuardHomeData {
   };
   /** Presupuesto de compresion de foto, resuelto por la API en la cascada del recinto. */
   photoBudget?: { targetBytes: number; maxBytes: number };
+  /**
+   * Regla `allowQrFallback` del recinto (#227). Opcional: un portal nuevo contra
+   * una API todavia sin desplegar no la recibe, y ahi se asume permitida —es el
+   * valor por omision del catalogo—, porque dejar al guardia sin ningun camino
+   * es peor que ofrecerle uno que la API podria rechazar.
+   */
+  qrFallbackEnabled?: boolean;
   patrol?: {
     id: string;
     status: 'pendiente' | 'en_curso';

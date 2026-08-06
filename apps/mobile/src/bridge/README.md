@@ -51,7 +51,7 @@ de atender mensajes que no sean `hello`.
 
 | Veredicto | Qué pasó | El shell | El portal |
 |---|---|---|---|
-| `app-antigua` | El portal pide más de lo que el shell sabe | Pantalla bloqueante **sin WebView** + botón a Play Store | Al recibir `incompatible`: oculta el escaneo NFC, ofrece el respaldo QR y muestra el aviso de actualizar. **No asume** que el shell mostró algo |
+| `app-antigua` | El portal pide más de lo que el shell sabe | Pantalla bloqueante **sin WebView** + botón a Play Store | Al recibir `incompatible`: oculta el escaneo y muestra el aviso de actualizar. El respaldo QR **tampoco** sirve acá: también viaja por el puente, que es lo que quedó bloqueado. **No asume** que el shell mostró algo |
 | `portal-antiguo` | El portal habla un MAJOR que el shell ya retiró (pasó tras una reversión del deploy web) | Aviso "el portal de tu empresa está desactualizado, avisa a soporte" + reintentar. **No** manda a Play Store: actualizar no lo arregla y genera un ticket equivocado | Registra el evento: es un error de despliegue nuestro y hay que verlo el mismo día |
 | sin puente | El portal se abrió en un navegador de escritorio | — | `conectar()` responde `sin-puente`. **No es un error**: el ADMIN y el SUPERVISOR usan el mismo portal sin app |
 
@@ -64,6 +64,8 @@ de atender mensajes que no sean `hello`.
 | `hello` | `{portalBuild, requiere}` | `ready` \| `incompatible` |
 | `nfc.scan.start` | `{timeoutMs, titulo?}` | `nfc.scan.result` \| `nfc.scan.error` |
 | `nfc.scan.cancel` | `{}` | — |
+| `qr.scan.start` | `{timeoutMs, titulo?}` | `qr.scan.result` \| `qr.scan.error` |
+| `qr.scan.cancel` | `{}` | — |
 | `permission.request` | `{permiso, divulgacionMostrada}` | `permission.result` \| `error` |
 | `permission.query` | `{permiso}` | `permission.result` |
 | `connectivity.query` | `{}` | `connectivity.state` |
@@ -76,6 +78,8 @@ de atender mensajes que no sean `hello`.
 | `incompatible` | Veredicto negativo |
 | `nfc.scan.result` | `{uid, tech, scannedAt, latitude?, longitude?, accuracyM?}` |
 | `nfc.scan.error` | Códigos cerrados: `nfc-no-disponible`, `nfc-desactivado`, `permiso-denegado`, `cancelado`, `timeout`, `etiqueta-ilegible`, `error-desconocido` |
+| `qr.scan.result` | `{uid, tech: 'qr', scannedAt, latitude?, longitude?, accuracyM?}`. El `uid` es el texto impreso (`VXQ-` + base32), no un UID hexadecimal |
+| `qr.scan.error` | Los mismos códigos más `camara-no-disponible`, `camara-ocupada` y `codigo-ilegible` |
 | `permission.result` | `{permiso, estado, puedeVolverAPedir}` |
 | `connectivity.state` | **También sin que lo pidan**: se empuja al cambiar la conexión |
 | `error` | Fallas del puente, no del escaneo |
@@ -83,6 +87,29 @@ de atender mensajes que no sean `hello`.
 La posición GPS viaja **dentro** de `nfc.scan.result` y no en una consulta
 aparte: separarlas abre una ventana en la que el guardia camina entre el escaneo
 y la lectura del GPS, y la coordenada deja de corresponder al punto de control.
+
+### El respaldo por QR es MINOR 4 (#226, #227)
+
+Los mensajes `qr.*` se agregaron en el MINOR 4 y son **aditivos**: un portal
+anterior no los pide y un shell anterior no los recibe. Lo que sí importa es el
+sentido contrario — **el portal no puede pedir `qr.scan.start` sin comprobar
+antes que el `ready` trajo `minor >= 4`**. Un shell viejo descarta el mensaje por
+tipo desconocido y *no contesta nada*: el portal se queda esperando el timeout
+completo con el guardia parado frente al punto.
+
+Tienen mensajes propios y no un parámetro de `nfc.scan.*` porque son dos recursos
+distintos del teléfono y **dos cancelaciones distintas**: cancelar el NFC apaga
+una antena, cancelar el QR tiene que apagar una cámara que está tapando la
+pantalla del guardia.
+
+El resultado viaja con `tech: 'qr'` y llega a la API como `method: 'qr'`. Eso no
+es cosmético: un QR se fotografía una vez y se reusa desde la garita, mientras que
+la etiqueta pegada obliga a estar parado en el punto. El informe los distingue
+(columna *Método*) y por eso el shell no puede disfrazar uno de otro.
+
+Los códigos que no son del producto (un afiche, el QR del wifi) **no cortan el
+escaneo**: se descartan por prefijo y la cámara sigue mirando hasta que aparece el
+del punto o vence el plazo.
 
 Nombres reservados en la v1 (`RESERVADOS_V1`) para que nadie los reutilice:
 `camera.capture`, `camera.capture.result`, `location.track.start`,
