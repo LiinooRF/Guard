@@ -36,24 +36,33 @@ const APP_LIKE_DOCUMENT = `
     // Esto corre en document-start: \`document.head\` puede ser null todavia, y
     // como este guion va CONCATENADO con el del puente, una excepcion aca
     // abortaba los dos y el portal se quedaba sin puente sin saber por que.
-    function alHaberCabeza(fn) {
-      if (document.head) { fn(); return; }
-      document.addEventListener('DOMContentLoaded', fn, { once: true });
+    // El viewport tiene que estar ANTES de que la pagina se maquete, o el
+    // navegador la dibuja a escala de escritorio y despues salta. Esperar a
+    // DOMContentLoaded rompia el layout de forma visible.
+    //
+    // Si todavia no hay <head>, se crea: es valido y es lo que hace el propio
+    // parser un instante despues. Lo que NO se puede es esperar.
+    function cabeza() {
+      if (!document.head) {
+        var creada = document.createElement('head');
+        document.documentElement.insertBefore(creada, document.documentElement.firstChild);
+      }
+      return document.head;
     }
-    alHaberCabeza(function () {
+    (function () {
       try {
         var viewport = document.querySelector('meta[name="viewport"]');
         if (!viewport) {
           viewport = document.createElement('meta');
           viewport.name = 'viewport';
-          document.head.appendChild(viewport);
+          cabeza().appendChild(viewport);
         }
         viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
         var style = document.createElement('style');
         style.textContent = 'body, button, a, label { -webkit-user-select: none; user-select: none; } input, textarea { -webkit-user-select: text; user-select: text; }';
-        document.head.appendChild(style);
+        cabeza().appendChild(style);
       } catch (e) { /* cosmetico: nunca debe tumbar el puente */ }
-    });
+    })();
     true;
   })();
 `;
