@@ -82,7 +82,7 @@ const config: ExpoConfig = {
    * puede rehacer.
    */
   extra: {
-    eas: { projectId: 'dfd99e58-49cd-4c73-959d-5962b87c71f8' },
+    eas: { projectId: '955e4e6a-d7af-459f-8232-a83b03b771a9' },
   },
   /**
    * versionName visible en Play Store. Se sube a mano y con criterio semantico.
