@@ -17,6 +17,7 @@ import {
   enviarNovedad,
   iniciarAutoSync,
   subirFotoNovedad,
+  subirFotoPunto,
   suscribirVeredictos,
   type Criticidad,
   type PayloadNovedad,
@@ -26,7 +27,9 @@ import {
   cargarEstadoRonda,
   estadoInicial,
   guardarEstadoRonda,
+  marcarFotoPuntoSubida,
   marcarFotoSubida,
+  puntoExigeFoto,
   puntosFaltantes,
   registrarCierre,
   registrarEscaneo,
@@ -34,13 +37,23 @@ import {
   siguientePunto,
   type CierreRonda,
   type EstadoRonda,
+  type PoliticaFoto,
   type PuntoRuta,
 } from './guard-shift-state';
+import { GuardScanPhoto } from './guard-scan-photo';
+import {
+  efectoDelDesenlace,
+  fotosDePuntoAdoptables,
+  guardarYSubirFotoDePunto,
+  nuevoRegistroIdsDeEscaneo,
+  type FotoDePunto,
+} from './guard-scan-photo-flow';
 import { GuardShiftSummary } from './guard-shift-summary';
 import { procesarFoto } from './guard-photo';
 import {
   borrarFoto,
   clasificarPendientes,
+  conSubidaExclusiva,
   contarPendientes,
   fijarServerId,
   guardarFoto,
@@ -77,6 +90,11 @@ export interface GuardShiftData {
    * sería el peor de los dos errores posibles.
    */
   qrFallbackEnabled?: boolean;
+  /**
+   * Horario hábil del recinto y las reglas de foto, para que la pantalla decida
+   * sin señal con `isPhotoRequired()` de `@voxia/shared`. Ver guard-shift-state.
+   */
+  photoPolicy?: PoliticaFoto;
   patrol?: {
     id: string;
     status: string;
@@ -106,23 +124,27 @@ const hora = new Intl.DateTimeFormat('es-CL', {
  * si el WebView se cierra antes de sincronizar, la foto no se pierde y se sube al
  * reabrir o al recuperar señal.
  */
-async function subirFotoPersistida(
+function subirFotoPersistida(
   apiUrl: string,
   clientEventId: string,
   serverId: string,
 ): Promise<boolean | undefined> {
-  const guardada = await leerFoto(clientEventId);
-  if (!guardada) return undefined;
-  // Se manda la hora de CAPTURA que quedo guardada con la foto, no la de ahora:
-  // esta subida puede ocurrir horas despues, al recuperar señal.
-  const subida = await subirFotoNovedad(
-    apiUrl,
-    serverId,
-    guardada.blob as File,
-    guardada.takenAtDevice,
-  );
-  if (subida) await borrarFoto(clientEventId);
-  return subida;
+  // Una sola subida por foto aunque la pidan dos caminos a la vez: el del
+  // veredicto de la cola y el de la foto recien tomada se cruzan justo cuando la
+  // señal vuelve a mitad del procesado. Ver conSubidaExclusiva.
+  return conSubidaExclusiva(clientEventId, async () => {
+    const guardada = await leerFoto(clientEventId);
+    if (!guardada) return undefined;
+    // Se manda la hora de CAPTURA que quedo guardada con la foto, no la de ahora:
+    // esta subida puede ocurrir horas despues, al recuperar señal.
+    //
+    // El destino decide el endpoint: la foto de un punto cuelga del escaneo y la
+    // de una novedad, del evento. El almacén guarda las dos y por eso lo dice.
+    const subir = guardada.destino === 'escaneo' ? subirFotoPunto : subirFotoNovedad;
+    const subida = await subir(apiUrl, serverId, guardada.blob as File, guardada.takenAtDevice);
+    if (subida) await borrarFoto(clientEventId);
+    return subida;
+  });
 }
 
 export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: string }) {
@@ -136,6 +158,7 @@ export function GuardShift({ data, apiUrl }: { data: GuardShiftData; apiUrl: str
       shift={data.shift}
       qrPermitido={data.qrFallbackEnabled !== false}
       {...(data.photoBudget ? { presupuestoFoto: data.photoBudget } : {})}
+      {...(data.photoPolicy ? { politicaFoto: data.photoPolicy } : {})}
     />
   );
 }
@@ -164,12 +187,14 @@ function Ronda({
   apiUrl,
   qrPermitido,
   presupuestoFoto,
+  politicaFoto,
 }: {
   patrol: NonNullable<GuardShiftData['patrol']>;
   shift: NonNullable<GuardShiftData['shift']>;
   apiUrl: string;
   qrPermitido: boolean;
   presupuestoFoto?: GuardShiftData['photoBudget'];
+  politicaFoto?: PoliticaFoto;
 }) {
   const puente = useGuardBridge(apiUrl);
   const [estado, setEstado] = useState<EstadoRonda>(() => estadoInicial(patrol.id));
@@ -180,6 +205,18 @@ function Ronda({
   const [enviandoNovedad, setEnviandoNovedad] = useState(false);
   const [mensajeNovedad, setMensajeNovedad] = useState<string>();
   const [fotosPorSubir, setFotosPorSubir] = useState(0);
+  const [fotoDePunto, setFotoDePunto] = useState<FotoDePunto>();
+  const [guardandoFotoPunto, setGuardandoFotoPunto] = useState(false);
+  const [avisoFotoPunto, setAvisoFotoPunto] = useState<string>();
+  // La foto de este punto ya está a salvo en el teléfono aunque no haya subido.
+  // Cambia lo que dicen el botón de postergar y su nota: "sigues sin foto" sería
+  // falso, y de esa clase de mentira se trata todo este panel.
+  const [fotoPuntoGuardada, setFotoPuntoGuardada] = useState(false);
+  // Los ids de escaneo que ya devolvió el servidor, fuera del estado de React y
+  // fuera de la vuelta de renderizado: quien los tiene que leer es la subida de
+  // la foto, que empezó ANTES de que llegaran y no ve los cambios de estado
+  // posteriores. Se crea una sola vez (inicializador perezoso de useState).
+  const [idsDeEscaneo] = useState(nuevoRegistroIdsDeEscaneo);
 
   const refrescarFotosPendientes = useCallback(async () => {
     setFotosPorSubir(await contarPendientes());
@@ -220,37 +257,86 @@ function Ronda({
         if (!foto.serverId) continue;
         const subida = await subirFotoPersistida(apiUrl, foto.clientEventId, foto.serverId);
         if (subida !== undefined) {
-          actualizar((actual) => marcarFotoSubida(actual, foto.clientEventId, subida));
+          // Las dos marcas: cada una busca por el id de cliente en su propia
+          // lista, así que la que no corresponde deja el estado igual.
+          actualizar((actual) =>
+            marcarFotoPuntoSubida(
+              marcarFotoSubida(actual, foto.clientEventId, subida),
+              foto.clientEventId,
+              subida,
+            ),
+          );
         }
       }
+
+      // Reparación en frío de la foto de un punto que quedó sin el id de su
+      // escaneo. El veredicto de una operación llega UNA vez y después sale de
+      // la cola, así que nadie se lo vuelve a ofrecer; el estado de la ronda, en
+      // cambio, sí persiste y `aplicarVeredictos()` le dejó el `scanId`. Se lee
+      // del almacenamiento y no del estado de React porque este efecto corre
+      // antes de que el otro lo cargue.
+      const registros = cargarEstadoRonda(patrol.id).puntos;
+      for (const { clientScanId, scanId } of fotosDePuntoAdoptables(pendientes, registros)) {
+        await fijarServerId(clientScanId, scanId);
+        const subida = await subirFotoPersistida(apiUrl, clientScanId, scanId);
+        if (subida !== undefined) {
+          actualizar((actual) => marcarFotoPuntoSubida(actual, clientScanId, subida));
+        }
+      }
+
       if (vivo) await refrescarFotosPendientes();
     })();
     return () => {
       vivo = false;
     };
-  }, [apiUrl, actualizar, refrescarFotosPendientes]);
+  }, [apiUrl, actualizar, patrol.id, refrescarFotosPendientes]);
 
   useEffect(
     () =>
       suscribirVeredictos((veredictos) => {
         actualizar((actual) => aplicarVeredictos(actual, veredictos));
 
-        // La foto esperaba el id que solo aparece cuando la novedad llega al
+        // La foto esperaba el id que solo aparece cuando la operación llega al
         // servidor. Este es el momento en que existe: se fija en el almacén
         // (para reintentar aunque la subida falle) y se sube.
+        //
+        // Vale igual para la novedad y para el punto: el `serverId` del
+        // veredicto es el id del evento o el del escaneo según el tipo de la
+        // operación, y `subirFotoPersistida` elige el endpoint por el destino
+        // que la foto lleva guardado.
         for (const veredicto of veredictos) {
           if (veredicto.status === 'rechazado' || !veredicto.serverId) continue;
           const { clientId, serverId } = veredicto;
+          // Lo PRIMERO, y sin pasar por el estado de React: puede haber una foto
+          // procesándose en este mismo instante que lo va a releer al terminar.
+          // Si el id solo viajara por `setFotoDePunto`, esa foto —que ya capturó
+          // su pendiente— se guardaría sin id y se quedaría sin subir para
+          // siempre, porque este veredicto no vuelve a pasar.
+          idsDeEscaneo.anotar(clientId, serverId);
+          // El panel de la foto puede estar abierto esperando justo este id.
+          setFotoDePunto((actual) =>
+            actual && actual.clientScanId === clientId ? { ...actual, scanId: serverId } : actual,
+          );
           void fijarServerId(clientId, serverId)
             .then(() => subirFotoPersistida(apiUrl, clientId, serverId))
             .then((subida) => {
               if (subida === undefined) return;
-              actualizar((actual) => marcarFotoSubida(actual, clientId, subida));
+              // Las dos marcas se aplican siempre: cada una busca por el id de
+              // cliente en su propia lista, así que la que no corresponde no
+              // encuentra nada y deja el estado igual.
+              actualizar((actual) =>
+                marcarFotoPuntoSubida(marcarFotoSubida(actual, clientId, subida), clientId, subida),
+              );
+              if (subida) {
+                setFotoDePunto((actual) =>
+                  actual?.clientScanId === clientId ? undefined : actual,
+                );
+              }
               void refrescarFotosPendientes();
             });
         }
       }),
-    [actualizar, apiUrl, refrescarFotosPendientes],
+    [actualizar, apiUrl, idsDeEscaneo, refrescarFotosPendientes],
   );
 
   const siguiente = siguientePunto(puntos, estado.puntos);
@@ -340,6 +426,10 @@ function Ronda({
       // sabe a qué punto pertenece la etiqueta —eso lo resuelve el servidor—, y
       // dejar el escaneo sin mostrar sería peor. Queda marcado "sin subir" y el
       // veredicto de la sincronización lo confirma o lo devuelve a pendiente.
+      //
+      // Sin señal la foto la decide el teléfono con la política del recinto que
+      // llegó en `GET /guard/home`: es de eso que se trata mandarla.
+      const exigeFoto = puntoExigeFoto(destino, politicaFoto);
       actualizar((actual) => {
         const conPunto = registrarEscaneo(actual, {
           checkpointId: destino.id,
@@ -348,20 +438,37 @@ function Ronda({
           confirmado: false,
           scannedAt: lectura.scannedAt,
           metodo,
+          fotoRequerida: exigeFoto,
         });
         if (!destino.isClosingPoint) return conPunto;
         return registrarCierre(conPunto, cierreProvisional(conPunto, puntos, clientScanId));
       });
-      setAnuncio(
-        `Punto ${destino.name} guardado sin señal${esQr ? ' por QR' : ''}. ` +
-          'Se sube solo cuando vuelva.',
-      );
+      const guardadoSinSenal =
+        `Punto ${destino.name} guardado sin señal${esQr ? ' por QR' : ''}.`;
+      setAnuncio(`${guardadoSinSenal} Se sube solo cuando vuelva.`);
+      // La foto se pide igual estando sin señal: se guarda en el teléfono y sube
+      // sola con el id que devuelva la sincronización. Va ANTES del resumen para
+      // que el punto de cierre no se salte su evidencia.
+      if (exigeFoto) {
+        pedirFotoDelPunto(
+          { checkpointId: destino.id, nombre: destino.name, clientScanId },
+          `${guardadoSinSenal} Ahora fotografía el acceso.`,
+        );
+        return;
+      }
       if (destino.isClosingPoint) setVista('resumen');
       return;
     }
 
     const respuesta = envio.respuesta;
     const cerrada = respuesta.patrol.status === 'completada';
+    // Manda el veredicto del servidor, que evaluó el horario del recinto en este
+    // instante; si no lo pudo resolver, decide el teléfono con su política. Una
+    // ronda de ocho horas cruza el cierre del recinto y la instantánea de
+    // `GET /guard/home` queda vieja justo en los puntos del final.
+    const puntoEscaneado = puntos.find((punto) => punto.id === respuesta.checkpoint.id) ?? destino;
+    const exigeFoto =
+      respuesta.checkpoint.photoRequired ?? puntoExigeFoto(puntoEscaneado, politicaFoto);
     actualizar((actual) => {
       const conPunto = registrarEscaneo(actual, {
         checkpointId: respuesta.checkpoint.id,
@@ -370,6 +477,8 @@ function Ronda({
         confirmado: true,
         scannedAt: lectura.scannedAt,
         metodo,
+        fotoRequerida: exigeFoto,
+        ...(respuesta.scanId ? { scanId: respuesta.scanId } : {}),
       });
       if (!cerrada) return conPunto;
       return registrarCierre(conPunto, {
@@ -391,7 +500,96 @@ function Ronda({
       `Punto ${respuesta.checkpoint.name} registrado${esQr ? ' por QR' : ''}${conObservacion}. ` +
         `${respuesta.progress.scanned} de ${respuesta.progress.expected}.`,
     );
+    if (exigeFoto) {
+      // El anuncio propio repite "por QR" y la observación a propósito: pisa al
+      // de arriba —los dos setAnuncio caen en la misma tanda de React— y sin
+      // esto el respaldo por QR dejaba de decirse en voz alta justo en los
+      // puntos que exigen foto, que son los que más importan.
+      pedirFotoDelPunto(
+        {
+          checkpointId: respuesta.checkpoint.id,
+          nombre: respuesta.checkpoint.name,
+          clientScanId,
+          ...(respuesta.scanId ? { scanId: respuesta.scanId } : {}),
+        },
+        `Punto ${respuesta.checkpoint.name} registrado${esQr ? ' por QR' : ''}${conObservacion}. ` +
+          'Ahora fotografía el acceso.',
+      );
+      return;
+    }
     if (cerrada) setVista('resumen');
+  }
+
+  function pedirFotoDelPunto(pendiente: FotoDePunto, anuncioPropio?: string) {
+    setAvisoFotoPunto(undefined);
+    setFotoPuntoGuardada(false);
+    setFotoDePunto(pendiente);
+    setAnuncio(anuncioPropio ?? `Punto ${pendiente.nombre} registrado. Ahora fotografía el acceso.`);
+  }
+
+  /**
+   * La foto recién tomada del punto: se procesa (marca de agua con fecha y hora
+   * del recinto, y compresión al peso que fijó el admin), se guarda en el
+   * almacén persistente y recién entonces se intenta subir.
+   *
+   * Ese orden es el que importa: si la subida falla o no hay señal, la foto ya
+   * está a salvo y se manda sola después. Subir primero y guardar después deja
+   * al guardia sin evidencia cada vez que se corta la red, que es la condición
+   * normal de trabajo, no la excepción.
+   *
+   * El QUÉ decide dónde cuelga la foto vive en `guard-scan-photo-flow.ts`, con
+   * sus pruebas: procesar tarda segundos y el id del escaneo puede llegar en el
+   * medio, así que no se puede decidir con lo que se sabía al empezar. Acá queda
+   * solo lo que es de la pantalla.
+   */
+  async function registrarFotoDelPunto(archivo: File) {
+    const pendiente = fotoDePunto;
+    if (!pendiente) return;
+
+    setGuardandoFotoPunto(true);
+    setAvisoFotoPunto(undefined);
+    const tomadaAt = new Date().toISOString();
+    const desenlace = await guardarYSubirFotoDePunto(pendiente, archivo, tomadaAt, {
+      procesar: (entrada) =>
+        procesarFoto(entrada, {
+          sitio: patrol.siteName,
+          ruta: patrol.routeName,
+          ...(patrol.timezone ? { zonaHoraria: patrol.timezone } : {}),
+          ...(presupuestoFoto ? { objetivoBytes: presupuestoFoto.targetBytes } : {}),
+        }),
+      guardar: (clientScanId, foto, cuando, scanId) =>
+        guardarFoto(clientScanId, foto, cuando, scanId, 'escaneo'),
+      fijarId: fijarServerId,
+      subir: (clientScanId, scanId) => subirFotoPersistida(apiUrl, clientScanId, scanId),
+      idDelEscaneo: (clientScanId) => idsDeEscaneo.resolver(clientScanId),
+      alGuardar: refrescarFotosPendientes,
+    });
+
+    if (desenlace.subida !== undefined) {
+      const subida = desenlace.subida;
+      actualizar((actual) => marcarFotoPuntoSubida(actual, pendiente.clientScanId, subida));
+    }
+    await refrescarFotosPendientes();
+    setGuardandoFotoPunto(false);
+
+    // QUÉ se le dice al guardia y SI el panel se cierra lo decide el flujo, que
+    // sí tiene pruebas. El orden de estas líneas importa y ya se equivocó una
+    // vez: el aviso solo se pinta dentro del panel, así que cerrarlo antes de
+    // escribirlo es lo mismo que no escribirlo.
+    const efecto = efectoDelDesenlace(desenlace, pendiente.nombre);
+    setFotoPuntoGuardada(efecto.guardadaSinSubir);
+    setAvisoFotoPunto(efecto.aviso);
+    setAnuncio(efecto.anuncio);
+    if (efecto.mantenerPanel) return;
+
+    setFotoDePunto(undefined);
+    cerrarPuntoConFoto(pendiente);
+  }
+
+  /** Si el punto fotografiado era el de cierre, ahora sí toca el resumen. */
+  function cerrarPuntoConFoto(pendiente: FotoDePunto) {
+    const punto = puntos.find((candidato) => candidato.id === pendiente.checkpointId);
+    if (punto?.isClosingPoint) setVista('resumen');
   }
 
   async function reportar(entrada: { criticidad: Criticidad; texto?: string; foto?: File }) {
@@ -505,6 +703,26 @@ function Ronda({
         </p>
       </section>
 
+      {vista === 'ronda' && fotoDePunto ? (
+        <GuardScanPhoto
+          esperando={guardandoFotoPunto}
+          guardadaSinSubir={fotoPuntoGuardada}
+          nombrePunto={fotoDePunto.nombre}
+          onFoto={(archivo) => void registrarFotoDelPunto(archivo)}
+          onPostergar={() => {
+            const pendiente = fotoDePunto;
+            setFotoDePunto(undefined);
+            setAnuncio(
+              fotoPuntoGuardada
+                ? `La foto de ${pendiente.nombre} está guardada y se envía sola. Puedes seguir.`
+                : `El punto ${pendiente.nombre} quedó sin su foto obligatoria.`,
+            );
+            cerrarPuntoConFoto(pendiente);
+          }}
+          {...(avisoFotoPunto ? { aviso: avisoFotoPunto } : {})}
+        />
+      ) : null}
+
       {vista === 'ronda' ? (
         <>
           <GuardMapa
@@ -520,9 +738,13 @@ function Ronda({
             onEscanear={() => void marcarPunto('nfc')}
             onEscanearQr={() => void marcarPunto('qr')}
             opciones={opcionesEscaneo}
+            // Con una foto obligatoria en pantalla no se marca el punto
+            // siguiente: la evidencia del que se acaba de marcar va primero.
+            esperandoFoto={fotoDePunto !== undefined}
             puntos={puntos}
             registros={estado.puntos}
             siguiente={siguiente}
+            {...(politicaFoto ? { politicaFoto } : {})}
             {...(avisoPantalla ? { aviso: avisoPantalla } : {})}
             {...(errorEscaneo ? { error: errorEscaneo } : {})}
           />

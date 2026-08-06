@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EvidenceService } from '../evidence/evidence.service';
-import type { RulesService } from '../rules/rules.service';
+import type { RuleContext, RulesService } from '../rules/rules.service';
 import { HorarioHabilService } from './horario-habil.service';
 
 /**
@@ -15,12 +18,39 @@ import { HorarioHabilService } from './horario-habil.service';
  * Orden de las consultas en comprobar():
  *   1. momento (zona del recinto)   2. feriado del dia
  *   3. total de tramos              4. tramos del dia y del dia anterior
- *   5. puntos activos
+ *   5. puntos activos (con tiene_reglas_propias)
  * isWithinBusinessHours y effective() son mocks aparte.
  */
-const reglas = (overrides: Partial<PatrolRules> = {}) =>
+
+/**
+ * effective() que RESPONDE DISTINTO segun el contexto que se le pasa.
+ *
+ * El mock anterior devolvia lo mismo con contexto y sin el, asi que la suite se
+ * quedo verde mientras el panel resolvia media cascada y prometia foto donde la
+ * ronda ya no la pedia. Este ademas revienta si lo llaman sin recinto: en este
+ * servicio no queda ninguna llamada legitima sin contexto, y una que aparezca
+ * tiene que romper el test, no pasar desapercibida.
+ */
+const reglas = (
+  niveles: {
+    tenant?: Partial<PatrolRules>;
+    recinto?: Partial<PatrolRules>;
+    /** Overrides de checkpoint_rules, por id de punto. */
+    puntos?: Record<string, Partial<PatrolRules>>;
+  } = {},
+) =>
   ({
-    effective: jest.fn().mockResolvedValue({ ...patrolRulesSchema.parse({}), ...overrides }),
+    effective: jest.fn(async (contexto: RuleContext = {}) => {
+      if (!contexto.siteId) {
+        throw new Error('effective() sin recinto: el panel resolveria menos cascada que la ronda');
+      }
+      return {
+        ...patrolRulesSchema.parse({}),
+        ...niveles.tenant,
+        ...niveles.recinto,
+        ...(contexto.checkpointId ? niveles.puntos?.[contexto.checkpointId] : undefined),
+      };
+    }),
   }) as unknown as RulesService;
 
 const evidencia = (within: boolean) =>
@@ -37,12 +67,21 @@ const servicio = (
     rules,
   );
 
+/** Una fila de la consulta de puntos, con las mismas columnas que el SQL. */
+type FilaPunto = {
+  id: string;
+  name: string;
+  kind: string;
+  requires_photo: boolean | null;
+  tiene_reglas_propias: boolean;
+};
+
 /** Respuestas por defecto de las cinco consultas, en orden. */
 const consultas = (opciones: {
   momento?: Record<string, unknown> | null;
   feriado?: Array<{ name: string | null }>;
   tramos?: number;
-  puntos?: Array<{ id: string; name: string; kind: string; requires_photo: boolean | null }>;
+  puntos?: FilaPunto[];
 } = {}) => {
   const momento =
     opciones.momento === undefined
@@ -64,11 +103,35 @@ const consultas = (opciones: {
     .mockResolvedValueOnce(opciones.puntos ?? []);
 };
 
-const PUNTOS_NORMALES = [
-  { id: 'cp-1', name: 'Portón norte', kind: 'normal', requires_photo: null },
-  { id: 'cp-2', name: 'Bodega', kind: 'normal', requires_photo: null },
-  { id: 'cp-3', name: 'Acceso principal', kind: 'acceso_critico', requires_photo: null },
-];
+const PORTON: FilaPunto = {
+  id: 'cp-1',
+  name: 'Portón norte',
+  kind: 'normal',
+  requires_photo: null,
+  tiene_reglas_propias: false,
+};
+const BODEGA: FilaPunto = {
+  id: 'cp-2',
+  name: 'Bodega',
+  kind: 'normal',
+  requires_photo: null,
+  tiene_reglas_propias: false,
+};
+const ACCESO: FilaPunto = {
+  id: 'cp-3',
+  name: 'Acceso principal',
+  kind: 'acceso_critico',
+  requires_photo: null,
+  tiene_reglas_propias: false,
+};
+
+const PUNTOS_NORMALES: FilaPunto[] = [PORTON, BODEGA, ACCESO];
+
+/** El mismo punto, pero con fila propia en checkpoint_rules. */
+const conReglasPropias = (fila: FilaPunto): FilaPunto => ({ ...fila, tiene_reglas_propias: true });
+
+/** El jest.fn() de adentro del mock, para mirarle las llamadas. */
+const llamadas = (rules: RulesService) => (rules.effective as jest.Mock).mock.calls;
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -111,7 +174,13 @@ describe('HorarioHabilService.comprobar', () => {
     const query = consultas({
       puntos: [
         ...PUNTOS_NORMALES,
-        { id: 'cp-4', name: 'Sala eléctrica', kind: 'normal', requires_photo: false },
+        {
+          id: 'cp-4',
+          name: 'Sala eléctrica',
+          kind: 'normal',
+          requires_photo: false,
+          tiene_reglas_propias: false,
+        },
       ],
     });
 
@@ -132,7 +201,7 @@ describe('HorarioHabilService.comprobar', () => {
     const resultado = await servicio(
       query,
       evidencia(false),
-      reglas({ photoRequiredOutsideHours: false }),
+      reglas({ tenant: { photoRequiredOutsideHours: false } }),
     ).comprobar('site-1');
 
     // Solo queda el acceso critico, por photoRequiredOnCritical.
@@ -144,6 +213,84 @@ describe('HorarioHabilService.comprobar', () => {
       { name: 'Portón norte', motivo: 'reglas' },
       { name: 'Bodega', motivo: 'reglas' },
     ]);
+  });
+
+  it('el override del recinto manda: donde la ronda dejó de pedir foto, el panel deja de prometerla', async () => {
+    // El caso que rompia: tenant con «foto en todo acceso critico» y un recinto
+    // que la apaga en site_rules. El panel listaba ese acceso como que exige
+    // foto y el guardia escaneaba sin que se la pidieran.
+    const query = consultas({ puntos: PUNTOS_NORMALES });
+    const rules = reglas({
+      tenant: { photoRequiredOnCritical: true },
+      recinto: { photoRequiredOnCritical: false },
+    });
+
+    const resultado = await servicio(query, evidencia(true), rules).comprobar('site-1');
+
+    expect(rules.effective).toHaveBeenCalledWith({ siteId: 'site-1' });
+    expect(resultado.checkpoints.requirePhoto).toBe(0);
+    // Lo que se le muestra al admin es lo del RECINTO, no lo del tenant.
+    expect(resultado.rules.photoRequiredOnCritical).toBe(false);
+    // Y el motivo apunta al recinto, que es donde se corrige.
+    expect(resultado.checkpoints.exempt).toContainEqual({
+      name: 'Acceso principal',
+      motivo: 'reglas',
+    });
+  });
+
+  it('el punto con reglas propias se resuelve con SU cascada, la misma que pide el escaneo', async () => {
+    const query = consultas({ puntos: [PORTON, BODEGA, conReglasPropias(ACCESO)] });
+    const rules = reglas({ puntos: { 'cp-3': { photoRequiredOnCritical: false } } });
+
+    const resultado = await servicio(query, evidencia(true), rules).comprobar('site-1');
+
+    // EvidenceService.requiresPhoto() pregunta {siteId, checkpointId}; el panel
+    // pregunta igual o vuelve a prometer lo que la ronda no cumple.
+    expect(rules.effective).toHaveBeenCalledWith({ siteId: 'site-1', checkpointId: 'cp-3' });
+    expect(resultado.checkpoints.requirePhoto).toBe(0);
+    // Motivo distinto a 'reglas': esto se corrige en el punto, no en el recinto.
+    expect(resultado.checkpoints.exempt).toContainEqual({
+      name: 'Acceso principal',
+      motivo: 'reglas-punto',
+    });
+  });
+
+  it('no le pregunta la cascada al punto que no tiene reglas propias', async () => {
+    const query = consultas({ puntos: [PORTON, BODEGA, conReglasPropias(ACCESO)] });
+    const rules = reglas();
+
+    await servicio(query, evidencia(false), rules).comprobar('site-1');
+
+    // Una del recinto y una del unico punto con fila en checkpoint_rules: sin
+    // esa fila el veredicto es identico al del recinto y la consulta sobra.
+    expect(llamadas(rules)).toEqual([
+      [{ siteId: 'site-1' }],
+      [{ siteId: 'site-1', checkpointId: 'cp-3' }],
+    ]);
+  });
+
+  it('reglas propias que no cambian el veredicto no se le cuelgan al punto', async () => {
+    const query = consultas({ puntos: [conReglasPropias(PORTON), BODEGA, ACCESO] });
+    // El punto tiene lo suyo configurado, pero dentro de horario da lo mismo:
+    // un punto normal queda exento igual. El motivo sigue siendo el heredado.
+    const rules = reglas({ puntos: { 'cp-1': { photoRequiredOutsideHours: false } } });
+
+    const resultado = await servicio(query, evidencia(true), rules).comprobar('site-1');
+
+    expect(resultado.checkpoints.exempt).toEqual([
+      { name: 'Portón norte', motivo: 'reglas' },
+      { name: 'Bodega', motivo: 'reglas' },
+    ]);
+  });
+
+  it('tiene_reglas_propias sale de la consulta, no de una columna inventada en el mock', async () => {
+    const query = consultas({ puntos: PUNTOS_NORMALES });
+
+    await servicio(query).comprobar('site-1');
+
+    const [sql] = query.mock.calls[4] ?? [];
+    expect(String(sql)).toContain('FROM checkpoint_rules r');
+    expect(String(sql)).toContain('AS tiene_reglas_propias');
   });
 
   it('un feriado se informa como tal y el recinto cuenta como configurado', async () => {
@@ -231,5 +378,26 @@ describe('HorarioHabilService.comprobar', () => {
     const resultado = await servicio(query).comprobar('site-1');
 
     expect(resultado.hasSchedule).toBe(true);
+  });
+});
+
+/**
+ * El servicio se ahorra la consulta de la cascada en el punto que no tiene fila
+ * en checkpoint_rules, y ese atajo vale SOLO mientras esa tabla sea el unico
+ * origen del nivel de punto. Es una suposicion sobre otro modulo, asi que se
+ * comprueba contra su codigo y no contra un mock: si manana el nivel de punto
+ * saca algo de otra parte, el panel volveria a resolver menos cascada que la
+ * ronda —en silencio y con la suite verde, que es exactamente como llego el bug
+ * que este archivo arregla—. Que caiga este test es la forma de enterarse.
+ */
+describe('el atajo que se salta la cascada del punto', () => {
+  it('sigue valiendo: el nivel de punto sale solo de checkpoint_rules', () => {
+    const fuente = readFileSync(join(__dirname, '..', 'rules', 'rules.service.ts'), 'utf8');
+
+    const tablasDelNivelPunto = [
+      ...fuente.matchAll(/'checkpoint'\s+AS\s+scope[\s\S]*?FROM\s+(\w+)/g),
+    ].map((coincidencia) => coincidencia[1]);
+
+    expect(tablasDelNivelPunto).toEqual(['checkpoint_rules']);
   });
 });

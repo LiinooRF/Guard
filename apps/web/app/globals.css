@@ -307,6 +307,10 @@ a { color: inherit; text-decoration: none; }
 .guardia-turno { margin: 0; color: var(--guardia-muted); font-size: 1rem; font-weight: 600; }
 
 .guardia-ronda, .guardia-novedades, .guardia-resumen { border: 1px solid var(--guardia-borde); border-radius: 1rem; padding: 1.1rem; background: white; }
+/* La foto obligatoria del punto. Va arriba de todo y con borde rojo porque es
+   un paso que no se puede saltar sin darse cuenta. */
+.guardia-foto-punto { margin-bottom: 1rem; border: 3px solid var(--guardia-rojo); border-radius: 1rem; padding: 1.1rem; background: white; }
+.guardia-foto-punto h2 { margin: 0 0 .3rem; color: var(--guardia-ink); font-size: 1.45rem; line-height: 1.15; }
 .guardia-progreso { margin: 0; color: var(--guardia-muted); font-size: 1rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .guardia-destino { margin: .25rem 0 .6rem; color: var(--guardia-ink); font-size: clamp(1.9rem, 7vw, 2.8rem); letter-spacing: -.03em; line-height: 1.08; }
 .guardia-nota { margin: .4rem 0; color: var(--guardia-muted); font-size: 1rem; line-height: 1.5; }
@@ -359,6 +363,9 @@ label.guardia-boton-secundario { display: flex; align-items: center; justify-con
    o con observacion", y un punto marcado por QR no es ninguna de las dos. Es
    evidencia mas debil, que es otra cosa y se lee distinto. */
 .guardia-chip.por-qr { color: var(--guardia-ink); background: white; box-shadow: inset 0 0 0 2px var(--guardia-ink); }
+/* La foto obligatoria del punto. Se lee distinto de "sin subir": una foto que
+   falta no es un problema de red, es evidencia que no existe. */
+.guardia-chip.foto { color: #5c0710; background: #ffd0d4; }
 .guardia-chip.criticidad-info, .guardia-chip.criticidad-baja { color: #262d3d; background: #e6e9f0; }
 .guardia-chip.criticidad-media { color: #3a2400; background: #ffe0a6; }
 .guardia-chip.criticidad-alta { color: #5c0710; background: #ffd0d4; }

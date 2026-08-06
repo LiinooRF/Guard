@@ -10,6 +10,7 @@ import {
   hayPendientesDeSubir,
   olvidarEstadoRonda,
   puntosPorQr,
+  puntosSinFoto,
   type EstadoRonda,
   type PuntoRuta,
 } from './guard-shift-state';
@@ -55,6 +56,9 @@ export function GuardShiftSummary({
   const faltantes = puntos.filter((punto) => cierre.faltantes.includes(punto.id));
   const pendientes = hayPendientesDeSubir(estado);
   const porQr = puntosPorQr(estado);
+  // Puntos marcados que debían foto y no la tienen. Se listan uno por uno: un
+  // conteo no le dice al guardia a qué puerta tiene que volver.
+  const sinFoto = puntosSinFoto(puntos, estado.puntos);
 
   async function terminarJornada() {
     setMarcando(true);
@@ -113,6 +117,22 @@ export function GuardShiftSummary({
       ) : (
         <p className="guardia-nota">No quedó ningún punto sin escanear.</p>
       )}
+
+      {sinFoto.length ? (
+        <div className="guardia-faltantes">
+          <h3>Puntos sin la foto obligatoria</h3>
+          <ul>
+            {sinFoto.map((punto) => (
+              <li key={punto.id}>
+                {punto.position}. {punto.name}
+              </li>
+            ))}
+          </ul>
+          <p className="guardia-nota">
+            Quedan registrados sin evidencia del acceso. Tu supervisor los ve así en el informe.
+          </p>
+        </div>
+      ) : null}
 
       {cierre.alertaEnviada ? (
         <p className="guardia-aviso">

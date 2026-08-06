@@ -90,6 +90,30 @@ describe('EvidenceService.isWithinBusinessHours', () => {
     ).resolves.toBe(false);
   });
 
+  /**
+   * businessHoursDefaultOpen es HASTA_RECINTO en PATROL_RULE_CATALOG, y el
+   * siteId es el parametro de esta funcion: resolverla sin contexto ignoraba al
+   * recinto que la configuro, justo en la decision para la que la configuro.
+   *
+   * El mock DISTINGUE el contexto a proposito. Uno que devuelva lo mismo se le
+   * pase lo que se le pase no prueba nada: es el mock mentiroso de la regla #5
+   * de la casa, y con el este test pasaba tambien con el bug adentro.
+   */
+  it('el recinto sin horario cargado decide con SU regla, no con la del tenant', async () => {
+    const manager = { query: jest.fn().mockResolvedValue([{ has_hours: false, within: false }]) };
+    const defaults = patrolRulesSchema.parse({});
+    const rules = {
+      effective: jest.fn(async (contexto?: { siteId?: string }) => ({
+        ...defaults,
+        // El tenant dice "abierto"; el recinto lo apaga en site_rules.
+        businessHoursDefaultOpen: contexto?.siteId ? false : true,
+      })),
+    } as unknown as RulesService;
+
+    await expect(servicio(manager, rules).isWithinBusinessHours('site-id')).resolves.toBe(false);
+    expect(rules.effective).toHaveBeenCalledWith({ siteId: 'site-id' });
+  });
+
   it('un feriado cuenta como configuracion aunque el recinto no tenga horario semanal', async () => {
     const manager = { query: jest.fn().mockResolvedValue([{ has_hours: true, within: false }]) };
     const rules = reglas({ businessHoursDefaultOpen: true });
@@ -162,6 +186,25 @@ describe('EvidenceService.requiresPhoto', () => {
     await expect(servicio(manager).requiresPhoto('cp-1')).resolves.toMatchObject({
       required: false,
     });
+  });
+
+  /**
+   * La cascada es plataforma -> tenant -> RECINTO -> PUNTO, y la foto se puede
+   * configurar en los cuatro niveles (ver PATROL_RULE_CATALOG). Resolver las
+   * reglas sin contexto devolvia solo los dos primeros: un admin que apagaba
+   * photoRequiredOnCritical en un recinto veia el cambio ignorado justo en la
+   * decision para la que lo configuro.
+   */
+  it('resuelve las reglas con el recinto y el punto, no con la cascada a medias', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([punto({ kind: 'acceso_critico' })])
+      .mockResolvedValueOnce([{ has_hours: true, within: true }]);
+    const rules = reglas();
+
+    await servicio(manager, rules).requiresPhoto('cp-1');
+
+    expect(rules.effective).toHaveBeenCalledWith({ siteId: 'site-id', checkpointId: 'cp-1' });
   });
 });
 
