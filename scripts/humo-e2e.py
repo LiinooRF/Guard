@@ -288,7 +288,8 @@ print()
 print('=' * 72)
 print('3. ESTADISTICAS (#89) y GRAFICAS (#87)')
 print('=' * 72)
-for nombre in ['compliance-by-site', 'evolution', 'missed-checkpoints', 'guard-ranking']:
+for nombre in ['compliance-by-site', 'compliance-by-route', 'evolution',
+               'missed-checkpoints', 'guard-ranking']:
     s, d = admin.pedir('GET', '/stats/charts/%s' % nombre)
     check('grafica %s' % nombre, s == 200, 'HTTP %s %s' % (s, str(d)[:90]))
 

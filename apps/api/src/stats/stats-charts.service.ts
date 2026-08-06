@@ -88,6 +88,25 @@ interface FilaGuardia {
   bajo_umbral: string;
 }
 
+interface FilaRuta {
+  route_id: string;
+  route_name: string;
+  site_id: string;
+  site_name: string;
+  branch_name: string;
+  duracion_estimada_min: string;
+  rondas: string;
+  completadas: string;
+  incompletas: string;
+  vencidas: string;
+  guardias: string;
+  con_cumplimiento: string;
+  cumplimiento: string | null;
+  bajo_umbral: string;
+  duracion_real_min: string | null;
+  duracion_muestra: string;
+}
+
 /**
  * Consultas agregadas que alimentan las graficas de informes (#89).
  *
@@ -406,6 +425,122 @@ export class StatsChartsService {
         ratedPatrols: Number(f.con_cumplimiento),
         compliancePct: f.cumplimiento === null ? null : Number(f.cumplimiento),
         belowThreshold: Number(f.bajo_umbral),
+      })),
+    };
+  }
+
+  /**
+   * Cumplimiento por RUTA (#99).
+   *
+   * El panel del supervisor armaba esta tarjeta en el navegador, agrupando el
+   * listado de rondas de `GET /supervisor/sites/:siteId/patrols`. Eso traia tres
+   * defectos que no se podian arreglar del lado del cliente, y por eso existe
+   * esta consulta:
+   *
+   * 1. Ese listado es `ORDER BY scheduled_start_at DESC LIMIT 100`, o sea las
+   *    100 rondas con la fecha PROGRAMADA mas alta, futuras incluidas. Un
+   *    recinto con la semana ya generada llenaba esas 100 filas con rondas
+   *    `pendiente` y el promedio salia de las pocas cerradas que sobraban.
+   * 2. No expone `is_voluntary`, asi que las rondas voluntarias entraban aca y
+   *    no en el resto del panel: dos tarjetas de la misma pantalla contando
+   *    universos distintos.
+   * 3. No expone `route_id`, asi que se agrupaba por NOMBRE. Renombrar una ruta
+   *    es libre y `routes` no tiene UNIQUE sobre `name`: dos rutas distintas del
+   *    mismo recinto llamadas igual se leian como una sola fila con el promedio
+   *    mezclado. Aca se agrupa por `rt.id` y ese caso desaparece.
+   *
+   * Se agrega en vivo sobre `patrols` y no sobre `patrol_daily_stats` por las
+   * mismas dos razones que `guardRanking`: el cubo no tiene dimension de ruta, y
+   * "rondas bajo umbral" depende del umbral VIGENTE, que el admin puede cambiar
+   * — precalcularlo dejaria el historico medido con una regla que ya no existe.
+   * De ahi que el tope de rango sea el del ranking y no el de las series.
+   *
+   * `estimated_duration_min` viaja junto al promedio real de duracion porque es
+   * la pregunta que el issue pide contestar: una ruta que siempre queda a medias
+   * con guardias distintos no es un problema de personas, es una ruta que no
+   * cabe en el tiempo que tiene asignado. Sin el estimado al lado, el porcentaje
+   * no dice que hacer.
+   *
+   * Ese promedio de duracion sale SOLO de las rondas `completada`, y por eso
+   * viaja con su propio conteo de muestra. Una ronda incompleta o vencida se
+   * abandono a mitad de camino: su duracion mide hasta donde se llego, no cuanto
+   * toma la ruta. Metidas en el mismo promedio ACORTAN el numero justo en las
+   * rutas que peor cumplen — o sea, tapan el problema exactamente donde hay que
+   * verlo.
+   *
+   * Las rutas desactivadas (`routes.is_active = false`) NO se excluyen a
+   * proposito: sus rondas ya ocurrieron y sacarlas borraria historia del
+   * periodo. Lo que se pregunta es que paso, no que esta vigente hoy.
+   */
+  async complianceByRoute(scope: ChartScope, query: TopQueryDto) {
+    const rango = resolverRango(query.from, query.to, MAX_DIAS_RANKING);
+    const parametros = await this.parametros(scope, query, rango);
+    const reglas = await this.rules.effective();
+
+    const filas = await this.tenantContext.manager.query<FilaRuta[]>(
+      `
+        SELECT rt.id AS route_id,
+               rt.name AS route_name,
+               s.id AS site_id,
+               s.name AS site_name,
+               s.branch_name,
+               rt.estimated_duration_min AS duracion_estimada_min,
+               count(*)::int AS rondas,
+               count(*) FILTER (WHERE p.status = 'completada')::int AS completadas,
+               count(*) FILTER (WHERE p.status = 'incompleta')::int AS incompletas,
+               count(*) FILTER (WHERE p.status = 'vencida')::int AS vencidas,
+               count(DISTINCT p.guard_id)::int AS guardias,
+               count(*) FILTER (WHERE p.compliance_pct IS NOT NULL)::int AS con_cumplimiento,
+               round(avg(p.compliance_pct), 1) AS cumplimiento,
+               count(*) FILTER (WHERE p.compliance_pct < $6::numeric)::int AS bajo_umbral,
+               -- El ::numeric no sobra: round(v, s) SOLO existe para numeric, y
+               -- EXTRACT devolvia double precision antes de PostgreSQL 14. Sin
+               -- el cast, el dia que esto corra contra un motor mas viejo revienta
+               -- con "function round(double precision, integer) does not exist"
+               -- al EVALUAR la consulta, no al desplegarla.
+               round(
+                 avg(EXTRACT(EPOCH FROM (p.closed_at - p.started_at))::numeric / 60.0)
+                   FILTER (WHERE p.status = 'completada'),
+                 1
+               ) AS duracion_real_min,
+               count(*) FILTER (
+                 WHERE p.status = 'completada' AND p.started_at IS NOT NULL AND p.closed_at IS NOT NULL
+               )::int AS duracion_muestra
+        FROM patrols p
+        JOIN sites s ON s.tenant_id = p.tenant_id AND s.id = p.site_id
+        JOIN routes rt ON rt.tenant_id = p.tenant_id AND rt.id = p.route_id
+        WHERE NOT p.is_voluntary
+          AND p.status IN ${RONDAS_CERRADAS}
+          AND p.scheduled_start_at >= ($1::date::timestamp AT TIME ZONE s.timezone)
+          AND p.scheduled_start_at <  (($2::date::timestamp + INTERVAL '1 day') AT TIME ZONE s.timezone)
+          ${FILTRO_RECINTOS}
+        GROUP BY rt.id, rt.name, rt.estimated_duration_min, s.id, s.name, s.branch_name
+        ORDER BY cumplimiento NULLS LAST, rondas DESC
+        LIMIT $7::int
+      `,
+      [...parametros, reglas.complianceThreshold, query.limit ?? 20],
+    );
+
+    return {
+      range: rango,
+      threshold: reglas.complianceThreshold,
+      routes: filas.map((f) => ({
+        routeId: f.route_id,
+        routeName: f.route_name,
+        siteId: f.site_id,
+        siteName: f.site_name,
+        branchName: f.branch_name,
+        patrols: Number(f.rondas),
+        completed: Number(f.completadas),
+        incomplete: Number(f.incompletas),
+        expired: Number(f.vencidas),
+        guards: Number(f.guardias),
+        ratedPatrols: Number(f.con_cumplimiento),
+        compliancePct: f.cumplimiento === null ? null : Number(f.cumplimiento),
+        belowThreshold: Number(f.bajo_umbral),
+        estimatedDurationMin: Number(f.duracion_estimada_min),
+        avgDurationMin: f.duracion_real_min === null ? null : Number(f.duracion_real_min),
+        durationSamples: Number(f.duracion_muestra),
       })),
     };
   }

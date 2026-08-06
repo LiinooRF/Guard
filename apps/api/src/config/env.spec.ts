@@ -83,3 +83,32 @@ describe('validateEnv', () => {
     });
   });
 });
+
+describe('validateEnv · webhook de estado de entrega (#220)', () => {
+  it('arranca sin el secreto: el canal queda apagado, no el producto', () => {
+    // Sin secreto el endpoint publico responde 503 a todo. Negarse a arrancar
+    // cambiaria "un aviso que no llega" por "un producto que no levanta".
+    const env = validateEnv(valid);
+
+    expect(env.NOTIF_WEBHOOK_DRIVER).toBe('interno');
+    expect(env.NOTIF_WEBHOOK_SECRET).toBeUndefined();
+  });
+
+  it('trata el valor vacio como ausente: copiar .env.example tiene que levantar', () => {
+    expect(validateEnv({ ...valid, NOTIF_WEBHOOK_SECRET: '' })).toMatchObject({
+      NOTIF_WEBHOOK_SECRET: undefined,
+    });
+  });
+
+  it('rechaza un secreto compartido corto, que es un HMAC de adorno', () => {
+    expect(() => validateEnv({ ...valid, NOTIF_WEBHOOK_SECRET: 'corto' })).toThrow(
+      'al menos 32 caracteres',
+    );
+  });
+
+  it('rechaza un driver sin traductor antes de recibir el primer webhook', () => {
+    expect(() => validateEnv({ ...valid, NOTIF_WEBHOOK_DRIVER: 'sendgrid' })).toThrow(
+      'Configuracion de entorno invalida',
+    );
+  });
+});

@@ -6,6 +6,7 @@ import {
   ConsentimientoTrabajador,
 } from '../../_components/consentimiento-carga';
 import { DashboardShell } from '../../_components/dashboard-shell';
+import { EnviosPanel } from '../../_components/envios-panel';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { GuardShift } from '../../_components/guard-shift';
 import { InformesPanel } from '../../_components/informes-panel';
@@ -13,6 +14,7 @@ import { LivePatrolBoard } from '../../_components/live-patrol-board';
 import { ReglasConfiguracion } from '../../_components/reglas-configuracion';
 import { RouteEditor, type RouteEditorSite } from '../../_components/route-editor';
 import { StatsCharts } from '../../_components/stats-charts';
+import { SupervisorPanel } from '../../_components/supervisor-panel';
 import { SupervisorSchedule } from '../../_components/supervisor-schedule';
 import {
   AdminManagement,
@@ -190,7 +192,22 @@ export default async function RoleDashboard({
         mapTileUrl={process.env.MAP_TILE_URL ?? null}
         mapAttribution={process.env.MAP_ATTRIBUTION ?? ''}
       />}
-      <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
+      {/* Al SUPERVISOR se le REEMPLAZA el panel de informes generico, no se le
+          suma otro (#99). El de arriba se alimenta de `/dashboard/tenant`, que
+          mezcla las rondas de todos sus recintos sin poder elegir; el del panel
+          pide por recinto y con verificacion de asignacion en el servidor. Dos
+          listas de informes en la misma pantalla, una filtrable y otra no, es
+          una invitacion a leer la equivocada.
+
+          Va DESPUES de StatsCharts porque no pinta su propia barra de filtros:
+          lee los mismos `?desde=&hasta=&recinto=&sucursal=` que esa barra ya
+          escribe. Dos periodos distintos en la misma pantalla es la forma segura
+          de comparar dos cortes creyendo que son el mismo. */}
+      {isSupervisor ? (
+        <SupervisorPanel searchParams={searchParams} />
+      ) : (
+        <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
+      )}
       {role === 'admin' && (
         <>
           <AdminManagement
@@ -209,6 +226,20 @@ export default async function RoleDashboard({
         </>
       )}
       {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
+      {/* Vista de envios de correo para soporte (#221): si el informe salio y si
+          llego. Solo ADMIN, igual que el endpoint que consulta
+          (`tenant:audit:read`): el listado incluye invitaciones y
+          recuperaciones de clave de toda la empresa, no solo informes de ronda.
+          Los recintos y las rondas se le pasan ya cargados —la pagina ya los
+          pidio para AdminManagement y para InformesPanel— para no repetir dos
+          consultas en el mismo render. */}
+      {role === 'admin' && (
+        <EnviosPanel
+          searchParams={searchParams}
+          recintos={sites}
+          rondas={overview?.patrols ?? []}
+        />
+      )}
       {/* Publicar el aviso y demostrar que no se registro ubicacion fuera de
           turno (#78). Solo ADMIN: es de la empresa completa, y el SUPERVISOR
           esta limitado a sus recintos asignados. */}

@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 
 import { REGISTRO_LIMITE_MAXIMO } from './registro-envios.constants';
-import { ESTADOS_ENVIO, EVENTOS_PROVEEDOR } from './registro-envios.types';
+import { ESTADOS_ENVIO } from './registro-envios.types';
 
 const FECHA_LOCAL = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -65,39 +65,4 @@ export class RegistroEnviosQuery {
   @Min(1)
   @Max(REGISTRO_LIMITE_MAXIMO)
   limite?: number;
-}
-
-/**
- * Estado de entrega que reporta el proveedor de correo.
- *
- * Es el contrato INTERNO de ingesta, no el formato de ningun proveedor: quien
- * traduce el webhook real —cuando se cierre la decision #9— arma esta llamada y
- * la firma. Ver registro-envios.firma.ts.
- */
-export class EstadoEntregaDto {
-  /** Message-ID que devolvio el SMTP al enviar. Con o sin angulos. */
-  @IsString()
-  @MaxLength(400)
-  messageId!: string;
-
-  @IsIn(EVENTOS_PROVEEDOR)
-  evento!: (typeof EVENTOS_PROVEEDOR)[number];
-
-  /** Segundos desde epoch. Firmado, y con ventana de frescura. */
-  @Type(() => Number)
-  @IsInt()
-  timestamp!: number;
-
-  @IsString()
-  @Matches(/^[0-9a-f]{64}$/, { message: 'La firma no tiene el formato esperado' })
-  firma!: string;
-
-  /**
-   * Diagnostico del rebote, si el proveedor lo manda. Se guarda saneado: es
-   * texto del servidor del destinatario y no se escribe en los logs.
-   */
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  motivo?: string;
 }

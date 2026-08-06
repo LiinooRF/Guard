@@ -340,6 +340,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(StatsChartsController, 'evolution', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(StatsChartsController, 'missedCheckpoints', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(StatsChartsController, 'guardRanking', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(StatsChartsController, 'complianceByRoute', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(RulesController, 'tenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
   secured(RulesController, 'updateTenantRules', ['tenant:rules:manage'], ['ADMIN'], true),
 ] as const;

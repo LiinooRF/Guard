@@ -20,6 +20,7 @@ import { TrazaMetricasModule } from './geo/traza-metricas.module';
 import { PlatformModule } from './platform/platform.module';
 import { PlatformOpsModule } from './platform-ops/platform-ops.module';
 import { PurgaRetencionModule } from './retention/purga-retencion.module';
+import { AvisoInicioRondaModule } from './push/aviso-inicio-ronda.module';
 import { PushModule } from './push/push.module';
 import { QrModule } from './qr/qr.module';
 import { TenantDataModule } from './platform-data/tenant-data.module';
@@ -65,6 +66,7 @@ import { SyncModule } from './sync/sync.module';
     PlatformOpsModule,
     PurgaRetencionModule,
     PushModule,
+    AvisoInicioRondaModule,
     QrModule,
     TenantDataModule,
     ReportsModule,

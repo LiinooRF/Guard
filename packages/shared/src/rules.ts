@@ -207,6 +207,14 @@ export const patrolRulesSchema = z.object({
   mapTrackMaxAccuracyM: z.number().int().min(5).max(500).default(100),
   /** Tope de puntos del trazo: un mapa con miles de puntos no se lee (#79). */
   mapMaxTrackPoints: z.number().int().min(50).max(5000).default(500),
+
+  /**
+   * Minutos de anticipacion con que se le avisa al guardia que su ronda esta por
+   * comenzar (#43). 0 = la empresa apago el recordatorio, que no es lo mismo que
+   * avisar al instante. El techo lo mira tambien el barrido cruza-empresas
+   * (AVISO_INICIO_MAX_ANTICIPACION_MIN): si suben este maximo, sube alla tambien.
+   */
+  patrolStartNoticeMin: z.number().int().min(0).max(120).default(10),
   /** Tope del PDF adjunto al correo; sobre esto se manda enlace (#86). */
   reportMailMaxAttachmentMB: z.number().int().min(1).max(25).default(8),
 
@@ -894,6 +902,22 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     max: 25,
     default: DEFAULT_PATROL_RULES.reportMailMaxAttachmentMB,
     scopes: SOLO_EMPRESA,
+    group: 'avisos',
+  },
+  patrolStartNoticeMin: {
+    key: 'patrolStartNoticeMin',
+    label: 'Aviso de inicio de ronda',
+    description:
+      'Minutos antes de la hora programada en que le llega al guardia el aviso de que su ronda esta por comenzar. En cero, no se le avisa.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 0,
+    max: 120,
+    default: DEFAULT_PATROL_RULES.patrolStartNoticeMin,
+    // Por recinto si tiene sentido: no es lo mismo un relevo en la porteria que
+    // un perimetro donde el guardia camina quince minutos hasta el primer punto.
+    // Por punto no: el aviso es de la ronda completa.
+    scopes: HASTA_RECINTO,
     group: 'avisos',
   },
   gpsTrackMinDistanceM: {

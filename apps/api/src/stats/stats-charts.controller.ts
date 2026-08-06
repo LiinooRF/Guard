@@ -15,7 +15,7 @@ import { StatsChartsService, type ChartScope } from './stats-charts.service';
  * `reports:read` —que tienen ADMIN y SUPERVISOR— y no `tenant:stats:read`, que
  * es exclusivo del ADMIN.
  *
- * Sin decorador un endpoint queda DENEGADO por el guard global; los cuatro
+ * Sin decorador un endpoint queda DENEGADO por el guard global; los cinco
  * declaran permiso y `@TenantScope()` a nivel de clase.
  */
 @Controller('stats/charts')
@@ -57,6 +57,21 @@ export class StatsChartsController {
     @Query() query: TopQueryDto,
   ) {
     return this.charts.guardRanking(this.alcance(request), query);
+  }
+
+  /**
+   * Cumplimiento por ruta (#99). Lo pide el panel del supervisor con el
+   * `siteId` del recinto que esta mirando: las rutas de dos recintos distintos
+   * no se comparan entre si. Sin `siteId` responde igual, mezclando los
+   * recintos que el alcance deje ver.
+   */
+  @Get('compliance-by-route')
+  @Permissions('reports:read')
+  complianceByRoute(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Query() query: TopQueryDto,
+  ) {
+    return this.charts.complianceByRoute(this.alcance(request), query);
   }
 
   /** El alcance sale de la SESION, nunca de la query string. */
