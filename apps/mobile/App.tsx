@@ -23,6 +23,13 @@ import { registrarSincronizacionBackground } from './src/offline/sync-task';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
+/**
+ * Cuanto se espera antes de recargar sola, y otra vez antes de rendirse.
+ * Ocho segundos porque la ronda empieza en la puerta del recinto, donde la
+ * señal es mala: menos convierte una red lenta en un falso error, y mas hace
+ * que el guardia crea que la app se colgo.
+ */
+const PACIENCIA_MS = 8_000;
 const APP_LIKE_DOCUMENT = `
   (function () {
     // Esto corre en document-start: \`document.head\` puede ser null todavia, y
@@ -76,6 +83,8 @@ export default function App() {
    * componente del sistema.
    */
   const [motivoFallo, setMotivoFallo] = useState<string>();
+  /** Solo se recarga sola UNA vez: en bucle taparia un fallo de verdad. */
+  const reintentado = useRef(false);
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -117,10 +126,22 @@ export default function App() {
   useEffect(() => {
     if (!loading || failed) return undefined;
     const aviso = setTimeout(() => {
-      setMotivoFallo('La pagina no termino de cargar en 20 segundos.');
+      // Primero se reintenta SOLO. Comprobado en varios telefonos: la primera
+      // carga se queda colgada y la recarga entra sin problema — o sea que es
+      // una carrera del arranque, no la red ni el portal.
+      //
+      // Pedirle al guardia que toque "Reintentar" para empezar su turno no es
+      // una solucion: lo hace todos los dias, y el dia que no funcione a la
+      // primera va a pensar que la app esta rota. Que lo haga la app.
+      if (!reintentado.current) {
+        reintentado.current = true;
+        webView.current?.reload();
+        return;
+      }
+      setMotivoFallo('La pagina no termino de cargar, ni siquiera al reintentar.');
       setLoading(false);
       setFailed(true);
-    }, 20_000);
+    }, PACIENCIA_MS);
     return () => clearTimeout(aviso);
   }, [loading, failed]);
   useEffect(() => {
@@ -146,6 +167,7 @@ export default function App() {
 
   const retry = () => {
     setBloqueo(null);
+    reintentado.current = false;
     setMotivoFallo(undefined);
     setFailed(false);
     setRutaOffline(undefined);
