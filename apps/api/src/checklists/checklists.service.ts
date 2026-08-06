@@ -473,7 +473,7 @@ export class ChecklistsService {
           at: new Date().toISOString(),
         };
         for (const destino of destinatarios) {
-          await this.mail.enqueue(
+          const encolado = await this.mail.enqueue(
             {
               to: destino.email,
               template: ALERTA_CHECKLIST_FALLA,
@@ -482,7 +482,10 @@ export class ChecklistsService {
             },
             { idempotencyKey: `checklist-fail:${falla.responseId}:${destino.email}` },
           );
-          enviados += 1;
+          // Un destinatario suprimido por dominio (#86) NO cuenta como enviado:
+          // este numero es lo unico que dice si el aviso salio, y contarlo
+          // convertiria la unica senal disponible en una mentira.
+          if (encolado.estado === 'encolado') enviados += 1;
         }
       }
       return enviados;

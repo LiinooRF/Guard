@@ -49,6 +49,17 @@ import { ReportsModule } from './reports.module';
     ),
   ],
   controllers: [EnvioInformeController],
+  // `DOMINIOS_NO_DESPACHABLES` ya NO se provee aca: lo provee y lo exporta
+  // MailModule, que esta en `imports`. La lista se movio junto con la supresion
+  // a `MailQueueService.enqueue`, que es el unico cuello por donde pasa todo el
+  // correo del producto y no solo el informe.
+  //
+  // Declararla tambien aca compilaba y daba el mismo resultado —las dos
+  // factories leian las mismas dos claves del mismo ConfigService—, pero son dos
+  // listas resueltas por separado: el dia que una se toque y la otra no, el
+  // informe y la cola discrepan sobre a quien se le escribe, y el sintoma es que
+  // el despacho anota una fila en `report_deliveries` para una direccion que la
+  // cola despues descarta. Una sola lista, la de la cola.
   providers: [
     EnvioInformeService,
     EnvioInformeProcessor,

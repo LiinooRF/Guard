@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
 
 /**
@@ -10,6 +11,9 @@ import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
  * rechazar tokens legitimos cuando el proveedor cambie su formato.
  */
 export class RegisterDeviceDto {
+  // El `@Matches` prohibe el espacio (0x20), asi que el token ya no puede traer
+  // nada que `trim()` le saque: aca el CHECK `length(trim(token))` y el
+  // validador miden lo mismo sin necesidad de recortar.
   @IsString()
   @Length(8, 4096)
   @Matches(/^[\x21-\x7e]+$/, {
@@ -22,7 +26,16 @@ export class RegisterDeviceDto {
   @IsIn(['android'])
   platform!: 'android';
 
-  /** Version del shell. Explica por que un telefono no abre un deep link nuevo. */
+  /**
+   * Version del shell. Explica por que un telefono no abre un deep link nuevo.
+   *
+   * Se recorta antes de validar: PushService la inserta tal cual
+   * (push.service.ts:56) y el CHECK mide
+   * `app_version IS NULL OR length(trim(app_version)) BETWEEN 1 AND 32`. Una
+   * version de un solo espacio pasaba el `@Length(1, 32)` y reventaba contra la
+   * restriccion con un 500.
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @IsString()
   @Length(1, 32)

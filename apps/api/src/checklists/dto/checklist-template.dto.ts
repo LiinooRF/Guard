@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -17,6 +17,13 @@ export const CHECKLIST_RESPONSE_TYPES = ['ok_falla', 'texto', 'numero'] as const
 export type ChecklistResponseType = (typeof CHECKLIST_RESPONSE_TYPES)[number];
 
 export class ChecklistItemDto {
+  /**
+   * Se recorta ANTES de validar: ChecklistsService guarda `item.label.trim()` y
+   * el CHECK de la columna es `length(trim(label)) BETWEEN 2 AND 200`. Sin el
+   * recorte, un ` a` medía 2 para el validador y 1 para PostgreSQL — un 500 en
+   * vez del 400 que corresponde.
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(2)
   @MaxLength(200)
@@ -32,6 +39,8 @@ export class ChecklistItemDto {
 }
 
 export class CreateChecklistTemplateDto {
+  /** Se recorta antes de validar. Ver `ChecklistItemDto.label`. */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(2)
   @MaxLength(120)
@@ -62,6 +71,8 @@ export class CreateChecklistTemplateDto {
  * hizo. Para mover el alcance se desactiva esta y se crea otra.
  */
 export class UpdateChecklistTemplateDto {
+  /** Se recorta antes de validar. Ver `ChecklistItemDto.label`. */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @IsString()
   @MinLength(2)

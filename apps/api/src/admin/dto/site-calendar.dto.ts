@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -38,6 +38,13 @@ export class SiteHolidayDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   date!: string;
 
+  /**
+   * Se recorta ANTES de validar: AdminService guarda `holiday.name?.trim()` y
+   * el CHECK es `name IS NULL OR length(trim(name)) BETWEEN 2 AND 120`. Sin el
+   * recorte, un ` x` medía 2 para el validador y 1 para PostgreSQL, y el feriado
+   * se caia con 500 en vez de 400.
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @IsString()
   @MinLength(2)

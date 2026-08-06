@@ -4,6 +4,12 @@ import { BullModule } from '@nestjs/bullmq';
 import type { RedisOptions } from 'ioredis';
 
 import type { Env } from '../config/env';
+import {
+  DOMINIOS_NO_DESPACHABLES,
+  ENV_DOMINIOS_BLOQUEADOS,
+  ENV_PERMITIR_RESERVADOS,
+  resolverDominiosNoDespachables,
+} from './mail-dominios';
 import { MAIL_PROVIDER, type MailProvider } from './mail-provider';
 import { MAIL_QUEUE_NAME } from './mail-queue.constants';
 import { MailQueueService } from './mail-queue.service';
@@ -23,6 +29,8 @@ type MailEnvironment = Pick<
   | 'SMTP_PASSWORD'
   | 'SMTP_SECURE'
 >;
+
+type DominiosEnvironment = Pick<Env, 'MAIL_BLOCKED_DOMAINS' | 'MAIL_ALLOW_RESERVED_DOMAINS'>;
 
 export function createMailProvider(env: MailEnvironment): MailProvider {
   if (env.MAIL_DRIVER === 'mailpit') {
@@ -44,6 +52,23 @@ export function createMailProvider(env: MailEnvironment): MailProvider {
     secure: env.SMTP_SECURE,
     ...(env.SMTP_USER === undefined ? {} : { user: env.SMTP_USER }),
     ...(env.SMTP_PASSWORD === undefined ? {} : { password: env.SMTP_PASSWORD }),
+  });
+}
+
+/**
+ * La lista de dominios no despachables, resuelta UNA vez al armar el modulo.
+ *
+ * `resolverDominiosNoDespachables` recibe strings porque es una funcion pura
+ * sobre el entorno, probada aparte y usable desde fuera de Nest. El esquema
+ * zod ya convirtio `MAIL_ALLOW_RESERVED_DOMAINS` a booleano —y ahi murio
+ * cualquier valor ambiguo: `'1'`, `'si'` o `'TRUE'` hacen fallar el arranque—,
+ * asi que aca se devuelve al literal que la funcion entiende. La conversion es
+ * de una sola direccion: lo que decide sigue siendo el esquema.
+ */
+export function createDominiosNoDespachables(env: DominiosEnvironment): string[] {
+  return resolverDominiosNoDespachables({
+    [ENV_DOMINIOS_BLOQUEADOS]: env.MAIL_BLOCKED_DOMAINS,
+    [ENV_PERMITIR_RESERVADOS]: env.MAIL_ALLOW_RESERVED_DOMAINS ? 'true' : 'false',
   });
 }
 
@@ -87,9 +112,21 @@ export function redisOptionsFromUrl(raw: string): RedisOptions {
           SMTP_SECURE: config.get('SMTP_SECURE', { infer: true }),
         }),
     },
+    {
+      provide: DOMINIOS_NO_DESPACHABLES,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        createDominiosNoDespachables({
+          MAIL_BLOCKED_DOMAINS: config.get('MAIL_BLOCKED_DOMAINS', { infer: true }),
+          MAIL_ALLOW_RESERVED_DOMAINS: config.get('MAIL_ALLOW_RESERVED_DOMAINS', { infer: true }),
+        }),
+    },
     MailQueueService,
     MailProcessor,
   ],
-  exports: [MAIL_PROVIDER, MailQueueService],
+  // La lista se exporta para que quien tenga que decidir ANTES de encolar
+  // —el despacho del informe escribe en `report_deliveries` primero— use la
+  // MISMA que la cola. Dos listas resueltas por separado son dos verdades.
+  exports: [MAIL_PROVIDER, MailQueueService, DOMINIOS_NO_DESPACHABLES],
 })
 export class MailModule {}

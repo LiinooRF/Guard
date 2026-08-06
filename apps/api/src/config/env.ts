@@ -50,6 +50,27 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  // Dominios a los que el producto NO le escribe (#86, mail/mail-dominios.ts).
+  //
+  // No es una regla de negocio y por eso no va a rules.ts: es una proteccion de
+  // la reputacion de envio de la PLATAFORMA, compartida por todos los tenants.
+  // Los reservados por norma (RFC 2606/6761/6762) ya vienen bloqueados de
+  // fabrica —ahi caen las cuentas demo @demo-andina.test—; esta lista SUMA
+  // dominios propios y no reemplaza nada.
+  MAIL_BLOCKED_DOMAINS: z.string().default(''),
+  // Escotilla de escape para desarrollo con Mailpit, que captura todo y no manda
+  // nada a internet. Se declara aca —y no se lee suelta de process.env— para que
+  // abrirla sea visible al arrancar: un valor ambiguo ('1', 'si', 'TRUE') hace
+  // fallar el arranque en vez de quedar en silencio, igual que SMTP_SECURE.
+  //
+  // Lo que decide NO es si hay supresion, sino si los dominios RESERVADOS POR
+  // NORMA entran a la lista. Con la escotilla abierta, MAIL_BLOCKED_DOMAINS
+  // sigue bloqueando igual.
+  MAIL_ALLOW_RESERVED_DOMAINS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
   // Notificaciones push (#113). Mismo criterio que el correo: el codigo va
   // contra la interfaz PushProvider y el proveedor NO esta decidido.
   //
@@ -104,6 +125,16 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   // En produccion no se envia correo real por un canal sin cifrar.
   if (env.NODE_ENV === 'production' && env.MAIL_DRIVER === 'smtp' && !env.SMTP_SECURE) {
     throw new Error('en produccion MAIL_DRIVER=smtp requiere SMTP_SECURE=true');
+  }
+
+  // La escotilla de dominios reservados es para Mailpit, que captura todo y no
+  // manda nada a internet. Con un relay real detras, abrirla es autorizarse a
+  // escribirle a dominios que rebotan SIEMPRE (.test, .invalid, .example), y los
+  // rebotes duros son la metrica con la que un proveedor suspende la cuenta de
+  // correo de toda la plataforma. Se falla al arrancar, no cuando dejan de
+  // llegar los correos de los clientes que pagan.
+  if (env.MAIL_ALLOW_RESERVED_DOMAINS && env.MAIL_DRIVER === 'smtp') {
+    throw new Error('MAIL_ALLOW_RESERVED_DOMAINS solo se permite con MAIL_DRIVER=mailpit');
   }
 
   // Mismo criterio que el correo: las credenciales del push se validan al

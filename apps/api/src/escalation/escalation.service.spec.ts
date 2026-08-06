@@ -16,7 +16,13 @@ const REGLAS = {
   escalationDefaultDelayMin: 10,
 } as unknown as PatrolRules;
 
-function servicio(query: jest.Mock, enqueue = jest.fn().mockResolvedValue({ jobId: 'mail-job' })) {
+// El doble devuelve la forma REAL de MailQueueService.enqueue: union
+// discriminada con `estado`. Con `{ jobId }` a secas el test pasaria y en
+// produccion no se contaria ni un solo envio.
+function servicio(
+  query: jest.Mock,
+  enqueue = jest.fn().mockResolvedValue({ estado: 'encolado', jobId: 'mail-job' }),
+) {
   const service = new EscalationService(
     { manager: { query } } as unknown as TenantContextService,
     { enqueue } as unknown as MailQueueService,
