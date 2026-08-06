@@ -409,8 +409,14 @@ export class GuardService {
       if (distanceM > rules.gpsValidationRadiusM) anomalies.push('fuera_de_radio_gps');
     }
     if (input.scannedAt) {
+      // La tolerancia sale de la regla, no de un numero escrito aca. Estaba
+      // fijo en 5 minutos y `SyncService` ya usaba `clockSkewToleranceMin` para
+      // ESTA misma comprobacion: el mismo escaneo salia marcado o limpio segun
+      // por donde entrara. No se notaba porque el default de la regla tambien es
+      // 5 — se habria notado el dia que un admin la cambiara, que es cuando peor
+      // se nota, porque el panel diria una cosa y el informe otra.
       const driftMs = Math.abs(Date.now() - new Date(input.scannedAt).getTime());
-      if (driftMs > 5 * 60_000) anomalies.push('reloj_desfasado');
+      if (driftMs > rules.clockSkewToleranceMin * 60_000) anomalies.push('reloj_desfasado');
     }
 
     /*
