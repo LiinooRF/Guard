@@ -18,6 +18,7 @@ import { EvidenceModule } from './evidence/evidence.module';
 import { GeoModule } from './geo/geo.module';
 import { PlatformModule } from './platform/platform.module';
 import { PlatformOpsModule } from './platform-ops/platform-ops.module';
+import { PurgaRetencionModule } from './retention/purga-retencion.module';
 import { PushModule } from './push/push.module';
 import { QrModule } from './qr/qr.module';
 import { TenantDataModule } from './platform-data/tenant-data.module';
@@ -60,6 +61,7 @@ import { SyncModule } from './sync/sync.module';
     GeoModule,
     PlatformModule,
     PlatformOpsModule,
+    PurgaRetencionModule,
     PushModule,
     QrModule,
     TenantDataModule,

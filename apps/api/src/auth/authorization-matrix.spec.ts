@@ -32,6 +32,7 @@ import { ExcelExportController } from '../reports/excel-export.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { PhotoServingController } from '../evidence/photo-serving.controller';
 import { GeoController } from '../geo/geo.controller';
+import { PurgaRetencionController } from '../retention/purga-retencion.controller';
 import { PlatformController } from '../platform/platform.controller';
 import { SupportAccessController } from '../platform-data/support-access.controller';
 import { TenantDataController } from '../platform-data/tenant-data.controller';
@@ -213,6 +214,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
 
   secured(AuditController, 'listAudit', ['tenant:audit:read'], ['ADMIN'], true),
   secured(AuditController, 'auditActions', ['tenant:audit:read'], ['ADMIN'], true),
+  secured(PurgaRetencionController, 'resumen', ['tenant:audit:read'], ['ADMIN'], true),
   secured(AuditController, 'statsOverview', ['tenant:stats:read'], ['ADMIN'], true),
   secured(AuditController, 'statsTrend', ['tenant:stats:read'], ['ADMIN'], true),
 
@@ -370,6 +372,7 @@ const CONTROLLERS = [
   TenantDataController,
   SupportAccessController,
   AuditController,
+  PurgaRetencionController,
   BrandingController,
   ChecklistsController,
   EventsStreamController,

@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -54,7 +55,14 @@ export class CreateCheckpointDto {
   @MaxLength(500)
   instructions?: string;
 
-  /** UID leido durante la instalacion; se vincula en la misma transaccion. */
+  /**
+   * UID leido durante la instalacion; se vincula en la misma transaccion.
+   *
+   * Se recorta antes de validar por lo mismo que `RegisterTagDto.uid`: el CHECK
+   * de `tags` mide sin recortar y AdminService inserta `input.tagUid.trim()`
+   * (admin.service.ts:609).
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @IsString()
   @MinLength(4)

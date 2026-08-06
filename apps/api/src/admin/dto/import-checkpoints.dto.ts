@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -54,6 +54,15 @@ export class ImportCheckpointRowDto {
   @MaxLength(500)
   instructions?: string;
 
+  /**
+   * Se recorta ANTES de validar. El patron acepta el espacio (`\x20` es el
+   * primer caracter del rango), asi que `"  ab"` cumplia el `{4,64}` del regex y
+   * llegaba a `tags` como `"ab"` —AdminService inserta `checkpoint.tagUid.trim()`
+   * (admin.service.ts:658)— contra un CHECK que mide sin recortar
+   * (`length(uid) BETWEEN 4 AND 64`). Toda la importacion se caia con 500 por una
+   * celda con espacios de sobra, que es exactamente lo que trae una planilla.
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsOptional()
   @Matches(/^[\x20-\x7E]{4,64}$/)
   tagUid?: string;
