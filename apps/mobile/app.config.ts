@@ -63,6 +63,23 @@ const config: ExpoConfig = {
   name: 'VoxIA Control',
   slug: 'voxia-control',
   /**
+   * Cuenta de Expo dueña del proyecto. Va explicito porque de el depende **quien
+   * guarda el keystore**: si alguien construye desde otra cuenta, EAS genera una
+   * clave de firma distinta y esa build ya no puede actualizar la app publicada.
+   */
+  owner: 'liinoo',
+  /**
+   * El proyecto en EAS. `eas init` no lo puede escribir solo porque esta
+   * configuracion es dinamica (TypeScript, no app.json), asi que va a mano.
+   *
+   * Sin esto, cada `eas build` pregunta a que proyecto pertenece y puede crear
+   * uno nuevo por error — con su propio keystore, que es justo lo que no se
+   * puede rehacer.
+   */
+  extra: {
+    eas: { projectId: 'dfd99e58-49cd-4c73-959d-5962b87c71f8' },
+  },
+  /**
    * versionName visible en Play Store. Se sube a mano y con criterio semantico.
    * El versionCode NO se declara aca: lo administra EAS (`appVersionSource:
    * "remote"` en eas.json). Ponerlo a mano vuelve a reintroducir el conflicto
