@@ -32,6 +32,7 @@ import { ExcelExportController } from '../reports/excel-export.controller';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { PhotoServingController } from '../evidence/photo-serving.controller';
 import { GeoController } from '../geo/geo.controller';
+import { TrazaMetricasController } from '../geo/traza-metricas.controller';
 import { PurgaRetencionController } from '../retention/purga-retencion.controller';
 import { PlatformController } from '../platform/platform.controller';
 import { SupportAccessController } from '../platform-data/support-access.controller';
@@ -290,6 +291,8 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(GpsPolicyController, 'reportPermission', ['patrols:execute'], ['GUARDIA'], true),
   secured(GpsPolicyController, 'patrolBattery', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(GpsPolicyController, 'siteGpsCoverage', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(TrazaMetricasController, 'patrolTrackSummary', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
+  secured(TrazaMetricasController, 'siteTrackDaily', ['reports:read'], ['ADMIN', 'SUPERVISOR'], true),
   secured(SyncController, 'clock', ['patrols:execute'], ['GUARDIA'], true),
   secured(SyncController, 'lateScans', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SyncController, 'reviewLateScan', ['patrols:monitor'], ['SUPERVISOR'], true),
@@ -368,6 +371,7 @@ const CONTROLLERS = [
   FeatureFlagsController,
   FeatureFlagsPlatformController,
   GpsPolicyController,
+  TrazaMetricasController,
   PhotoServingController,
   TenantDataController,
   SupportAccessController,

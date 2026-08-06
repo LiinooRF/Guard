@@ -16,6 +16,7 @@ import { MailModule } from './mail/mail.module';
 import { EscalationModule } from './escalation/escalation.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { GeoModule } from './geo/geo.module';
+import { TrazaMetricasModule } from './geo/traza-metricas.module';
 import { PlatformModule } from './platform/platform.module';
 import { PlatformOpsModule } from './platform-ops/platform-ops.module';
 import { PurgaRetencionModule } from './retention/purga-retencion.module';
@@ -59,6 +60,7 @@ import { SyncModule } from './sync/sync.module';
     EscalationModule,
     EvidenceModule,
     GeoModule,
+    TrazaMetricasModule,
     PlatformModule,
     PlatformOpsModule,
     PurgaRetencionModule,

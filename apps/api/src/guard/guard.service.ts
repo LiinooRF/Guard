@@ -292,7 +292,7 @@ export class GuardService {
     const anomalies: ScanAnomaly[] = [];
     if (estadoFirma === 'legacy') anomalies.push('firma_dispositivo_ausente');
     if (input.latitude === undefined || input.longitude === undefined) {
-      if (rules.gpsSharingRequired) anomalies.push('sin_fix_gps');
+      if (rules.gpsSharingMandatory) anomalies.push('sin_fix_gps');
     } else if (target.latitude !== null && target.longitude !== null) {
       const distanceM = haversineM(
         input.latitude, input.longitude,

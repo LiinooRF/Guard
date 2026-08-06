@@ -5,7 +5,7 @@
  *
  * - Un recinto con la latitud sin cargar dibujado en el Atlantico.
  * - Un punto que hereda la regla de foto descrito como "sin foto" —el mismo
- *   error que ya cometimos leyendo gpsSharingRequired como interruptor—.
+ *   error que ya cometimos leyendo gpsSharingMandatory como interruptor—.
  * - Un id de recinto escrito a mano en la URL que se cuela en la pantalla del
  *   supervisor sin pasar por la lista que entrego el servidor.
  */

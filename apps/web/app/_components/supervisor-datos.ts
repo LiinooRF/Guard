@@ -241,7 +241,7 @@ export function agruparPorRuta(
  *
  * Viven en `rules.ts` y llegan resueltos por la cascada en
  * `GET /api/rules/effective`. Se leen con nombre explicito y comentario para no
- * repetir el error de `gpsSharingRequired`, donde se confundio "obligatorio vs
+ * repetir el error de `gpsSharingMandatory`, donde se confundio "obligatorio vs
  * opcional" con "encendido vs apagado":
  *
  * · `umbralPct` NO es el umbral de cumplimiento de la ronda

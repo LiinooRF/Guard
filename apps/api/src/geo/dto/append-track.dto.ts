@@ -14,6 +14,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+import { MAX_PUNTOS_POR_LOTE } from '../gps-rules';
+
 export class TrackPointDto {
   /** Hora del telefono al muestrear. Es la clave del punto dentro de la ronda. */
   @IsISO8601()
@@ -44,12 +46,17 @@ export class TrackPointDto {
 export class AppendTrackDto {
   /**
    * Lote del muestreo en segundo plano. Llega junto porque en terreno no hay
-   * señal: el tope de 500 puntos es una ronda larga completa a intervalo de un
-   * minuto, con margen.
+   * señal: el tope de MAX_PUNTOS_POR_LOTE puntos es una ronda larga completa a
+   * intervalo de un minuto, con margen.
+   *
+   * El tope sale de la constante y no de un literal: es el mismo numero que
+   * limita `gpsTrackBatchSize` y que recorta el plan que se le entrega al
+   * telefono. Con literales sueltos se podia subir el del endpoint y dejar al
+   * telefono pidiendo lotes mas chicos sin que nada fallara.
    */
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(500)
+  @ArrayMaxSize(MAX_PUNTOS_POR_LOTE)
   @ValidateNested({ each: true })
   @Type(() => TrackPointDto)
   points!: TrackPointDto[];

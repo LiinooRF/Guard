@@ -10,11 +10,8 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import { RulesService } from '../rules/rules.service';
 import type { TrackPointDto } from './dto/append-track.dto';
 import type { GrantConsentDto } from './dto/grant-consent.dto';
-import { gpsRules } from './gps-rules';
+import { planDeMuestreo } from './gps-rules';
 import { haversineM } from './haversine';
-
-/** Mismo criterio de desfase de reloj que el escaneo (#63). */
-const TOLERANCIA_RELOJ_MS = 5 * 60_000;
 
 const SIN_CONSENTIMIENTO =
   'No tienes consentimiento vigente de geolocalización: no se registra tu recorrido';
@@ -68,7 +65,7 @@ export class GeoService {
    *   1. Seguimiento activo en el tenant (`gpsTrackingEnabled`): apagado, no se
    *      acumula recorrido de nadie.
    *
-   *      OJO: no se mira `gpsSharingRequired`. Ese flag decide obligatorio vs
+   *      OJO: no se mira `gpsSharingMandatory`. Ese flag decide obligatorio vs
    *      OPCIONAL (#77), y opcional no es apagado: al que aceptó compartir
    *      ubicación se le registra el recorrido igual. Mirarlo aca era el bug que
    *      dejaba sin traza a las empresas que eligen no obligar.
@@ -78,8 +75,11 @@ export class GeoService {
    *      una promesa del cliente movil.
    */
   async appendTrack(guardId: string, patrolId: string, puntos: readonly TrackPointDto[]) {
-    const rules = await this.rules.effective();
-    if (!rules.gpsTrackingEnabled) throw new ForbiddenException(TRAZA_DESACTIVADA);
+    // Sin recinto a proposito: el interruptor es SOLO_EMPRESA y este gate va
+    // ANTES de leer una sola fila. Con el seguimiento apagado no se toca la
+    // base, ni siquiera para saber de que ronda hablamos.
+    const reglasDeEmpresa = await this.rules.effective();
+    if (!reglasDeEmpresa.gpsTrackingEnabled) throw new ForbiddenException(TRAZA_DESACTIVADA);
 
     const consentimientos = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT id FROM gps_consents WHERE user_id = $1 AND revoked_at IS NULL`,
@@ -88,9 +88,15 @@ export class GeoService {
     if (!consentimientos.length) throw new ForbiddenException(SIN_CONSENTIMIENTO);
 
     const patrols = await this.tenantContext.manager.query<
-      Array<{ id: string; status: string; started_at: Date | null; scheduled_start_at: Date }>
+      Array<{
+        id: string;
+        site_id: string;
+        status: string;
+        started_at: Date | null;
+        scheduled_start_at: Date;
+      }>
     >(
-      `SELECT id, status, started_at, scheduled_start_at
+      `SELECT id, site_id, status, started_at, scheduled_start_at
        FROM patrols WHERE id = $1 AND guard_id = $2`,
       [patrolId, guardId],
     );
@@ -99,7 +105,10 @@ export class GeoService {
     if (patrol.status !== 'en_curso') throw new ConflictException(FUERA_DE_RONDA);
 
     const inicio = new Date(patrol.started_at ?? patrol.scheduled_start_at).getTime();
-    const limiteFuturo = Date.now() + TOLERANCIA_RELOJ_MS;
+    // Mismo desfase de reloj que el escaneo (#63, #73). Es la MISMA regla ya
+    // configurable, no un numero propio de este modulo: el telefono que llega
+    // adelantado es el mismo telefono en los dos flujos.
+    const limiteFuturo = Date.now() + reglasDeEmpresa.clockSkewToleranceMin * 60_000;
 
     // El ON CONFLICT resuelve el reenvio de un lote ya recibido; los repetidos
     // DENTRO del mismo lote se descartan aca para que la cuenta que se devuelve
@@ -150,13 +159,24 @@ export class GeoService {
       duplicados += aceptados.length - guardados;
     }
 
+    // Segunda resolucion, ahora CON el recinto. El plan es lo unico que el
+    // telefono usa para muestrear y `gpsTrackIntervalSeconds` se configura hasta
+    // el nivel de recinto: devolver el del tenant hacia que este endpoint y
+    // GET /api/geo/policy le dijeran numeros distintos al mismo telefono.
+    //
+    // Cuesta una cascada extra por LOTE, no por punto: con el plan por defecto
+    // (60 puntos cada 60 s) es una consulta por hora y por guardia.
+    const reglasDelRecinto = await this.rules.effective({ siteId: patrol.site_id });
+
     return {
       patrolId,
       received: puntos.length,
       stored: guardados,
       duplicates: duplicados,
       outsideShift: fueraDeTurno,
-      sampleIntervalSeconds: rules.gpsTrackIntervalSeconds,
+      sampleIntervalSeconds: reglasDelRecinto.gpsTrackIntervalSeconds,
+      /** Plan completo: asi el telefono se reajusta sin pedir la politica aparte. */
+      sampling: planDeMuestreo(reglasDelRecinto),
     };
   }
 
@@ -207,8 +227,8 @@ export class GeoService {
       batteryPct: fila.battery_pct,
     }));
 
-    const rules = await this.rules.effective({ siteId: patrol.site_id });
-    const maximoError = gpsRules(rules).gpsTrackMaxAccuracyM;
+    const reglas = await this.rules.effective({ siteId: patrol.site_id });
+    const maximoError = reglas.gpsTrackMaxAccuracyM;
     const confiable = (punto: PuntoTraza) =>
       punto.accuracyM === null || punto.accuracyM <= maximoError;
 
@@ -239,7 +259,7 @@ export class GeoService {
       durationMin: redondear(duracionMs / 60_000),
       firstPointAt: primero?.recordedAt ?? null,
       lastPointAt: ultimo?.recordedAt ?? null,
-      retentionDays: rules.gpsTrackRetentionDays,
+      retentionDays: reglas.gpsTrackRetentionDays,
       points,
     };
   }
@@ -340,8 +360,15 @@ export class GeoService {
    * opcional (#77). La decision de dejar o no iniciar la ronda no se toma aca:
    * la resuelve GpsPolicyService, que ademas mira el permiso del sistema
    * operativo.
+   *
+   * El recinto es OPCIONAL y por la misma razon que en GET /api/geo/policy:
+   * `gpsTrackIntervalSeconds` se configura hasta el nivel de recinto, asi que
+   * responderlo siempre al nivel de empresa hacia que el mismo campo valiera
+   * una cosa aca y otra alla. Cuando la app sabe donde esta lo manda; cuando no
+   * —la pantalla de consentimiento se abre sin ronda— la respuesta es la de la
+   * empresa, que es lo mas especifico que se puede afirmar.
    */
-  async consentStatus(userId: string) {
+  async consentStatus(userId: string, siteId?: string | null) {
     const filas = await this.tenantContext.manager.query<
       Array<{
         id: string;
@@ -359,18 +386,19 @@ export class GeoService {
       [userId],
     );
     const ultimo = filas[0];
-    const rules = await this.rules.effective();
+    const reglas = await this.rules.effective(siteId ? { siteId } : {});
 
     return {
       granted: Boolean(ultimo && ultimo.revoked_at === null),
       grantedAt: ultimo?.granted_at ?? null,
       revokedAt: ultimo?.revoked_at ?? null,
       policyVersion: ultimo?.policy_version ?? null,
-      trackingEnabled: rules.gpsTrackingEnabled,
-      sharingMode: rules.gpsSharingRequired ? 'obligatorio' : 'opcional',
+      trackingEnabled: reglas.gpsTrackingEnabled,
+      sharingMode: reglas.gpsSharingMandatory ? 'obligatorio' : 'opcional',
       deviceInfo: ultimo?.device_info ?? null,
-      sampleIntervalSeconds: rules.gpsTrackIntervalSeconds,
-      retentionDays: rules.gpsTrackRetentionDays,
+      siteId: siteId ?? null,
+      sampleIntervalSeconds: reglas.gpsTrackIntervalSeconds,
+      retentionDays: reglas.gpsTrackRetentionDays,
     };
   }
 }

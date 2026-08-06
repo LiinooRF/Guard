@@ -6,10 +6,9 @@ import type { RulesService } from '../rules/rules.service';
 import type { SupervisorService } from '../supervisor/supervisor.service';
 
 /**
- * Los parametros de #77 todavia no estan en rules.ts (los aplica el integrador),
- * asi que por defecto NO se inyectan: el servicio tiene que resolverlos con su
- * propio default. Los tests que los necesitan distintos los pasan explicitos,
- * que es como se van a comportar una vez declarados en el catalogo.
+ * Los siete parametros de #77 ya viven en `patrolRulesSchema`, asi que salen del
+ * parse con su default del catalogo y no se inyectan a mano. Los tests que los
+ * necesitan distintos los pasan explicitos, igual que cualquier otra regla.
  */
 const reglas = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -56,7 +55,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('denegado'));
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -67,7 +66,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon([], permiso('concedido'));
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -77,7 +76,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
   it('con GPS obligatorio, consentimiento y permiso vigente, arranca y se registra', async () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('concedido'));
 
-    const decision = await servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+    const decision = await servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
       'guard-1',
       'patrol-1',
     );
@@ -94,7 +93,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
   it('con GPS opcional, negar el permiso NO impide iniciar la ronda', async () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('denegado'));
 
-    const decision = await servicio(query, { gpsSharingRequired: false }).assertPatrolStartAllowed(
+    const decision = await servicio(query, { gpsSharingMandatory: false }).assertPatrolStartAllowed(
       'guard-1',
       'patrol-1',
     );
@@ -112,7 +111,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon(CONSENTIMIENTO, []);
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -124,7 +123,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('concedido', 13 * 60));
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -135,7 +134,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('solo_primer_plano'));
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -147,10 +146,79 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
 
     await expect(
       servicio(query, {
-        gpsSharingRequired: true,
+        gpsSharingMandatory: true,
         gpsTrackingEnabled: false,
       }).assertPatrolStartAllowed('guard-1', 'patrol-1'),
     ).resolves.toMatchObject({ canStartPatrol: true, tracksLocation: false });
+  });
+
+  /**
+   * LA TRAMPA DE ESTE ISSUE, escrita como test para que no vuelva a leerse mal.
+   *
+   * `gpsSharingMandatory` es obligatorio vs OPCIONAL. `gpsTrackingEnabled` es
+   * encendido vs apagado. Con GPS OPCIONAL y seguimiento ENCENDIDO, al guardia
+   * que acepto y comparte se le registra el recorrido igual que en modo
+   * obligatorio: lo unico que cambia es que negar el permiso no le impide
+   * trabajar. Leerlo como un interruptor dejaba sin traza a toda empresa que
+   * eligiera no obligar.
+   */
+  it('opcional NO es apagado: con GPS opcional el que aceptó igual queda registrado', async () => {
+    const query = inicioCon(CONSENTIMIENTO, permiso('concedido'));
+
+    const decision = await servicio(query, {
+      gpsSharingMandatory: false,
+      gpsTrackingEnabled: true,
+    }).assertPatrolStartAllowed('guard-1', 'patrol-1');
+
+    expect(decision).toMatchObject({
+      mode: 'opcional',
+      trackingEnabled: true,
+      tracksLocation: true,
+      canStartPatrol: true,
+      blockedReason: null,
+    });
+  });
+
+  /** Y al reves: obligatorio con el seguimiento apagado no registra a nadie. */
+  it('el modo obligatorio con el seguimiento apagado no registra recorrido', async () => {
+    const query = inicioCon(CONSENTIMIENTO, permiso('concedido'));
+
+    const decision = await servicio(query, {
+      gpsSharingMandatory: true,
+      gpsTrackingEnabled: false,
+    }).assertPatrolStartAllowed('guard-1', 'patrol-1');
+
+    expect(decision).toMatchObject({
+      mode: 'obligatorio',
+      trackingEnabled: false,
+      tracksLocation: false,
+      canStartPatrol: true,
+    });
+  });
+
+  /**
+   * La vigencia del reporte de permiso es configurable (#77). Con el parametro
+   * fuera del schema, la empresa que la bajaba a 4 horas seguia corriendo con
+   * las 12 del default y no habia forma de notarlo.
+   */
+  it('la vigencia del reporte de permiso sale de la regla configurada', async () => {
+    // Reportado hace 6 horas: vigente con el default de 720 min...
+    const vigente = inicioCon(CONSENTIMIENTO, permiso('concedido', 6 * 60));
+    await expect(
+      servicio(vigente, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
+        'guard-1',
+        'patrol-1',
+      ),
+    ).resolves.toMatchObject({ canStartPatrol: true });
+
+    // ...y vencido si la empresa exige confirmarlo cada 4 horas.
+    const estricto = inicioCon(CONSENTIMIENTO, permiso('concedido', 6 * 60));
+    await expect(
+      servicio(estricto, {
+        gpsSharingMandatory: true,
+        gpsPermissionReportMaxAgeMin: 240,
+      }).assertPatrolStartAllowed('guard-1', 'patrol-1'),
+    ).rejects.toThrow('todavía no confirmó el permiso');
   });
 
   it('la ronda de otro guardia no existe para este', async () => {
@@ -165,7 +233,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
     const query = inicioCon(CONSENTIMIENTO, permiso('denegado'));
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).assertPatrolStartAllowed(
+      servicio(query, { gpsSharingMandatory: true }).assertPatrolStartAllowed(
         'guard-1',
         'patrol-1',
       ),
@@ -195,7 +263,7 @@ describe('GpsPolicyService — GPS obligatorio (#77)', () => {
       .mockResolvedValueOnce([]);
 
     await expect(
-      servicio(query, { gpsSharingRequired: true }).patrolStartCheck('guard-1', 'patrol-1', {
+      servicio(query, { gpsSharingMandatory: true }).patrolStartCheck('guard-1', 'patrol-1', {
         status: 'denegado',
         deviceInfo: 'Moto G54',
       }),
@@ -298,6 +366,29 @@ describe('GpsPolicyService — consumo de batería', () => {
       measurable: true,
     });
     expect(informe.expectedSamples).toBe(481);
+  });
+
+  /**
+   * El presupuesto de bateria es una promesa comercial y cada empresa tiene la
+   * suya. Mientras el parametro vivio fuera del schema, el override se descartaba
+   * en el parse y el informe comparaba contra 20% para todo el mundo.
+   */
+  it('el presupuesto de batería con el que se compara es el configurado', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([RONDA_CERRADA])
+      .mockResolvedValueOnce(agregado());
+
+    // Los mismos 12% proyectados, ahora contra un presupuesto de 10%.
+    const informe = await servicio(query, { gpsBatteryBudgetPct: 10 }).patrolBattery('patrol-1', {
+      sub: 'admin-1',
+      role: 'ADMIN',
+    });
+
+    expect(informe).toMatchObject({
+      projectedDrainPct: 12,
+      budgetPct: 10,
+      withinBudget: false,
+    });
   });
 
   it('si el teléfono se cargó a mitad de ronda, no se proyecta nada', async () => {

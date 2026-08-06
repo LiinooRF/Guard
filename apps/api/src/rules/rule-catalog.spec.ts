@@ -110,7 +110,7 @@ describe('catalogo de parametros de ronda (#81)', () => {
       'businessHoursDefaultOpen',
       'photoRequiredOutsideHours',
       'photoRequiredOnCritical',
-      'gpsSharingRequired',
+      'gpsSharingMandatory',
       'gpsValidationRadiusM',
       'randomizeRouteOrder',
       'autoSendReportOnClose',

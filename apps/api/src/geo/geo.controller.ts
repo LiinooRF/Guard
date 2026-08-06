@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 
@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { AppendTrackDto } from './dto/append-track.dto';
+import { GpsPolicyQuery } from './dto/gps-query.dto';
 import { GrantConsentDto } from './dto/grant-consent.dto';
 import { GeoService } from './geo.service';
 
@@ -59,9 +60,15 @@ export class GeoController {
     return this.geo.revokeConsent(request.user.sub);
   }
 
+  /**
+   * El recinto es opcional y se reusa GpsPolicyQuery a proposito: es el mismo
+   * parametro con el mismo significado que en GET /api/geo/policy, y el
+   * intervalo de muestreo que devuelven los dos tiene que salir de la misma
+   * cascada. Sin recinto responde al nivel de la empresa, como antes.
+   */
   @Get('consent')
   @Permissions('account:sessions:manage')
-  consentStatus(@Req() request: Autenticado) {
-    return this.geo.consentStatus(request.user.sub);
+  consentStatus(@Query() query: GpsPolicyQuery, @Req() request: Autenticado) {
+    return this.geo.consentStatus(request.user.sub, query.siteId ?? null);
   }
 }

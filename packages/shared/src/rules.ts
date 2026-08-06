@@ -32,8 +32,24 @@ export const patrolRulesSchema = z.object({
    */
   businessHoursDefaultOpen: z.boolean().default(true),
 
-  /** Si es true y el guardia niega el permiso de ubicacion, no puede iniciar la ronda. */
-  gpsSharingRequired: z.boolean().default(true),
+  /**
+   * OBLIGATORIO vs OPCIONAL. NO es un interruptor de encendido y apagado.
+   *
+   *   true  = compartir la ubicacion es obligatorio: quien niega el permiso del
+   *           telefono no puede iniciar la ronda.
+   *   false = es opcional: negarse no impide trabajar, y a quien acepta se le
+   *           registra el recorrido IGUAL.
+   *
+   * El interruptor de "esta empresa no registra la ubicacion de nadie" es
+   * gpsTrackingEnabled, que es otra regla y esta mas abajo.
+   *
+   * Se llamaba gpsSharingRequired y tres personas distintas lo leyeron como
+   * interruptor: el aviso de consentimiento le decia al trabajador que no se
+   * registraba su ubicacion mientras el servidor si la registraba, el informe en
+   * PDF salia sin trayecto y el tablero en vivo escondia guardias que si estaban
+   * compartiendo. El dato guardado se movio en la migracion 1725994800000.
+   */
+  gpsSharingMandatory: z.boolean().default(true),
 
   /** Radio en metros para aceptar que un escaneo se hizo realmente en el punto. */
   gpsValidationRadiusM: z.number().int().min(5).max(1000).default(50),
@@ -51,6 +67,29 @@ export const patrolRulesSchema = z.object({
    * voluminosa (un punto por minuto son ~480 filas por turno de 8 horas).
    */
   gpsTrackRetentionDays: z.number().int().min(7).max(365).default(90),
+
+  /**
+   * Segundos sin una posicion utilizable a partir de los cuales el tramo cuenta
+   * como hueco de cobertura de la traza (#134). El servidor nunca lo aplica por
+   * debajo de DOS intervalos de muestreo, y el intervalo de referencia es el mas
+   * largo que la app puede usar (el de ahorro de bateria): con el umbral pegado
+   * al intervalo, cada muestra del modo ahorro seria un hueco.
+   */
+  gpsTrackGapMinSeconds: z.number().int().min(60).max(3600).default(600),
+
+  /**
+   * Segundos dentro del radio a partir de los cuales se declara tiempo detenido
+   * (#134). Detenerse es parte del trabajo: el umbral no mide quietud, mide
+   * permanencia. Mismo piso de dos intervalos que el hueco.
+   */
+  gpsTrackStopMinSeconds: z.number().int().min(60).max(3600).default(600),
+
+  /**
+   * Radio en metros dentro del cual se considera que el guardia no se movio
+   * (#134). Un telefono quieto igual entrega posiciones que bailan varios
+   * metros; sin este radio, "detenido" no se detecta nunca.
+   */
+  gpsTrackStopRadiusM: z.number().int().min(5).max(200).default(25),
 
   /**
    * Orden aleatorio anti-predictibilidad.
@@ -139,7 +178,7 @@ export const patrolRulesSchema = z.object({
    * Interruptor general del seguimiento de recorrido (#77). Apagado, no se
    * guarda ni un punto para NADIE, aunque haya consentido.
    *
-   * Es distinto de gpsSharingRequired, que decide obligatorio vs OPCIONAL:
+   * Es distinto de gpsSharingMandatory, que decide obligatorio vs OPCIONAL:
    * opcional NO es apagado. A quien acepta se le registra el recorrido y a
    * quien no, no, y ninguno queda impedido de trabajar.
    */
@@ -170,6 +209,73 @@ export const patrolRulesSchema = z.object({
   mapMaxTrackPoints: z.number().int().min(50).max(5000).default(500),
   /** Tope del PDF adjunto al correo; sobre esto se manda enlace (#86). */
   reportMailMaxAttachmentMB: z.number().int().min(1).max(25).default(8),
+
+  /* ------------------------------------------------------------------ *
+   * Plan de muestreo del recorrido (#77)
+   *
+   * Estos siete vivian como default local en apps/api/src/geo/gps-rules.ts.
+   * Mientras no estuvieran declarados aca, `patrolRulesSchema.parse()` DESCARTA
+   * la clave que no conoce: el admin escribia el override, el panel lo guardaba
+   * y el servidor seguia aplicando el default, sin un solo error. Declararlos es
+   * lo que hace que esa configuracion llegue a destino.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Metros minimos entre dos puntos para que el telefono registre uno nuevo.
+   * Es el ahorro de bateria mas grande de todos: el guardia parado en la garita
+   * deja de despertar el GPS. 0 desactiva el filtro y se muestrea solo por
+   * tiempo.
+   */
+  gpsTrackMinDistanceM: z.number().int().min(0).max(500).default(15),
+
+  /**
+   * Precision peor que esta (en metros) NO suma distancia recorrida. El punto
+   * igual se guarda y se devuelve —es evidencia y explica el hueco de la
+   * traza—, pero un salto de GPS en un subterraneo no puede agregar kilometros
+   * que nadie camino a un informe que ve el cliente.
+   *
+   * Es la hermana de `mapTrackMaxAccuracyM` (#79), que decide que se DIBUJA en
+   * el mapa del informe. Son dos decisiones distintas sobre el mismo punto —una
+   * aritmetica y otra visual— y por eso son dos parametros y no uno.
+   */
+  gpsTrackMaxAccuracyM: z.number().int().min(5).max(500).default(100),
+
+  /**
+   * Puntos que junta el telefono antes de subir el lote. Menos envios = menos
+   * veces que se enciende la radio, que es el segundo consumo mas grande
+   * despues del GPS.
+   *
+   * El max NO es decorativo: es lo que acepta de una vez el endpoint de traza
+   * (`MAX_PUNTOS_POR_LOTE` en apps/api/src/geo/gps-rules.ts). Un valor mayor se
+   * recortaria en silencio al armar el plan.
+   */
+  gpsTrackBatchSize: z.number().int().min(1).max(500).default(60),
+
+  /** Bajo este porcentaje de bateria se pasa a muestreo espaciado. 0 lo desactiva. */
+  gpsTrackLowBatteryPct: z.number().int().min(0).max(50).default(15),
+
+  /**
+   * Intervalo en modo ahorro. Que la ronda termine con traza gruesa es mejor
+   * que un telefono apagado a mitad del turno: un guardia sin telefono no puede
+   * pedir ayuda. Nunca muestrea mas seguido que `gpsTrackIntervalSeconds`; si
+   * se configura mas bajo, el plan lo iguala.
+   */
+  gpsTrackLowBatteryIntervalSeconds: z.number().int().min(15).max(3_600).default(300),
+
+  /**
+   * Consumo de bateria aceptable para una ronda completa. La referencia de
+   * duracion es `maxPatrolDurationMin`, que ya es la ronda mas larga del
+   * tenant: asi el criterio "20% en 8 horas" no se repite como numero suelto.
+   */
+  gpsBatteryBudgetPct: z.number().int().min(1).max(100).default(20),
+
+  /**
+   * Minutos que vale el reporte de permiso de ubicacion del telefono. Vencido
+   * se trata como "no reportado", y en modo obligatorio eso bloquea el arranque
+   * hasta que la app vuelva a confirmar. 720 = un turno.
+   */
+  gpsPermissionReportMaxAgeMin: z.number().int().min(15).max(10_080).default(720),
+
   maxLoginAttempts: z.number().int().min(3).max(20).default(5),
 });
 
@@ -402,14 +508,14 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     scopes: HASTA_RECINTO,
     group: 'evidencia',
   },
-  gpsSharingRequired: {
-    key: 'gpsSharingRequired',
+  gpsSharingMandatory: {
+    key: 'gpsSharingMandatory',
     label: 'Exigir permiso de ubicacion',
     description:
-      'Si el guardia no acepta compartir su ubicacion, no puede iniciar la ronda.',
+      'Encendido, compartir la ubicacion es obligatorio: quien no acepta el permiso del telefono no puede iniciar la ronda. Apagado, compartir es opcional: negarse no impide trabajar, y a quien acepta se le registra el recorrido igual. No lo confundas con "Registrar el recorrido": esa regla apaga la ubicacion para todos; esta solo decide si es obligatoria o voluntaria.',
     type: 'boolean',
     unit: null,
-    default: DEFAULT_PATROL_RULES.gpsSharingRequired,
+    default: DEFAULT_PATROL_RULES.gpsSharingMandatory,
     scopes: HASTA_RECINTO,
     group: 'ubicacion',
   },
@@ -454,6 +560,45 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     // La retencion es una politica legal de la empresa completa, no de un recinto.
     scopes: SOLO_EMPRESA,
     group: 'retencion',
+  },
+  gpsTrackGapMinSeconds: {
+    key: 'gpsTrackGapMinSeconds',
+    label: 'Hueco de cobertura del recorrido',
+    description:
+      'Cuanto puede pasar sin que el telefono entregue una posicion utilizable antes de marcar ese tramo como recorrido sin registro. Subelo en recintos con subterraneos o bodegas, donde perder la senal es normal.',
+    type: 'integer',
+    unit: 'seconds',
+    min: 60,
+    max: 3600,
+    default: DEFAULT_PATROL_RULES.gpsTrackGapMinSeconds,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsTrackStopMinSeconds: {
+    key: 'gpsTrackStopMinSeconds',
+    label: 'Tiempo para contar una detencion',
+    description:
+      'Cuanto tiene que quedarse el guardia en el mismo lugar para que el informe lo cuente como una detencion. Revisar una puerta toma un minuto; quedarse veinte es otra cosa.',
+    type: 'integer',
+    unit: 'seconds',
+    min: 60,
+    max: 3600,
+    default: DEFAULT_PATROL_RULES.gpsTrackStopMinSeconds,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsTrackStopRadiusM: {
+    key: 'gpsTrackStopRadiusM',
+    label: 'Radio para considerar que no se movio',
+    description:
+      'Cuantos metros puede moverse el guardia sin que deje de contarse como detenido. Existe porque un telefono quieto igual reporta posiciones que se mueven solas.',
+    type: 'integer',
+    unit: 'meters',
+    min: 5,
+    max: 200,
+    default: DEFAULT_PATROL_RULES.gpsTrackStopRadiusM,
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
   },
   randomizeRouteOrder: {
     key: 'randomizeRouteOrder',
@@ -622,7 +767,7 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     key: 'gpsTrackingEnabled',
     label: 'Registrar el recorrido',
     description:
-      'Apagado, no se guarda ninguna ubicacion de nadie. Distinto de exigir GPS: en modo opcional se registra a quien acepto y a quien no, no.',
+      'Apagado, no se guarda ninguna ubicacion de nadie, haya aceptado o no. Es distinto de "Exigir permiso de ubicacion": esa regla solo decide si compartir es obligatorio o voluntario, y en modo opcional se sigue registrando el recorrido de quien acepta.',
     type: 'boolean',
     unit: null,
     default: DEFAULT_PATROL_RULES.gpsTrackingEnabled,
@@ -750,6 +895,106 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     default: DEFAULT_PATROL_RULES.reportMailMaxAttachmentMB,
     scopes: SOLO_EMPRESA,
     group: 'avisos',
+  },
+  gpsTrackMinDistanceM: {
+    key: 'gpsTrackMinDistanceM',
+    label: 'Distancia minima entre puntos del recorrido',
+    description:
+      'Cuanto tiene que moverse el guardia para que el telefono registre otro punto. Es el mayor ahorro de bateria de todos: parado en la garita deja de despertar el GPS. En cero registra solo por tiempo.',
+    type: 'integer',
+    unit: 'meters',
+    min: 0,
+    max: 500,
+    default: DEFAULT_PATROL_RULES.gpsTrackMinDistanceM,
+    // Por recinto si aplica: un perimetro de veinte hectareas y una torre de
+    // oficinas no necesitan el mismo paso.
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsTrackMaxAccuracyM: {
+    key: 'gpsTrackMaxAccuracyM',
+    label: 'Precision minima para contar distancia',
+    description:
+      'Los puntos con precision peor que esta no suman distancia recorrida, aunque igual se guardan y se muestran. Es la pareja de la precision minima del trazo: esta manda en los kilometros del informe y la otra en lo que se dibuja en el mapa.',
+    type: 'integer',
+    unit: 'meters',
+    min: 5,
+    max: 500,
+    default: DEFAULT_PATROL_RULES.gpsTrackMaxAccuracyM,
+    // Los mismos niveles que la precision del trazo del mapa: el subterraneo se
+    // configura distinto que la porteria, y en la practica se editan juntas.
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsTrackBatchSize: {
+    key: 'gpsTrackBatchSize',
+    label: 'Puntos por envio del recorrido',
+    description:
+      'Cuantos puntos junta el telefono antes de subirlos. Mientras mas junte, menos veces enciende la radio y menos bateria gasta; en contra, el recorrido tarda mas en aparecer en el panel.',
+    type: 'integer',
+    unit: 'operations',
+    min: 1,
+    // El tope es lo que acepta el endpoint de traza de una vez, no una
+    // preferencia: MAX_PUNTOS_POR_LOTE en apps/api/src/geo/gps-rules.ts, con un
+    // test que amarra los dos numeros.
+    max: 500,
+    default: DEFAULT_PATROL_RULES.gpsTrackBatchSize,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  gpsTrackLowBatteryPct: {
+    key: 'gpsTrackLowBatteryPct',
+    label: 'Bateria baja del telefono',
+    description:
+      'Bajo este nivel de bateria el telefono espacia el registro del recorrido para llegar al final del turno. En cero nunca cambia de ritmo.',
+    type: 'integer',
+    unit: 'percent',
+    min: 0,
+    max: 50,
+    default: DEFAULT_PATROL_RULES.gpsTrackLowBatteryPct,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  gpsTrackLowBatteryIntervalSeconds: {
+    key: 'gpsTrackLowBatteryIntervalSeconds',
+    label: 'Frecuencia del recorrido con bateria baja',
+    description:
+      'Cada cuanto registra la posicion mientras la bateria esta baja. Un recorrido menos detallado es mejor que un telefono apagado a media ronda: un guardia sin telefono no puede pedir ayuda.',
+    type: 'integer',
+    unit: 'seconds',
+    min: 15,
+    max: 3600,
+    default: DEFAULT_PATROL_RULES.gpsTrackLowBatteryIntervalSeconds,
+    // Los mismos niveles que la frecuencia normal: son un par, y dejar una por
+    // recinto y la otra no haria que el ahorro dependiera de donde se mire.
+    scopes: HASTA_RECINTO,
+    group: 'ubicacion',
+  },
+  gpsBatteryBudgetPct: {
+    key: 'gpsBatteryBudgetPct',
+    label: 'Bateria que puede costar una ronda',
+    description:
+      'Cuanta bateria se acepta que gaste una ronda completa. El informe de consumo compara contra esto y avisa cuando registrar el recorrido esta saliendo mas caro de lo previsto.',
+    type: 'integer',
+    unit: 'percent',
+    min: 1,
+    max: 100,
+    default: DEFAULT_PATROL_RULES.gpsBatteryBudgetPct,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
+  },
+  gpsPermissionReportMaxAgeMin: {
+    key: 'gpsPermissionReportMaxAgeMin',
+    label: 'Vigencia del permiso informado por el telefono',
+    description:
+      'Cuanto vale la ultima confirmacion de permiso de ubicacion que mando el telefono. Vencida se vuelve a pedir: da lo mismo que hace tres semanas el permiso estuviera activo si hoy nadie lo confirma.',
+    type: 'integer',
+    unit: 'minutes',
+    min: 15,
+    max: 10080,
+    default: DEFAULT_PATROL_RULES.gpsPermissionReportMaxAgeMin,
+    scopes: SOLO_EMPRESA,
+    group: 'ubicacion',
   },
   maxLoginAttempts: {
     key: 'maxLoginAttempts',

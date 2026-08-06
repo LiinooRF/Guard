@@ -122,7 +122,7 @@ export class MapaRecorridoService {
       recinto: { latitude: ronda.site_latitude, longitude: ronda.site_longitude },
       maxErrorTrazaM: reglas.mapTrackMaxAccuracyM,
       maxPuntosTraza: reglas.mapMaxTrackPoints,
-      // gpsTrackingEnabled y no gpsSharingRequired: con GPS opcional el PDF
+      // gpsTrackingEnabled y no gpsSharingMandatory: con GPS opcional el PDF
       // salia sin trayecto aunque el guardia hubiera aceptado y hubiera puntos.
       trazaActivada: reglas.gpsTrackingEnabled,
     });
