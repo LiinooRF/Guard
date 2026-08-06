@@ -25,16 +25,27 @@ import mobilePackage from './package.json';
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
 const APP_LIKE_DOCUMENT = `
   (function () {
-    var viewport = document.querySelector('meta[name="viewport"]');
-    if (!viewport) {
-      viewport = document.createElement('meta');
-      viewport.name = 'viewport';
-      document.head.appendChild(viewport);
+    // Esto corre en document-start: \`document.head\` puede ser null todavia, y
+    // como este guion va CONCATENADO con el del puente, una excepcion aca
+    // abortaba los dos y el portal se quedaba sin puente sin saber por que.
+    function alHaberCabeza(fn) {
+      if (document.head) { fn(); return; }
+      document.addEventListener('DOMContentLoaded', fn, { once: true });
     }
-    viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
-    var style = document.createElement('style');
-    style.textContent = 'body, button, a, label { -webkit-user-select: none; user-select: none; } input, textarea { -webkit-user-select: text; user-select: text; }';
-    document.head.appendChild(style);
+    alHaberCabeza(function () {
+      try {
+        var viewport = document.querySelector('meta[name="viewport"]');
+        if (!viewport) {
+          viewport = document.createElement('meta');
+          viewport.name = 'viewport';
+          document.head.appendChild(viewport);
+        }
+        viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+        var style = document.createElement('style');
+        style.textContent = 'body, button, a, label { -webkit-user-select: none; user-select: none; } input, textarea { -webkit-user-select: text; user-select: text; }';
+        document.head.appendChild(style);
+      } catch (e) { /* cosmetico: nunca debe tumbar el puente */ }
+    });
     true;
   })();
 `;
@@ -57,6 +68,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [rutaOffline, setRutaOffline] = useState<RutaOfflineGuardada>();
+  /*
+   * Que fallo exactamente. Sin esto, cualquier problema del WebView se ve
+   * igual —una pantalla que no avanza— y lo unico que la persona puede
+   * reportar es "no abre". Con el motivo a la vista, un guardia en terreno
+   * puede leerlo por radio y soporte sabe si es la red, el portal o el
+   * componente del sistema.
+   */
+  const [motivoFallo, setMotivoFallo] = useState<string>();
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -98,6 +117,7 @@ export default function App() {
   useEffect(() => {
     if (!loading || failed) return undefined;
     const aviso = setTimeout(() => {
+      setMotivoFallo('La pagina no termino de cargar en 20 segundos.');
       setLoading(false);
       setFailed(true);
     }, 20_000);
@@ -126,6 +146,7 @@ export default function App() {
 
   const retry = () => {
     setBloqueo(null);
+    setMotivoFallo(undefined);
     setFailed(false);
     setRutaOffline(undefined);
     setLoading(true);
@@ -154,9 +175,13 @@ export default function App() {
           setFailed(false);
         }}
         onLoadEnd={() => setLoading(false)}
-        onError={mostrarFallo}
+        onError={({ nativeEvent }) => {
+          setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
+          mostrarFallo();
+        }}
         onHttpError={({ nativeEvent }) => {
           if (nativeEvent.statusCode >= 400) {
+            setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
             mostrarFallo();
           }
         }}
@@ -215,6 +240,13 @@ export default function App() {
             abrir, actualiza «Android System WebView» desde la Play Store y
             reinicia el teléfono.
           </Text>
+          {/*
+            El motivo tecnico, a la vista. Un guardia no lo va a entender, pero
+            lo puede leer por radio o mandar en una foto — y eso convierte un
+            "no abre" en algo que soporte puede resolver sin tener el telefono
+            en la mano. Sin esto, cualquier fallo del WebView se ve igual.
+          */}
+          {motivoFallo ? <Text style={styles.motivo}>{motivoFallo}</Text> : null}
           <Pressable
             accessibilityRole="button"
             onPress={retry}
@@ -263,6 +295,13 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 28,
     backgroundColor: '#f8fafc',
+  },
+  motivo: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    fontFamily: 'monospace',
+    marginTop: 4,
   },
   loadingText: {
     color: '#475569',
