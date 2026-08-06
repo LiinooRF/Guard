@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
+import { Camera } from 'expo-camera';
 
 import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
@@ -147,6 +148,26 @@ export default function App() {
   useEffect(() => {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
+
+  /*
+   * El permiso de camara se pide al arrancar, no cuando se necesita.
+   *
+   * La foto de evidencia la toma el PORTAL con `<input type="file"
+   * capture="environment">`, y en Android eso lo resuelve el WebView abriendo la
+   * camara del sistema. Ese camino **no pide el permiso por su cuenta**: si la
+   * app no lo tiene concedido, el boton "Tomar foto" no hace absolutamente nada
+   * — sin dialogo, sin error, sin nada.
+   *
+   * Y la foto del acceso critico no es un extra: es la evidencia por la que el
+   * cliente paga. Un guardia que toca el boton y no pasa nada no puede ni
+   * reportar el problema.
+   *
+   * Se pide al inicio y no en el momento porque el momento es *dentro* del
+   * WebView, donde ya no hay forma de interceptarlo.
+   */
+  useEffect(() => {
+    void Camera.requestCameraPermissionsAsync().catch(() => undefined);
+  }, []);
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
       puente.notificarConexion(normalizarConexion(estado));
@@ -209,6 +230,12 @@ export default function App() {
         }}
         javaScriptEnabled
         domStorageEnabled
+        // Sin esto el selector de archivos del WebView no entrega la foto.
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        // La camara se abre sin que el usuario toque otra vez: el guardia ya
+        // apreto "Tomar foto", pedirle un gesto mas es una foto menos.
+        mediaPlaybackRequiresUserAction={false}
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
         setSupportMultipleWindows={false}
