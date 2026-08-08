@@ -158,7 +158,21 @@ async function seedTenant(
        VALUES
         ($1, $3, $4, 'Acceso principal', 1, 'acceso_critico', NULL, 'Verificar cierre del acceso'),
         ($2, $3, $4, 'Patio posterior', 2, 'normal', false, 'Revisar perímetro')
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+       -- Se actualizan tambien kind, requires_photo e instructions, no solo el
+       -- nombre. Con el ON CONFLICT anterior, una fila sembrada por una version
+       -- vieja se quedaba con su valor para siempre: en staging, 'Acceso
+       -- principal' tenia requires_photo = false pese a ser 'acceso_critico'.
+       --
+       -- Y eso apaga justo lo que el producto promete, porque en
+       -- isPhotoRequired() el override del punto GANA sobre la regla: si
+       -- requiresPhoto no es null, se devuelve tal cual. NULL hereda la regla;
+       -- false la pisa. La demo mostraba un acceso critico que no pedia
+       -- foto, que es lo contrario de lo que hay que enseñar.
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         kind = EXCLUDED.kind,
+         requires_photo = EXCLUDED.requires_photo,
+         instructions = EXCLUDED.instructions`,
       [demo.checkpointIds[0], demo.checkpointIds[1], demo.tenantId, demo.siteId],
     );
     await client.query(
