@@ -1,5 +1,5 @@
 import { Vibration } from 'react-native';
-import NfcManager, { NfcError, NfcTech } from 'react-native-nfc-manager';
+import NfcManager, { NfcAdapter, NfcError, NfcTech } from 'react-native-nfc-manager';
 
 import type { FalloNfcNativo, PuertoNfc } from './nfc-reader';
 import { posicionDelEscaneo } from '../geo/posicion';
@@ -16,6 +16,31 @@ function clasificarError(causa: unknown): FalloNfcNativo {
   return 'desconocido';
 }
 
+/**
+ * Que familias de etiquetas escucha el modo lector de Android.
+ *
+ * **Sin esto el escaneo NO funciona, y falla del peor modo posible: en
+ * silencio.** `requestTechnology(..., { isReaderModeEnabled: true })` deja
+ * `readerModeFlags` en su valor por defecto, que es `0` (react-native-nfc-manager
+ * 3.17.2, src/NfcManager.js:44). Con cero banderas el modo lector se enciende
+ * sin escuchar NINGUNA familia: la etiqueta nunca llega a la app, y como el
+ * modo lector tampoco bloquea el despacho del sistema, Android abre su propio
+ * visor de etiquetas encima de la ronda. Medido en un moto g35:
+ *
+ *     enableReaderMode, flags: 0
+ *     Input focus -> com.google.android.tag/TagViewer
+ *
+ * Se piden las cuatro familias, no solo NfcA. Las etiquetas de un recinto las
+ * compra el cliente, no nosotros: si aparece un lote ISO 15693 (NfcV), que es
+ * comun en control de accesos, con solo NfcA el guardia no podria marcar y
+ * nadie sabria por que.
+ */
+const FAMILIAS_QUE_ESCUCHA =
+  NfcAdapter.FLAG_READER_NFC_A |
+  NfcAdapter.FLAG_READER_NFC_B |
+  NfcAdapter.FLAG_READER_NFC_F |
+  NfcAdapter.FLAG_READER_NFC_V;
+
 export const puertoNfcAndroid: PuertoNfc = {
   iniciar: () => NfcManager.start(),
   soportado: () => NfcManager.isSupported(),
@@ -25,7 +50,7 @@ export const puertoNfcAndroid: PuertoNfc = {
     // tecnologías evita rechazar una etiqueta válida solo por su formato.
     await NfcManager.requestTechnology(
       [NfcTech.Ndef, NfcTech.NfcA, NfcTech.MifareUltralight],
-      { isReaderModeEnabled: true },
+      { isReaderModeEnabled: true, readerModeFlags: FAMILIAS_QUE_ESCUCHA },
     );
     return NfcManager.getTag();
   },
