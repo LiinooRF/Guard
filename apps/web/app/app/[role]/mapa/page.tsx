@@ -39,6 +39,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { DashboardShell } from '../../../_components/dashboard-shell';
+import { ProveedorOrigenTiles } from '../../../_components/mapa-origen-tiles';
 import { MapaRecintos } from '../../../_components/mapa-recintos';
 import {
   recintoElegido,
@@ -46,6 +47,7 @@ import {
   type PuntoDeControlDelMapa,
   type RecintoDelMapa,
 } from '../../../_components/mapa-recintos-datos';
+import { entornoDeTilesDelServidor, resolverOrigenTiles } from '../../../_components/mapa-tiles';
 
 export const metadata: Metadata = {
   title: 'Mapa de recintos',
@@ -137,16 +139,35 @@ export default async function PantallaDeMapa({
         </Link>
       </p>
 
-      <MapaRecintos
-        recintos={recintos}
-        puntosDeControl={puntosDeControl}
-        recintoPedido={pedido}
-        rutaBase={`/app/${role}/mapa`}
-        alcance={configuracion.alcance}
-        mapaHabilitado={mapaHabilitado}
-        zoomPorDefecto={zoomDeLasReglas(reglas.rules)}
-        puedeVerPuntos={esAdmin}
-      />
+      {/*
+        El fondo del mapa sale de AQUI y no puede salir de otro lado.
+
+        `MapaRecintos -> MapaBase` resuelve el origen por contexto, y sin este
+        proveedor cae a `ORIGEN_DE_COMPILACION`, que en produccion SIEMPRE vale
+        'sin-configurar': `MAP_TILE_URL` llega al contenedor en tiempo de
+        ejecucion y `NEXT_PUBLIC_*` se hornea al compilar. El resultado era esta
+        pantalla dibujando los puntos sobre nada y diciendo "el fondo del mapa no
+        esta configurado" con MapTiler perfectamente configurado en Dokploy.
+
+        Este componente es de servidor y es dinamico (lee `cookies()` en
+        `pedir()`), asi que `process.env` se lee en cada request, que es la
+        condicion que `entornoDeTilesDelServidor` pide por escrito.
+
+        Guardia: `mapa-proveedor-montado.spec.ts` — si otra pantalla monta un
+        mapa que depende del contexto y se olvida de envolverlo, falla ahi.
+      */}
+      <ProveedorOrigenTiles origen={resolverOrigenTiles(entornoDeTilesDelServidor(process.env))}>
+        <MapaRecintos
+          recintos={recintos}
+          puntosDeControl={puntosDeControl}
+          recintoPedido={pedido}
+          rutaBase={`/app/${role}/mapa`}
+          alcance={configuracion.alcance}
+          mapaHabilitado={mapaHabilitado}
+          zoomPorDefecto={zoomDeLasReglas(reglas.rules)}
+          puedeVerPuntos={esAdmin}
+        />
+      </ProveedorOrigenTiles>
     </DashboardShell>
   );
 }
