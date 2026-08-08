@@ -63,6 +63,10 @@ describe('GuardService', () => {
           scheduled_end_at: new Date(Date.now() + 7 * 3_600_000),
           started_at: null,
           site_id: 'site-id',
+          // Lo calcula el SQL. Este spec fijaba `completedCheckpointCount: 0`
+          // cuando el servicio tenia un cero ESCRITO A MANO: el test protegia
+          // al placeholder. Ahora exige que el valor de la fila pase entero.
+          completed_checkpoint_count: 1,
           site_name: 'Recinto demostración',
           route_name: 'Ronda nocturna demo',
           estimated_duration_min: 30,
@@ -70,6 +74,7 @@ describe('GuardService', () => {
             {
               id: 'checkpoint-id', name: 'Acceso', position: 1,
               isClosingPoint: true, tagUids: ['04AABBCC'],
+              scannedAt: '2026-08-08T02:10:00.000Z',
             },
           ],
         },
@@ -81,8 +86,8 @@ describe('GuardService', () => {
       hasAssignment: true,
       patrol: {
         id: 'patrol-id',
-        completedCheckpointCount: 0,
-        checkpoints: [{ name: 'Acceso' }],
+        completedCheckpointCount: 1,
+        checkpoints: [{ name: 'Acceso', scannedAt: '2026-08-08T02:10:00.000Z' }],
       },
     });
     expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('p.guard_id = $1'), [

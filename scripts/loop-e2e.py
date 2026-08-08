@@ -7,7 +7,11 @@ su trabajo. Esa es la cadena que el CHECK roto de la URL tenia cortada.
 Deja el aviso publicado (no hay forma de despublicarlo) y la ronda como la
 encuentre; por eso publica con una version de nombre unico.
 """
+import base64
+import hashlib
+import hmac
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -140,15 +144,53 @@ ronda2 = (cuerpo_json(cuerpo).get('patrol') or {})
 check('  y la ronda queda en curso', ronda2.get('status') in ('en_curso', 'completada'),
       str(ronda2.get('status')))
 
+"""
+El escaneo se FIRMA como lo hace la app.
+
+No es opcional: en cuanto un guardia registra la llave de su telefono real
+(paso el 8 de agosto, probando en un moto g35), el servidor rechaza con 403
+cualquier escaneo suyo sin firmar — que es exactamente el antifraude de la
+firma de dispositivo haciendo su trabajo contra credenciales robadas. Un e2e
+que escanea sin firmar prueba un producto que ya no existe.
+
+El algoritmo replica device-signature.service.ts: HMAC-SHA256 de
+JSON.stringify([v1, clientScanId, deviceId, uid, method, scannedAt, lat, lng,
+accuracyM]) con la llave de 32 bytes registrada. json.dumps con separadores
+(',', ':') produce el mismo texto que JSON.stringify.
+"""
+DISPOSITIVO_E2E = str(uuid.uuid4())
+LLAVE_E2E = os.urandom(32)
+
+
+def firmar_escaneo(payload):
+    contenido = json.dumps([
+        'v1', payload['clientScanId'], payload['deviceId'], payload['uid'].strip(),
+        payload['method'], payload.get('scannedAt'), payload.get('latitude'),
+        payload.get('longitude'), payload.get('accuracyM'),
+    ], separators=(',', ':'))
+    return hmac.new(LLAVE_E2E, contenido.encode('utf-8'), hashlib.sha256).hexdigest()
+
+
+estado, cuerpo, _ = pedir('POST', API + '/guard/device-signing-key', {
+    'deviceId': DISPOSITIVO_E2E,
+    'key': base64.b64encode(LLAVE_E2E).decode(),
+}, guardia, UA_APP)
+check('el e2e registra su propia llave de dispositivo', estado in (200, 201),
+      'HTTP %s %s' % (estado, cuerpo[:160]))
+
 puntos = ronda2.get('checkpoints') or []
 primero = next((p for p in puntos if (p.get('tagUids') or [])), None)
 if primero:
-    estado, cuerpo, _ = pedir('POST', API + '/guard/patrols/%s/scans' % ronda2['id'], {
+    escaneo = {
         'uid': primero['tagUids'][0], 'method': 'nfc',
         'clientScanId': str(uuid.uuid4()),
-        'latitude': -33.45, 'longitude': -70.66}, guardia, UA_APP)
+        'deviceId': DISPOSITIVO_E2E,
+        'latitude': -33.45, 'longitude': -70.66}
+    escaneo['signature'] = firmar_escaneo(escaneo)
+    estado, cuerpo, _ = pedir('POST', API + '/guard/patrols/%s/scans' % ronda2['id'],
+                              escaneo, guardia, UA_APP)
     resultado = cuerpo_json(cuerpo)
-    check('el guardia escanea un punto', estado in (200, 201),
+    check('el guardia escanea un punto (firmado)', estado in (200, 201),
           'HTTP %s %s' % (estado, cuerpo[:220]))
     check('  y el avance se contabiliza',
           isinstance(resultado.get('progress'), dict), str(resultado.get('progress'))[:120])
