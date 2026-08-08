@@ -122,9 +122,22 @@ export function crearLectorQr(puerto: PuertoQr): LectorQr {
     } catch (causa) {
       if (causa instanceof ErrorEscaneo) throw causa;
       if (cancelado) throw CANCELADO();
+      /*
+       * Sin el motivo, este error es un callejon sin salida: se ve igual si
+       * fallo el permiso, si el modulo de camara no responde o si la vista se
+       * cerro sola. Nos costo media tarde de teorias en un telefono real.
+       *
+       * El motivo tecnico solo se agrega en compilaciones de prueba
+       * (`EXPO_PUBLIC_DEPURABLE`, el mismo interruptor que abre DevTools). En
+       * produccion el guardia ve la frase limpia: el texto es para trabajar,
+       * no para depurar.
+       */
+      const motivo = causa instanceof Error ? causa.message : String(causa);
       throw new ErrorEscaneo(
         'error-desconocido',
-        'No se pudo usar la cámara para leer el código.',
+        process.env.EXPO_PUBLIC_DEPURABLE === '1'
+          ? `No se pudo usar la cámara para leer el código. [${motivo}]`
+          : 'No se pudo usar la cámara para leer el código.',
         true,
       );
     } finally {

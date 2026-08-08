@@ -123,10 +123,6 @@ export default function App() {
     inyectar: (javaScript) => webView.current?.injectJavaScript(javaScript),
     manejadores,
     alIncompatible: (motivo, mensaje) => setBloqueo({ motivo, mensaje }),
-    alSinSaludo: () => setBloqueo({
-      motivo: 'portal-sin-puente',
-      mensaje: 'El portal no pudo conectarse con las funciones del teléfono. Avisa a soporte.',
-    }),
   }), [manejadores, portal.origin]);
 
   useEffect(() => puente.detener, [puente]);

@@ -107,3 +107,23 @@ test('rechaza un segundo escaneo concurrente sin cancelar el primero', async () 
   resolver?.({ id: '04AABBCC' });
   await primero;
 });
+
+test('un NFC que no contesta NO cuelga las capacidades', async () => {
+  // El caso que dejo a un guardia sin poder trabajar: `NfcManager.start()` no
+  // resolvia nunca, el puente no respondia el saludo, y el portal deshabilitaba
+  // el escaneo esperando un `ready` que no iba a llegar. Ni NFC ni QR.
+  const lector = crearLectorNfc(puerto({
+    iniciar: () => new Promise<void>(() => undefined), // no resuelve jamas
+  }));
+
+  const capacidades = await lector.capacidades();
+  assert.deepEqual(capacidades, { tieneNfc: false, nfcActivado: false });
+});
+
+test('un NFC que lanza excepcion tampoco cuelga', async () => {
+  const lector = crearLectorNfc(puerto({
+    iniciar: async () => { throw new Error('la pila de NFC del sistema fallo'); },
+  }));
+
+  assert.deepEqual(await lector.capacidades(), { tieneNfc: false, nfcActivado: false });
+});

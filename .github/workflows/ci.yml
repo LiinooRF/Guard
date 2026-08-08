@@ -167,9 +167,6 @@ jobs:
       - name: Instalar dependencias aisladas
         run: npm ci
 
-      - name: Auditar dependencias
-        run: npm audit --omit=dev
-
       - name: Typecheck
         run: npm run typecheck
 
@@ -184,6 +181,22 @@ jobs:
           NODE_ENV: production
           EXPO_PUBLIC_WEB_URL: https://control.example.test
         run: npx expo config --type public --json >/dev/null
+
+      # Va al FINAL y no al principio, y con lista de heredados, por dos razones
+      # que ya nos costaron caro:
+      #
+      #   1. Estaba antes del typecheck, asi que un aviso publicado anoche por
+      #      un tercero impedia que corrieran nuestras propias comprobaciones.
+      #      Lo mismo que paso con setup-java en mobile-size.yml.
+      #   2. `npm audit` a secas se pone rojo solo. El 6 de agosto habia 1
+      #      aviso; el 8, trece — sin que cambiara una linea del repo. Un check
+      #      cronicamente rojo deja de mirarse, y entonces no sirve de nada.
+      #
+      # El guion falla ante avisos NUEVOS. Los actuales estan anotados uno a uno
+      # con el motivo escrito en el propio guion.
+      - name: Auditar dependencias
+        working-directory: .
+        run: python scripts/auditar-dependencias.py apps/mobile
 
   images:
     name: imagen ${{ matrix.service }}
