@@ -151,7 +151,24 @@ export function crearLectorNfc(puerto: PuertoNfc): LectorNfc {
       return { ...scan, tech: 'nfc', ...firma };
     } catch (causa) {
       if (causa instanceof ErrorEscaneo) throw causa;
-      throw errorClasificado(cancelado ? 'cancelado' : puerto.clasificarError(causa));
+      const clase = cancelado ? 'cancelado' : puerto.clasificarError(causa);
+      const error = errorClasificado(clase);
+      /*
+       * `clasificarError` reduce cualquier fallo a una de seis frases, y la
+       * sexta —"No se pudo iniciar el lector NFC"— es un cajon de sastre que no
+       * dice nada. En un telefono real eso convierte cada intento en una
+       * teoria: ¿fallo la conexion con la etiqueta, el GPS, la firma del
+       * dispositivo? Se ven todas igual.
+       *
+       * En compilaciones de prueba (`EXPO_PUBLIC_DEPURABLE`, el mismo
+       * interruptor que abre DevTools) se agrega el motivo tecnico. En
+       * produccion el guardia ve la frase limpia.
+       */
+      if (clase === 'desconocido' && process.env.EXPO_PUBLIC_DEPURABLE === '1') {
+        const motivo = causa instanceof Error ? causa.message : String(causa);
+        throw new ErrorEscaneo(error.codigo, `${error.message} [${motivo}]`, error.reintentable);
+      }
+      throw error;
     } finally {
       if (temporizador) clearTimeout(temporizador);
       await puerto.cancelar().catch(() => undefined);
