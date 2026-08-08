@@ -470,7 +470,11 @@ function Ronda({
     }
 
     const respuesta = envio.respuesta;
-    const cerrada = respuesta.patrol.status === 'completada';
+    // 'completada' O 'incompleta': desde que el cierre dice la verdad (#258, el
+    // estado sale de un CASE sobre el porcentaje), un cierre parcial responde
+    // 'incompleta' — y sigue siendo un CIERRE. Mirar solo 'completada' dejaba
+    // al portal ignorando el cierre justo en las rondas con puntos faltantes.
+    const cerrada = ['completada', 'incompleta'].includes(respuesta.patrol.status);
     // Manda el veredicto del servidor, que evaluó el horario del recinto en este
     // instante; si no lo pudo resolver, decide el teléfono con su política. Una
     // ronda de ocho horas cruza el cierre del recinto y la instantánea de
@@ -505,9 +509,17 @@ function Ronda({
     const conObservacion = respuesta.anomalies.length ? ' con observación' : '';
     // "por QR" se dice en voz alta: el guardia camina y no mira la pantalla, y
     // esta es la única forma de que se entere de que quedó marcado como respaldo.
+    //
+    // (B9) Y si el punto YA estaba marcado, se le dice con la hora del primero:
+    // antes el guardia repetía el escaneo sin ninguna señal de que el anterior
+    // había contado, que es justo la duda que lo hace repetir.
     setAnuncio(
-      `Punto ${respuesta.checkpoint.name} registrado${esQr ? ' por QR' : ''}${conObservacion}. ` +
-        `${respuesta.progress.scanned} de ${respuesta.progress.expected}.`,
+      respuesta.alreadyScanned
+        ? `El punto ${respuesta.checkpoint.name} ya estaba marcado` +
+          `${respuesta.firstScannedAt ? ` a las ${hora.format(new Date(respuesta.firstScannedAt))}` : ''}. ` +
+          'Para el informe vale la primera marca.'
+        : `Punto ${respuesta.checkpoint.name} registrado${esQr ? ' por QR' : ''}${conObservacion}. ` +
+          `${respuesta.progress.scanned} de ${respuesta.progress.expected}.`,
     );
     if (exigeFoto) {
       // El anuncio propio repite "por QR" y la observación a propósito: pisa al

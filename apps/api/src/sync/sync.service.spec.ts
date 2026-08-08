@@ -355,22 +355,32 @@ describe('SyncService — sincronizacion en lote (#14)', () => {
 
 describe('SyncService — observabilidad de la sincronizacion (#14)', () => {
   it('reporta la ventana de 24h, la ultima sincronizacion y el tiempo sin señal', async () => {
-    const query = jest.fn().mockResolvedValueOnce([
-      {
-        aplicadas: 38,
-        duplicadas: 2,
-        rechazadas: 1,
-        reenvios: 3,
-        gap_max_s: 2_640,
-        gap_prom_s: 900,
-        ultima_sync: new Date('2026-08-03T03:00:00.000Z'),
-      },
-    ]);
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        {
+          aplicadas: 38,
+          duplicadas: 2,
+          rechazadas: 1,
+          reenvios: 3,
+          gap_max_s: 2_640,
+          gap_prom_s: 900,
+          ultima_sync: new Date('2026-08-03T03:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValueOnce([
+        { escaneos: 41, eventos: 2, ultimo: new Date('2026-08-03T03:05:00.000Z') },
+      ]);
 
     await expect(servicio(query).syncStatus('guard-id')).resolves.toEqual({
       guardId: 'guard-id',
       windowHours: 24,
       operations: { applied: 38, duplicated: 2, rejected: 1, retransmissions: 3 },
+      records: {
+        scans: 41,
+        events: 2,
+        total: 43,
+        lastReceivedAt: new Date('2026-08-03T03:05:00.000Z'),
+      },
       lastSyncedAt: new Date('2026-08-03T03:00:00.000Z'),
       // 44 minutos sin señal: eso es lo que el supervisor necesita saber del
       // subterraneo, y por eso las dos marcas de tiempo van separadas.
@@ -380,21 +390,51 @@ describe('SyncService — observabilidad de la sincronizacion (#14)', () => {
     expect(query.mock.calls[0]?.[1]).toEqual(['guard-id']);
   });
 
+  it('cuenta los REGISTROS reales del guardia, no solo las operaciones de la cola', async () => {
+    /*
+     * El caso real: dos escaneos directos aceptados en la base, cola vacia, y
+     * el panel decia "El servidor todavia no tiene registros tuyos". Confundio
+     * al guardia en terreno y desvio un diagnostico entero. Un contador que
+     * dice "registros" cuenta registros — vengan por la cola o directos.
+     */
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        {
+          aplicadas: 0, duplicadas: 0, rechazadas: 0, reenvios: 0,
+          gap_max_s: null, gap_prom_s: null, ultima_sync: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { escaneos: 2, eventos: 0, ultimo: new Date('2026-08-08T15:55:13.000Z') },
+      ]);
+
+    await expect(servicio(query).syncStatus('guard-id')).resolves.toMatchObject({
+      operations: { applied: 0 },
+      records: { total: 2, lastReceivedAt: new Date('2026-08-08T15:55:13.000Z') },
+    });
+    // La consulta de registros mira las tablas de verdad, no la cola.
+    expect(query.mock.calls[1]?.[0]).toContain('FROM scans');
+    expect(query.mock.calls[1]?.[0]).toContain('FROM field_events');
+  });
+
   it('un guardia sin sincronizaciones no rompe: devuelve ceros y sin marca', async () => {
-    const query = jest.fn().mockResolvedValueOnce([
-      {
-        aplicadas: 0,
-        duplicadas: 0,
-        rechazadas: 0,
-        reenvios: 0,
-        gap_max_s: null,
-        gap_prom_s: null,
-        ultima_sync: null,
-      },
-    ]);
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        {
+          aplicadas: 0,
+          duplicadas: 0,
+          rechazadas: 0,
+          reenvios: 0,
+          gap_max_s: null,
+          gap_prom_s: null,
+          ultima_sync: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ escaneos: 0, eventos: 0, ultimo: null }]);
 
     await expect(servicio(query).syncStatus('guard-id')).resolves.toMatchObject({
       operations: { applied: 0, duplicated: 0, rejected: 0, retransmissions: 0 },
+      records: { scans: 0, events: 0, total: 0, lastReceivedAt: null },
       lastSyncedAt: null,
       offlineGapSeconds: { max: null, avg: null },
     });

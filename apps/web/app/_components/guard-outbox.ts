@@ -87,6 +87,15 @@ export type PayloadNovedad = {
 
 export interface RespuestaEscaneo {
   replay: boolean;
+  /**
+   * El punto ya tenía OTRO escaneo en esta ronda (no es el replay: ese es el
+   * mismo escaneo reenviado). El registro nuevo se conserva; esto existe para
+   * que la pantalla se lo DIGA al guardia, que antes repetía sin saber si el
+   * primero contó.
+   */
+  alreadyScanned?: boolean;
+  /** Hora del primer escaneo de ese punto, que es la que vale para el informe. */
+  firstScannedAt?: string | null;
   alertSent: boolean;
   /** Id del escaneo en el servidor: es donde se cuelga la foto del punto. */
   scanId?: string | null;

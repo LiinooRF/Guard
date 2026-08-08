@@ -396,6 +396,42 @@ describe('GuardService.registerScan', () => {
     expect(manager.query).toHaveBeenCalledTimes(4);
   });
 
+  it('re-escanear un punto ya marcado lo DICE, con la hora del primero', async () => {
+    /*
+     * No es el replay (mismo escaneo reenviado): es el guardia pasando otra vez
+     * la etiqueta de un punto que ya marco. La fila nueva se conserva —marca,
+     * no rechaza— pero antes el telefono no recibia ninguna señal y el guardia
+     * repetia sin saber si el primero habia contado.
+     */
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([{ id: 'scan-2' }]) // el nuevo SI se inserta
+      .mockResolvedValueOnce([
+        {
+          id: 'scan-1', checkpoint_id: 'cp-1',
+          client_scan_id: 'otro-clientScanId-anterior',
+          anomalies: [], scanned_at_server: new Date('2026-08-08T15:49:31.000Z'),
+        },
+        {
+          id: 'scan-2', checkpoint_id: 'cp-1',
+          client_scan_id: '3a0c8f7e-1111-4222-8333-444455556666',
+          anomalies: [], scanned_at_server: new Date('2026-08-08T16:10:00.000Z'),
+        },
+      ]);
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
+      replay: false,
+      alreadyScanned: true,
+      firstScannedAt: new Date('2026-08-08T15:49:31.000Z'),
+    });
+  });
+
   it('rechaza la etiqueta de un punto que no pertenece a la ronda', async () => {
     const manager = { query: jest.fn() };
     manager.query

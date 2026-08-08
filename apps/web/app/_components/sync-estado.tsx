@@ -12,6 +12,7 @@ import {
   type EstadoCola,
 } from './guard-outbox';
 import { borrarClave, escribirJson, leerJson } from './guard-storage';
+import { resumirEstadoServidor, type EstadoServidor } from './sync-estado-modelo';
 import { useReglasSync, type ReglasSync } from './sync-reglas';
 
 /**
@@ -53,13 +54,8 @@ export interface ResumenSync {
   detalle: string;
 }
 
-/** Lo que el servidor dice que tiene. `null` = no se pudo preguntar. */
-export interface EstadoServidor {
-  confirmadas: number;
-  rechazadas: number;
-  windowHours?: number;
-  lastSyncedAt?: string;
-}
+/** El modelo puro vive aparte (sync-estado-modelo.ts) para poder probarse. */
+export type { EstadoServidor } from './sync-estado-modelo';
 
 function plural(cantidad: number, singular: string, varios: string): string {
   return cantidad === 1 ? singular : varios;
@@ -231,21 +227,7 @@ async function leerEstadoServidor(apiUrl: string): Promise<EstadoServidor | null
   try {
     const respuesta = await pedirApi(apiUrl, '/sync/status');
     if (!respuesta.ok) return null;
-    const cuerpo = (await respuesta.json()) as {
-      windowHours?: number;
-      operations?: { applied?: number; duplicated?: number; rejected?: number };
-      lastSyncedAt?: string | null;
-    };
-    // 'aplicado' y 'duplicado' son el mismo desenlace para el guardia: el
-    // trabajo esta en el servidor. La distincion es de observabilidad.
-    const aplicadas = cuerpo.operations?.applied ?? 0;
-    const duplicadas = cuerpo.operations?.duplicated ?? 0;
-    return {
-      confirmadas: aplicadas + duplicadas,
-      rechazadas: cuerpo.operations?.rejected ?? 0,
-      ...(typeof cuerpo.windowHours === 'number' ? { windowHours: cuerpo.windowHours } : {}),
-      ...(typeof cuerpo.lastSyncedAt === 'string' ? { lastSyncedAt: cuerpo.lastSyncedAt } : {}),
-    };
+    return resumirEstadoServidor(await respuesta.json());
   } catch {
     return null;
   }
