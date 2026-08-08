@@ -94,6 +94,14 @@ export const scanAnomalySchema = z.enum([
   'reloj_desfasado',
   'dispositivo_duplicado',
   'firma_dispositivo_ausente',
+  /**
+   * El escaneo ocurrio fuera de la ventana del turno (con la gracia de
+   * `lateScanGraceMin` a ambos lados). Existia todo el catalogo de anomalias y
+   * ninguna miraba el RELOJ DEL TURNO: un turno de 22:00-06:00 escaneado a
+   * mediodia del dia siguiente pasaba limpio — comprobado en staging con una
+   * ronda real. Marca, no rechaza, como todas.
+   */
+  'fuera_de_turno',
 ]);
 export type ScanAnomaly = z.infer<typeof scanAnomalySchema>;
 
