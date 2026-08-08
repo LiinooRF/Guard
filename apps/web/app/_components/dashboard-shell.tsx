@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import { Brand } from './brand';
 import { SesionViva } from './sesion-viva';
@@ -22,6 +22,10 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
     // la hace justo despues de mirar el informe.
     { href: '#envios', icon: '✉', label: 'Envíos de correo' },
     { href: '#reglas', icon: '⚙', label: 'Reglas' },
+    // La marca de la empresa (#117): el white-label es parte del modelo de
+    // negocio y sin entrada en el menu queda como el panel del supervisor
+    // antes de #99 — montado y sin como llegar.
+    { href: '#marca', icon: '◆', label: 'Marca' },
     { href: '#usuarios', icon: '♙', label: 'Usuarios' },
     { href: '#recintos', icon: '▦', label: 'Recintos' },
     { href: '#seguridad', icon: '◇', label: 'Seguridad' },
@@ -53,27 +57,41 @@ const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label:
   ],
 };
 
+/**
+ * La marca que el shell dibuja y las variables CSS que deja caer en cascada.
+ * La resuelve el SERVIDOR con `marcaDelTenant()` (`_lib/marca-del-tenant.ts`)
+ * — nunca el navegador, para que no exista un instante con la marca de otro.
+ */
+export interface MarcaDelShell {
+  commercialName: string | null;
+  logoUri: string | null;
+  /** `--marca-primario` y compañía; `globals.css` las lee con fallback. */
+  cssVariables: Record<string, string>;
+}
+
 export function DashboardShell({
   role,
   title,
   subtitle,
   children,
   streamlined = false,
+  marca,
 }: {
   role: string;
   title: string;
   subtitle: string;
   children: ReactNode;
   streamlined?: boolean;
+  marca?: MarcaDelShell;
 }) {
   return (
-    <main className="dashboard-shell">
+    <main className="dashboard-shell" style={marca?.cssVariables as CSSProperties}>
       {/* Renueva el token antes de que venza. Va en el shell y no en cada panel
           porque el problema es de TODOS los roles: quien deja la pantalla
           abierta sin enviar nada se queda sin sesion a los 15 minutos. */}
       <SesionViva />
       <aside className="sidebar">
-        <Brand compact />
+        <Brand compact nombre={marca?.commercialName} logoUri={marca?.logoUri} />
         {streamlined ? (
           <div className="guard-nav-note">Solo verás la tarea que debes realizar ahora.</div>
         ) : (

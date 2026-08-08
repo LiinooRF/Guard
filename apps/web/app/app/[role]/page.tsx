@@ -5,8 +5,10 @@ import {
   ConsentimientoAdmin,
   ConsentimientoTrabajador,
 } from '../../_components/consentimiento-carga';
-import { DashboardShell } from '../../_components/dashboard-shell';
+import { DashboardShell, type MarcaDelShell } from '../../_components/dashboard-shell';
 import { EnviosPanel } from '../../_components/envios-panel';
+import { MarcaConfiguracion } from '../../_components/marca-configuracion';
+import { marcaDelTenant } from '../../_lib/marca-del-tenant';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
 import { GuardShift } from '../../_components/guard-shift';
 import { InformesPanel } from '../../_components/informes-panel';
@@ -76,6 +78,20 @@ export default async function RoleDashboard({
   const content = ROLE_CONTENT[role as keyof typeof ROLE_CONTENT];
   if (!content) notFound();
 
+  /*
+   * La marca de la empresa (#117), resuelta en el servidor para TODOS los
+   * roles antes del primer render: logo, nombre comercial y las variables
+   * `--marca-*` que globals.css ya leia con fallback. Pedirla en el navegador
+   * mostraria un instante la marca del producto — que en un white-label es el
+   * cliente viendo la marca de otro.
+   */
+  const tema = await marcaDelTenant();
+  const marca: MarcaDelShell = {
+    commercialName: tema.branding.commercialName,
+    logoUri: tema.branding.logoUri,
+    cssVariables: tema.cssVariables,
+  };
+
   if (role === 'guardia') {
     const [data, sessions] = await Promise.all([loadGuardHome(), loadSessions()]);
     const subtitle = data.hasAssignment && data.patrol
@@ -83,7 +99,7 @@ export default async function RoleDashboard({
       : 'Aquí verás tu próxima tarea cuando sea asignada.';
 
     return (
-      <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined>
+      <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined marca={marca}>
         {/* El aviso de geolocalizacion ENVUELVE el contenido del turno (#78):
             mientras la persona no lo haya leido, la puerta no renderiza nada
             mas. Registrar la ubicacion de un trabajador exige informarselo
@@ -122,6 +138,7 @@ export default async function RoleDashboard({
         role={content.role}
         title="Administración de la plataforma"
         subtitle="Crea empresas, entrega su administración y controla el acceso a la plataforma."
+        marca={marca}
       >
         <PlatformManagement tenants={tenants} billing={billing} apiUrl={publicApiUrl()} />
         <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
@@ -237,6 +254,24 @@ export default async function RoleDashboard({
         </>
       )}
       {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
+      {/* La marca de la empresa (#117). Solo ADMIN: el PUT exige
+          tenant:rules:manage, y la marca es una decision de la empresa, no de
+          un recinto. */}
+      {role === 'admin' && (
+        <section className="activity-card" id="marca">
+          <div className="card-heading">
+            <div>
+              <span className="eyebrow">White-label</span>
+              <h2>Marca de la empresa</h2>
+            </div>
+          </div>
+          <p>
+            Logo, colores y nombre con los que tu equipo ve el sistema — también en el teléfono
+            del guardia, en los informes y en los correos. Se aplica al guardar, sin despliegue.
+          </p>
+          <MarcaConfiguracion apiUrl={publicApiUrl()} />
+        </section>
+      )}
       {/* Vista de envios de correo para soporte (#221): si el informe salio y si
           llego. Solo ADMIN, igual que el endpoint que consulta
           (`tenant:audit:read`): el listado incluye invitaciones y
@@ -268,6 +303,7 @@ export default async function RoleDashboard({
           ? 'Operación limitada a los recintos que tienes asignados.'
           : 'Datos actuales de la empresa autenticada.'
       }
+      marca={marca}
     >
       {/* El SUPERVISOR tambien opera desde la app y tambien se le registra el
           recorrido, asi que le corresponde el mismo aviso previo que al guardia.
