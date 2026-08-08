@@ -75,28 +75,13 @@ interface PoliticaDeFoto {
   rules: Pick<PatrolRules, 'photoRequiredOutsideHours' | 'photoRequiredOnCritical'>;
 }
 
-@Injectable()
-export class GuardService {
-  private readonly logger = new Logger(GuardService.name);
-
-  constructor(
-    private readonly tenantContext: TenantContextService,
-    private readonly mail: MailQueueService,
-    private readonly rules: RulesService,
-    private readonly escalation: EscalationService,
-    private readonly gpsPolicy: GpsPolicyService,
-    private readonly envioInforme: EnvioInformeService,
-    // Van al final y opcionales: varios specs construyen el servicio por posicion.
-    private readonly signatures?: DeviceSignatureService,
-    // Resuelve el horario habil del recinto y la foto obligatoria de un punto.
-    // Es quien llama a isPhotoRequired() de @voxia/shared: la decision no se
-    // reimplementa aca.
-    private readonly evidence?: EvidenceService,
-  ) {}
-
-  async getHome(guardId: string) {
-    const rows = await this.tenantContext.manager.query<PatrolRow[]>(
-      `
+/**
+ * La consulta de `GET /guard/home`, exportada COMO TEXTO a proposito: el spec
+ * de integracion la PREPARA contra PostgreSQL real, que valida sintaxis y
+ * tipos sin ejecutarla. Un `= ANY(jsonb)` paso por TypeScript y por todos los
+ * mocks y tumbo el endpoint entero en staging; PREPARE lo habria cazado en CI.
+ */
+export const CONSULTA_HOME = `
         SELECT
           p.id,
           p.status,
@@ -114,7 +99,13 @@ export class GuardService {
             FROM scans sc
             WHERE sc.tenant_id = p.tenant_id
               AND sc.patrol_id = p.id
-              AND sc.checkpoint_id = ANY(p.expected_checkpoint_ids)
+              -- expected_checkpoint_ids es JSONB (no uuid[]): un "= ANY(jsonb)"
+              -- compila en TypeScript, pasa los mocks, y revienta en Postgres
+              -- al EJECUTAR — tumbo guard/home entero en staging con un 500.
+              -- La pertenencia a un arreglo jsonb se pregunta asi:
+              AND sc.checkpoint_id::text IN (
+                SELECT jsonb_array_elements_text(p.expected_checkpoint_ids)
+              )
           ) AS completed_checkpoint_count,
           s.name AS site_name,
           s.timezone AS site_timezone,
@@ -178,7 +169,30 @@ export class GuardService {
           CASE p.status WHEN 'en_curso' THEN 0 ELSE 1 END,
           p.scheduled_start_at DESC
         LIMIT 1
-      `,
+      `;
+
+@Injectable()
+export class GuardService {
+  private readonly logger = new Logger(GuardService.name);
+
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly mail: MailQueueService,
+    private readonly rules: RulesService,
+    private readonly escalation: EscalationService,
+    private readonly gpsPolicy: GpsPolicyService,
+    private readonly envioInforme: EnvioInformeService,
+    // Van al final y opcionales: varios specs construyen el servicio por posicion.
+    private readonly signatures?: DeviceSignatureService,
+    // Resuelve el horario habil del recinto y la foto obligatoria de un punto.
+    // Es quien llama a isPhotoRequired() de @voxia/shared: la decision no se
+    // reimplementa aca.
+    private readonly evidence?: EvidenceService,
+  ) {}
+
+  async getHome(guardId: string) {
+    const rows = await this.tenantContext.manager.query<PatrolRow[]>(
+      CONSULTA_HOME,
       [guardId],
     );
 
