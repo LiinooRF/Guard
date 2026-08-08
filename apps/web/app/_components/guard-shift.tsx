@@ -8,7 +8,6 @@ import {
   opcionesDeEscaneo,
   type MetodoEscaneo,
 } from './guard-escaneo-modelo';
-import { GuardMapa } from './guard-mapa';
 import { PanicoPanel } from './panico-panel';
 import { SyncEstado } from './sync-estado';
 import { GuardEventForm } from './guard-event-form';
@@ -896,14 +895,24 @@ function Ronda({
         />
       ) : null}
 
+      {/*
+        El mapa NO va en la pantalla del guardia: es una herramienta de
+        SUPERVISION (decisión de producto, 8-ago-2026). El guardia camina
+        mirando el punto y la etiqueta, no la pantalla — la misma razón por la
+        que el escaneo se confirma con una vibración y los cambios se anuncian
+        en voz alta. Un mapa ahí compite por la atención justo cuando hace falta
+        en el mundo físico, y además gasta datos de tiles en terreno.
+
+        Quien sí lo necesita ya lo tiene: el supervisor tiene el mapa de
+        recintos (`/app/supervisor/mapa`), el de guardias en vivo
+        (`live-guard-map`) y el editor de rutas.
+
+        `GuardMapa` y `guard-mapa-modelo` se CONSERVAN, no se borran: el visor
+        de ruta con tiles offline es trabajo hecho y probado (#76), y esta es
+        una decisión de dónde mostrarlo, no de si sirve.
+      */}
       {vista === 'ronda' ? (
         <>
-          <GuardMapa
-            puntos={puntos}
-            registros={estado.puntos}
-            siteName={patrol.siteName}
-            {...(siguiente ? { siguiente } : {})}
-          />
           <GuardCheckpointList
             anuncio={anuncio}
             fase={fase}
