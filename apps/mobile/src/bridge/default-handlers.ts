@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 import { Platform } from 'react-native';
 
+import { detenerTraza, iniciarTraza } from '../geo/traza';
 import { ErrorEscaneo, type ManejadoresNativos } from './native';
 import type {
   EstadoConexionPayload,
@@ -116,5 +117,8 @@ export function crearManejadoresBase(): ManejadoresNativos {
     registrarFirma: async () => {
       throw new Error('firma-no-configurada');
     },
+    // Traza en vivo (#280): tampoco depende de la antena NFC.
+    iniciarTraza,
+    detenerTraza,
   };
 }

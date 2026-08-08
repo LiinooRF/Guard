@@ -28,6 +28,7 @@ import {
   type ResultadoPermisoPayload,
   type RutaOfflinePayload,
   type EncolarSyncPayload,
+  type PuntoDeTrazaPayload,
   type RegistrarFirmaPayload,
 } from './protocol';
 
@@ -125,6 +126,16 @@ export interface ClientePuente {
   readonly registrarFirma: (payload: RegistrarFirmaPayload) => Promise<string>;
   /** Cambios empujados por el shell. Devuelve la funcion para desuscribirse. */
   readonly alCambiarConexion: (fn: (estado: EstadoConexionPayload) => void) => () => void;
+  /**
+   * Traza en vivo (#280). Solo con `minor >= 5` en el `ready`: un shell
+   * anterior descarta `track.start` en silencio — no hay error, solo no hay
+   * traza, y por eso quien llama debe mirar la capacidad antes.
+   * `track.start` y `track.stop` van sin respuesta (el muestreo es un grifo,
+   * no una pregunta); cada posicion llega suelta a `alPuntoDeTraza`.
+   */
+  readonly iniciarTraza: (intervalSeconds: number) => void;
+  readonly detenerTraza: () => void;
+  readonly alPuntoDeTraza: (fn: (punto: PuntoDeTrazaPayload) => void) => () => void;
   readonly desconectar: () => void;
 }
 
@@ -132,6 +143,7 @@ export function crearClientePuente(): ClientePuente {
   const puente = puenteInyectado();
   const pendientes = new Map<string, Pendiente>();
   const oyentesConexion = new Set<(estado: EstadoConexionPayload) => void>();
+  const oyentesTraza = new Set<(punto: PuntoDeTrazaPayload) => void>();
   let desuscribir: (() => void) | undefined;
   let incompatible: IncompatiblePayload | undefined;
 
@@ -144,6 +156,13 @@ export function crearClientePuente(): ClientePuente {
 
     if (mensaje.type === 'connectivity.state' && mensaje.replyTo === undefined) {
       for (const oyente of oyentesConexion) {
+        oyente(mensaje.payload);
+      }
+      return;
+    }
+
+    if (mensaje.type === 'track.point') {
+      for (const oyente of oyentesTraza) {
         oyente(mensaje.payload);
       }
       return;
@@ -350,6 +369,23 @@ export function crearClientePuente(): ClientePuente {
       return () => oyentesConexion.delete(fn);
     },
 
+    iniciarTraza: (intervalSeconds) => {
+      if (puente === undefined) return;
+      asegurarSuscripcion();
+      puente.enviar(JSON.stringify(armarSobre('track.start', { intervalSeconds }, { prefijo: 'web' })));
+    },
+
+    detenerTraza: () => {
+      if (puente === undefined) return;
+      puente.enviar(JSON.stringify(armarSobre('track.stop', {}, { prefijo: 'web' })));
+    },
+
+    alPuntoDeTraza: (fn) => {
+      asegurarSuscripcion();
+      oyentesTraza.add(fn);
+      return () => oyentesTraza.delete(fn);
+    },
+
     desconectar: () => {
       for (const pendiente of pendientes.values()) {
         clearTimeout(pendiente.temporizador);
@@ -357,6 +393,7 @@ export function crearClientePuente(): ClientePuente {
       }
       pendientes.clear();
       oyentesConexion.clear();
+      oyentesTraza.clear();
       desuscribir?.();
       desuscribir = undefined;
     },

@@ -30,6 +30,8 @@ function setup() {
   let cancelacionesQr = 0;
   const operaciones = new Set<string>();
   const manejadores: ManejadoresNativos = {
+    iniciarTraza: async () => undefined,
+    detenerTraza: () => undefined,
     capacidades: async () => ({
       tieneNfc: true, nfcActivado: true, tieneCamara: true, nivelApiAndroid: 35,
     }),
@@ -245,7 +247,9 @@ test('agregar los mensajes qr.* es aditivo: un portal del minor 0 sigue entrando
   // queda sin ronda y NO se arregla con un deploy.
   assert.equal(verificarCompatibilidad({ major: 1, minMinor: 0 }).ok, true);
   assert.equal(verificarCompatibilidad({ major: 1, minMinor: 4 }).ok, true);
-  const futuro = verificarCompatibilidad({ major: 1, minMinor: 5 });
+  // MINOR 5 = la familia track.* (#280): un portal que la exige entra en esta app.
+  assert.equal(verificarCompatibilidad({ major: 1, minMinor: 5 }).ok, true);
+  const futuro = verificarCompatibilidad({ major: 1, minMinor: 6 });
   assert.equal(futuro.ok ? undefined : futuro.motivo, 'app-antigua');
 });
 

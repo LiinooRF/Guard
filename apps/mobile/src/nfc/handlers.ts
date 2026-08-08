@@ -9,6 +9,7 @@ import { borrarRutaOffline, guardarRutaOffline } from '../offline/route-store';
 import { borrarColaSync, encolarOperacion, sincronizarCola } from '../offline/sync-queue';
 import type { LectorQr } from '../qr/qr-reader';
 import { registrarClaveDispositivo } from '../security/device-signature';
+import { detenerTraza, iniciarTraza } from '../geo/traza';
 
 /**
  * Manejadores reales del shell: etiqueta NFC (#57) y respaldo por camara (#226).
@@ -50,5 +51,10 @@ export function crearManejadoresNfc(
     sincronizarCola,
     registrarFirma: ({ apiUrl, portalOrigin }) =>
       registrarClaveDispositivo(apiUrl, portalOrigin),
+    // Traza en vivo (#280): el muestreo vive en geo/traza.ts y el puente solo
+    // acarrea. Ver alli las reglas (solo con la ronda, sin pedir permisos,
+    // primer plano).
+    iniciarTraza,
+    detenerTraza,
   };
 }

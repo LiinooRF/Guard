@@ -23,6 +23,7 @@ import {
   type PayloadNovedad,
 } from './guard-outbox';
 import { GuardTareasPunto } from './guard-tareas-punto';
+import { useTrazaEnVivo } from './use-guard-traza';
 import { adoptarFotosDeTareas, sincronizarTareas } from './guard-tareas-flujo';
 import {
   cargarEstadoTareas,
@@ -214,6 +215,13 @@ function Ronda({
   const puente = useGuardBridge(apiUrl);
   const [estado, setEstado] = useState<EstadoRonda>(() => estadoInicial(patrol.id));
   const [vista, setVista] = useState<Vista>('ronda');
+  /*
+   * La traza en vivo (#280): mientras la ronda este abierta, el shell muestrea
+   * y este portal sube las posiciones. `Ronda` solo se monta con la ronda en
+   * curso, asi que "activa" es simplemente "sin cierre" — y el cierre, el
+   * desmontaje o un shell viejo apagan el grifo sin tocar nada mas.
+   */
+  useTrazaEnVivo({ puente, apiUrl, patrolId: patrol.id, activa: estado.cierre === undefined });
   const [fase, setFase] = useState<FaseEscaneo>('inactivo');
   const [anuncio, setAnuncio] = useState('');
   const [errorEscaneo, setErrorEscaneo] = useState<string>();
