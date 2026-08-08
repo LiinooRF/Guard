@@ -9,6 +9,8 @@ import {
 import {
   CRITICIDADES,
   etiquetaAnomalia,
+  resumirTareas,
+  type EstadoTarea,
   type FotoAnexo,
   type InformeRonda,
 } from './patrol-report.model';
@@ -30,6 +32,7 @@ import {
   formatearHora,
   limiteInferior,
   recortar,
+  type Celda,
   type CeldaAnexo,
   type GeometriaAnexo,
 } from './pdf-primitivas';
@@ -174,6 +177,7 @@ function dibujarCuerpo(
   dibujarCumplimiento(doc, modelo);
   dibujarTablaPuntos(doc, modelo);
   dibujarOmitidos(doc, modelo);
+  dibujarTareas(doc, modelo);
   dibujarIncidentes(doc, modelo);
   dibujarPie(doc, tz, modelo.marca.mailFooter);
 }
@@ -284,6 +288,91 @@ function dibujarOmitidos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
     );
   }
   doc.y += 4;
+}
+
+/**
+ * Tareas del turno (#265).
+ *
+ * Una ronda sin checklist NO dibuja nada: ni el titulo, ni una tabla vacia, ni
+ * un "sin tareas". El informe de esas rondas queda byte a byte como antes, que
+ * es el criterio (c) del carril.
+ *
+ * Lo que el producto pidio que "se mencione" —la falla y el atraso— va escrito
+ * y no solo pintado: el informe se imprime en blanco y negro y ahi el rojo y el
+ * verde son el mismo gris.
+ */
+function dibujarTareas(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
+  if (modelo.tareas.length === 0) return;
+
+  const resumen = resumirTareas(modelo.tareas);
+  const hayProblemas =
+    resumen.fallidas + resumen.pendientes + resumen.atrasadas + resumen.sinFoto > 0;
+
+  dibujarTituloSeccion(
+    doc,
+    `Tareas del turno (${resumen.cumplidas} de ${resumen.total} cumplidas)`,
+    hayProblemas ? PALETA.alerta : undefined,
+  );
+
+  const avisos: string[] = [];
+  if (resumen.fallidas > 0) avisos.push(`${resumen.fallidas} con falla`);
+  if (resumen.atrasadas > 0) avisos.push(`${resumen.atrasadas} fuera de la hora pedida`);
+  if (resumen.pendientes > 0) avisos.push(`${resumen.pendientes} sin responder`);
+  if (resumen.sinFoto > 0) avisos.push(`${resumen.sinFoto} sin la foto exigida`);
+
+  doc.font(avisos.length > 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(9)
+    .fillColor(avisos.length > 0 ? PALETA.alerta : PALETA.gris)
+    .text(
+      avisos.length > 0
+        ? avisos.join('  ·  ')
+        : 'Todas las tareas se cumplieron dentro de su horario.',
+      doc.page.margins.left,
+      doc.y,
+      { width: anchoUtil(doc) },
+    );
+  doc.y += 8;
+
+  dibujarTabla(
+    doc,
+    [
+      { titulo: 'Hora', ancho: 40 },
+      { titulo: 'Tarea', ancho: 138 },
+      { titulo: 'Punto', ancho: 84 },
+      { titulo: 'Estado', ancho: 58 },
+      { titulo: 'Respuesta', ancho: 95 },
+      { titulo: 'Foto', ancho: 40 },
+      { titulo: 'Atraso', ancho: 60 },
+    ],
+    modelo.tareas.map((tarea) => [
+      // horaPedida ya viene como "11:00": NO pasa por formatearFechaHora, que
+      // convertiria el `time` de PostgreSQL en una fecha invalida y en un '—'.
+      { texto: tarea.horaPedida ?? '—' },
+      { texto: recortar(tarea.etiqueta, 30) },
+      { texto: recortar(textoPunto(tarea.numeroPunto, tarea.punto), 18) },
+      celdaEstadoTarea(tarea.estado),
+      { texto: tarea.respuesta ? recortar(tarea.respuesta.replaceAll('\n', ' '), 20) : '—' },
+      tarea.faltaFoto
+        ? { texto: 'FALTA', color: PALETA.alerta, negrita: true }
+        : { texto: tarea.fotoId ? 'Sí' : '—' },
+      tarea.atrasada
+        ? { texto: `+${tarea.atrasoMinutos} min`, color: PALETA.alerta, negrita: true }
+        : { texto: '—' },
+    ]),
+  );
+}
+
+/** Sin punto la tarea es del turno entero, y eso hay que decirlo, no dejarlo en blanco. */
+function textoPunto(numero: number | null, nombre: string | null): string {
+  if (nombre === null) return 'General del turno';
+  return numero === null ? nombre : `${numero}. ${nombre}`;
+}
+
+function celdaEstadoTarea(estado: EstadoTarea): Celda {
+  if (estado === 'falla') return { texto: 'FALLA', color: PALETA.alerta, negrita: true };
+  if (estado === 'pendiente') {
+    return { texto: 'NO HECHA', color: PALETA.alerta, negrita: true };
+  }
+  return { texto: 'Cumplida', color: PALETA.ok };
 }
 
 function dibujarIncidentes(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
@@ -475,6 +564,16 @@ function dibujarLeyendaFoto(
       y + 11,
       { width: celda.ancho, lineBreak: false },
     );
+  // Tercera linea SOLO cuando la foto es evidencia de una tarea: sin esto, la
+  // foto del refrigerador se ve rotulada con el punto y nadie sabe que responde
+  // a la tarea de las 11. La ronda sin checklist no gana ninguna linea.
+  if (foto.tarea !== null) {
+    doc.fontSize(7).fillColor(PALETA.tinta)
+      .text(`Tarea: ${recortar(foto.tarea, 38)}`, celda.x, y + 21, {
+        width: celda.ancho,
+        lineBreak: false,
+      });
+  }
 }
 
 // -------------------------------------------------------------------- salida

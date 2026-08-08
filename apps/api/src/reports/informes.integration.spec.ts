@@ -2,6 +2,7 @@ import { DataSource, type QueryRunner } from 'typeorm';
 
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { SQL_TAREAS_DEL_TURNO } from './patrol-report.service';
 
 const appUrl = process.env.DATABASE_APP_TEST_URL;
 const describeDatabase = appUrl ? describe : describe.skip;
@@ -100,5 +101,23 @@ describeDatabase('camino de informes (esquema real)', () => {
     // No existe y nunca existio: dejarlo escrito evita que alguien la
     // reintroduzca "para simplificar" y rompa lo mismo otra vez.
     expect(columnas.has('name')).toBe(false);
+  });
+
+  /**
+   * La consulta de tareas del turno (#265) contra el esquema de verdad.
+   *
+   * Corre EL MISMO texto que usa el servicio. Es la unica forma de saber que
+   * `due_local_time`, `requires_photo` y `late_minutes` existen con ese nombre:
+   * el mock del test unitario devuelve lo que el autor escribio, asi que
+   * confirmaria una columna inventada sin pestañear.
+   */
+  it('la consulta de tareas del turno corre contra el esquema real', async () => {
+    const filas = (await enTenant(async (_c, runner) =>
+      // Una ronda que no existe: se prueba que la consulta es valida y devuelve
+      // vacio, que es tambien el camino de la ronda sin checklist.
+      runner.query(SQL_TAREAS_DEL_TURNO, ['00000000-0000-4000-8000-000000000000']),
+    )) as unknown[];
+
+    expect(filas).toEqual([]);
   });
 });

@@ -72,17 +72,22 @@ interface Fixture {
   scans?: unknown[];
   incidentes?: unknown[];
   fotos?: unknown[];
+  tareas?: unknown[];
   asignaciones?: unknown[];
 }
 
 /**
  * Manager falso que responde por el CONTENIDO del SQL y no por el orden de las
  * llamadas: asi un test no se rompe porque se agrego una consulta antes.
+ *
+ * El orden de las ramas SI importa: la de las tareas va antes que la del
+ * encabezado porque la consulta de tareas tambien menciona `patrols`.
  */
 function fakeManager(fixture: Fixture) {
   return {
     query: jest.fn(async (sql: string) => {
       if (sql.includes('supervisor_sites')) return fixture.asignaciones ?? [];
+      if (sql.includes('FROM checklist_items')) return fixture.tareas ?? [];
       if (sql.includes('jsonb_array_elements_text')) return fixture.puntos ?? PUNTOS;
       if (sql.includes('FROM scans')) return fixture.scans ?? SCANS;
       if (sql.includes('FROM field_events')) return fixture.incidentes ?? [];
@@ -185,6 +190,54 @@ describe('PatrolReportService.buildModel', () => {
     expect(modelo.compliance.pct).toBe(50);
     expect(modelo.compliance.belowThreshold).toBe(false);
     expect(modelo.omitidos.map((p) => p.checkpointId)).toEqual(['cp-2']);
+  });
+
+  it('trae las tareas del turno y las deja en el modelo', async () => {
+    const { service } = armarServicio({
+      tareas: [
+        {
+          item_id: 'it-1',
+          position: 1,
+          label: 'Fotografiar el refrigerador',
+          response_type: 'ok_falla',
+          requires_photo: true,
+          requires_photo_on_fail: false,
+          // `time` de PostgreSQL: string, no Date. Es como llega de verdad.
+          due_local_time: '11:00:00',
+          checkpoint_id: 'cp-2',
+          checkpoint_name: 'Portería',
+          response_id: 'rs-1',
+          value: 'ok',
+          notes: null,
+          failed: false,
+          photo_id: null,
+          late_minutes: 35,
+          responded_at: new Date('2026-07-31T00:35:00-04:00'),
+        },
+      ],
+    });
+
+    const modelo = await service.buildModel('patrol-id');
+
+    expect(modelo.tareas).toHaveLength(1);
+    expect(modelo.tareas[0]).toMatchObject({
+      horaPedida: '11:00',
+      numeroPunto: 2,
+      atrasoMinutos: 35,
+      atrasada: true,
+      faltaFoto: true,
+    });
+    // Las tareas no tocan el cumplimiento, que sigue siendo sobre puntos.
+    expect(modelo.compliance.pct).toBe(50);
+  });
+
+  it('una ronda sin checklist deja las tareas vacías y no cambia el resto', async () => {
+    const { service } = armarServicio({});
+
+    const modelo = await service.buildModel('patrol-id');
+
+    expect(modelo.tareas).toEqual([]);
+    expect(modelo.puntos).toHaveLength(2);
   });
 
   it('sin anexo no consulta siquiera los metadatos de las fotos', async () => {
@@ -357,6 +410,60 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
     expect(pdf.subarray(-8).toString('latin1')).toContain('%%EOF');
     expect(resumen).toMatchObject({ fotosIncluidas: 5 });
   }, 30_000);
+
+  it('la sección de tareas del turno no tumba la generación del PDF', async () => {
+    // No se inspecciona el binario: lo que se cubre es que dibujar la seccion
+    // nueva —con falla, atraso y foto faltante a la vez— no lance, porque una
+    // excepcion aca sale como un PDF cortado a mitad del cable.
+    const { service } = armarServicio(
+      {
+        tareas: [
+          {
+            item_id: 'it-1',
+            position: 1,
+            label: 'Fotografiar el refrigerador',
+            response_type: 'ok_falla',
+            requires_photo: true,
+            requires_photo_on_fail: false,
+            due_local_time: '11:00:00',
+            checkpoint_id: 'cp-2',
+            checkpoint_name: 'Portería',
+            response_id: 'rs-1',
+            value: 'falla',
+            notes: 'puerta entreabierta',
+            failed: true,
+            photo_id: null,
+            late_minutes: 35,
+            responded_at: new Date('2026-07-31T00:35:00-04:00'),
+          },
+          {
+            item_id: 'it-2',
+            position: 2,
+            label: 'Revisar bitácora del turno',
+            response_type: 'texto',
+            requires_photo: false,
+            requires_photo_on_fail: false,
+            due_local_time: null,
+            checkpoint_id: null,
+            checkpoint_name: null,
+            response_id: null,
+            value: null,
+            notes: null,
+            failed: null,
+            photo_id: null,
+            late_minutes: null,
+            responded_at: null,
+          },
+        ],
+      },
+      { raiz },
+    );
+
+    const pdf = await recolectar((destino) => service.streamTo('patrol-id', destino));
+
+    expect(esPdf(pdf)).toBe(true);
+    expect(pdf.subarray(-8).toString('latin1')).toContain('%%EOF');
+  });
 
   it('una ronda sin escaneos ni fotos genera el PDF igual', async () => {
     const { service } = armarServicio({ scans: [] }, { raiz });

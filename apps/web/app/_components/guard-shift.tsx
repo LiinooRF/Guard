@@ -16,12 +16,27 @@ import {
   enviarEscaneo,
   enviarNovedad,
   iniciarAutoSync,
+  pedirApi,
   subirFotoNovedad,
   subirFotoPunto,
   suscribirVeredictos,
   type Criticidad,
   type PayloadNovedad,
 } from './guard-outbox';
+import { GuardTareasPunto } from './guard-tareas-punto';
+import { adoptarFotosDeTareas, sincronizarTareas } from './guard-tareas-flujo';
+import {
+  cargarEstadoTareas,
+  cargarPlantillaTareas,
+  estadoTareasInicial,
+  guardarEstadoTareas,
+  guardarPlantillaTareas,
+  itemsDeLaPlantilla,
+  tareasDelPuntoPorResponder,
+  type EstadoTareas,
+  type ItemTarea,
+  type PlantillaTareas,
+} from './guard-tareas-modelo';
 import {
   aplicarVeredictos,
   cargarEstadoRonda,
@@ -218,6 +233,15 @@ function Ronda({
   // la foto, que empezó ANTES de que llegaran y no ve los cambios de estado
   // posteriores. Se crea una sola vez (inicializador perezoso de useState).
   const [idsDeEscaneo] = useState(nuevoRegistroIdsDeEscaneo);
+  // Las tareas del turno (#265): la plantilla y lo respondido en esta ronda.
+  const [itemsTareas, setItemsTareas] = useState<ItemTarea[]>([]);
+  const [tareas, setTareas] = useState<EstadoTareas>(() => estadoTareasInicial(patrol.id));
+  const [puntoConTareas, setPuntoConTareas] = useState<{
+    checkpointId: string;
+    nombre: string;
+    clientScanId: string;
+    scanId?: string;
+  }>();
 
   const refrescarFotosPendientes = useCallback(async () => {
     setFotosPorSubir(await contarPendientes());
@@ -252,6 +276,53 @@ function Ronda({
   }, [patrol.id, puntos]);
 
   useEffect(() => iniciarAutoSync(apiUrl), [apiUrl]);
+
+  const actualizarTareas = useCallback((siguiente: EstadoTareas) => {
+    guardarEstadoTareas(siguiente);
+    setTareas(siguiente);
+  }, []);
+
+  /**
+   * Las tareas del turno se piden AL ENTRAR a la ronda y se guardan (#265).
+   *
+   * Antes la plantilla se pedía en el resumen, o sea después del punto de
+   * cierre: en un subterráneo eso significa que la tarea del punto 3 no existió
+   * nunca. Guardada en el teléfono, la ronda entera se puede hacer sin señal.
+   *
+   * De paso se repara lo que quedó a medias en la sesión anterior: la foto de
+   * una tarea que esperaba el id de su escaneo y las respuestas que nunca
+   * llegaron a subir.
+   */
+  useEffect(() => {
+    let vivo = true;
+    const guardada = cargarPlantillaTareas(patrol.id);
+    if (guardada) setItemsTareas(itemsDeLaPlantilla(guardada));
+    const local = cargarEstadoTareas(patrol.id);
+    setTareas(local);
+
+    void (async () => {
+      const registros = cargarEstadoRonda(patrol.id).puntos;
+      const sincronizado = await sincronizarTareas(
+        apiUrl,
+        await adoptarFotosDeTareas(apiUrl, local, registros),
+      );
+      if (vivo && sincronizado !== local) actualizarTareas(sincronizado);
+
+      try {
+        const respuesta = await pedirApi(apiUrl, `/checklists/patrols/${patrol.id}/template`);
+        if (!respuesta.ok || !vivo) return;
+        const plantilla = (await respuesta.json()) as PlantillaTareas;
+        guardarPlantillaTareas(patrol.id, plantilla);
+        setItemsTareas(itemsDeLaPlantilla(plantilla));
+      } catch {
+        // Sin señal manda la plantilla guardada: para eso se guarda.
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, [actualizarTareas, apiUrl, patrol.id]);
 
   // Al montar (o al reabrir tras cerrar el WebView), rehidrata las fotos que
   // quedaron sin subir: las que ya tienen id de servidor se reintentan ahora, y
@@ -344,11 +415,41 @@ function Ronda({
               void refrescarFotosPendientes();
             });
         }
+
+        // La foto de una TAREA cuelga del mismo escaneo, así que este también es
+        // el instante en que existe su id (#265). Sin esto, una tarea respondida
+        // sin señal esperaría a que el guardia reabra la app: su respuesta no
+        // puede salir de la cola hasta que la foto esté arriba.
+        //
+        // Los registros se arman con los veredictos y no con el estado de la
+        // ronda: `actualizar()` persiste dentro del updater de React, que todavía
+        // no corrió cuando esta línea se ejecuta.
+        const escaneosConId: Record<string, { clientScanId: string; scanId: string }> = {};
+        for (const veredicto of veredictos) {
+          if (veredicto.status === 'rechazado' || !veredicto.serverId) continue;
+          escaneosConId[veredicto.clientId] = {
+            clientScanId: veredicto.clientId,
+            scanId: veredicto.serverId,
+          };
+        }
+        void (async () => {
+          const actual = cargarEstadoTareas(patrol.id);
+          const siguiente = await sincronizarTareas(
+            apiUrl,
+            await adoptarFotosDeTareas(apiUrl, actual, escaneosConId),
+          );
+          if (siguiente !== actual) actualizarTareas(siguiente);
+        })();
       }),
-    [actualizar, apiUrl, idsDeEscaneo, refrescarFotosPendientes],
+    [actualizar, actualizarTareas, apiUrl, idsDeEscaneo, patrol.id, refrescarFotosPendientes],
   );
 
   const siguiente = siguientePunto(puntos, estado.puntos);
+  // El panel de tareas se apaga solo cuando ya no queda ninguna por responder,
+  // así el guardia no tiene que cerrarlo a mano para seguir.
+  const tareasEnPantalla =
+    puntoConTareas !== undefined &&
+    tareasDelPuntoPorResponder(itemsTareas, tareas, puntoConTareas.checkpointId).length > 0;
 
   // Qué caminos ofrece la pantalla: lo que puede el TELÉFONO (lo trae el puente)
   // cruzado con lo que permite la EMPRESA (lo trae la API en la cascada del
@@ -455,6 +556,10 @@ function Ronda({
       const guardadoSinSenal =
         `Punto ${destino.name} guardado sin señal${esQr ? ' por QR' : ''}.`;
       setAnuncio(`${guardadoSinSenal} Se sube solo cuando vuelva.`);
+      // Las tareas de este punto también se ofrecen sin señal: se responden, se
+      // guardan y suben solas. Se deja pedido ANTES del early return de la foto,
+      // así el panel aparece apenas la foto del acceso se resuelva.
+      ofrecerTareasDelPunto({ checkpointId: destino.id, nombre: destino.name, clientScanId });
       // La foto se pide igual estando sin señal: se guarda en el teléfono y sube
       // sola con el id que devuelva la sincronización. Va ANTES del resumen para
       // que el punto de cierre no se salte su evidencia.
@@ -506,6 +611,13 @@ function Ronda({
       });
     });
 
+    ofrecerTareasDelPunto({
+      checkpointId: respuesta.checkpoint.id,
+      nombre: respuesta.checkpoint.name,
+      clientScanId,
+      ...(respuesta.scanId ? { scanId: respuesta.scanId } : {}),
+    });
+
     const conObservacion = respuesta.anomalies.length ? ' con observación' : '';
     // "por QR" se dice en voz alta: el guardia camina y no mira la pantalla, y
     // esta es la única forma de que se entere de que quedó marcado como respaldo.
@@ -539,6 +651,23 @@ function Ronda({
       return;
     }
     if (cerrada) setVista('resumen');
+  }
+
+  /**
+   * Deja pedidas las tareas del punto recién marcado (#265).
+   *
+   * Solo si quedan tareas suyas sin responder: un punto sin tareas no interrumpe
+   * la ronda, y uno ya respondido no vuelve a preguntar cuando el guardia lo
+   * re-escanea.
+   */
+  function ofrecerTareasDelPunto(punto: {
+    checkpointId: string;
+    nombre: string;
+    clientScanId: string;
+    scanId?: string;
+  }) {
+    if (!tareasDelPuntoPorResponder(itemsTareas, tareas, punto.checkpointId).length) return;
+    setPuntoConTareas(punto);
   }
 
   function pedirFotoDelPunto(pendiente: FotoDePunto, anuncioPropio?: string) {
@@ -744,6 +873,29 @@ function Ronda({
         />
       ) : null}
 
+      {/* Las tareas van DESPUÉS de la foto obligatoria del acceso: esa es la
+          evidencia que no se puede perder y el panel es uno solo a la vez. */}
+      {vista === 'ronda' && !fotoDePunto && puntoConTareas ? (
+        <GuardTareasPunto
+          apiUrl={apiUrl}
+          checkpointId={puntoConTareas.checkpointId}
+          clientScanId={puntoConTareas.clientScanId}
+          estado={tareas}
+          foto={{
+            sitio: patrol.siteName,
+            ruta: patrol.routeName,
+            ...(patrol.timezone ? { zonaHoraria: patrol.timezone } : {}),
+            ...(presupuestoFoto ? { objetivoBytes: presupuestoFoto.targetBytes } : {}),
+          }}
+          idDelEscaneo={() => idsDeEscaneo.resolver(puntoConTareas.clientScanId)}
+          items={itemsTareas}
+          nombrePunto={puntoConTareas.nombre}
+          onEstado={actualizarTareas}
+          onListo={() => setPuntoConTareas(undefined)}
+          {...(puntoConTareas.scanId ? { scanId: puntoConTareas.scanId } : {})}
+        />
+      ) : null}
+
       {vista === 'ronda' ? (
         <>
           <GuardMapa
@@ -762,6 +914,10 @@ function Ronda({
             // Con una foto obligatoria en pantalla no se marca el punto
             // siguiente: la evidencia del que se acaba de marcar va primero.
             esperandoFoto={fotoDePunto !== undefined}
+            // Y con las tareas del punto abiertas, lo mismo: no bloquean la
+            // ronda —«Seguir con la ronda» las cierra en un toque— pero mientras
+            // están en pantalla, el punto de al lado espera.
+            esperandoTareas={tareasEnPantalla}
             puntos={puntos}
             registros={estado.puntos}
             siguiente={siguiente}

@@ -17,6 +17,12 @@ import type {
   UpdateChecklistTemplateDto,
 } from './dto/checklist-template.dto';
 import type { ChecklistResponseDto, SubmitChecklistDto } from './dto/submit-responses.dto';
+import {
+  evaluarTareaDelTurno,
+  TAREA_SIN_HORA,
+  type CandidatosDeVencimiento,
+  type VentanaDelTurno,
+} from './tarea-atrasada.policy';
 
 /**
  * Un item marcado como falla es una novedad operativa, no un dato de reporte:
@@ -34,7 +40,16 @@ const ALERTA_CHECKLIST_FALLA = {
     'El detalle de la ronda está en el panel de VoxIA Control.',
 } as const;
 
-/** Plantilla con sus items en una sola consulta; el WHERE lo pone cada llamador. */
+/**
+ * Plantilla con sus items en una sola consulta; el WHERE lo pone cada llamador.
+ *
+ * Las tres ultimas columnas son las de la migracion de tareas del turno y no son
+ * decorativas: sin `checkpoint_id` el telefono no puede saber en QUE punto se
+ * responde cada tarea, y una tarea con punto que no se proyecta aca es una tarea
+ * que el guardia nunca ve al escanear. Si se agrega una columna a
+ * `checklist_items`, va tambien aca — hay una prueba que cruza esta proyeccion
+ * contra la migracion justamente porque un mock no sabe SQL.
+ */
 const SELECT_PLANTILLA = `
   SELECT t.id, t.name, t.site_id, t.shift_id, t.is_active,
          COALESCE(jsonb_agg(jsonb_build_object(
@@ -42,7 +57,10 @@ const SELECT_PLANTILLA = `
            'position', i.position,
            'label', i.label,
            'responseType', i.response_type,
-           'requiresPhotoOnFail', i.requires_photo_on_fail
+           'requiresPhotoOnFail', i.requires_photo_on_fail,
+           'checkpointId', i.checkpoint_id,
+           'dueLocalTime', i.due_local_time,
+           'requiresPhoto', i.requires_photo
          ) ORDER BY i.position) FILTER (WHERE i.id IS NOT NULL), '[]'::jsonb) AS items
   FROM checklist_templates t
   LEFT JOIN checklist_items i ON i.tenant_id = t.tenant_id AND i.template_id = t.id
@@ -54,6 +72,16 @@ export interface ChecklistItemView {
   label: string;
   responseType: ChecklistResponseType;
   requiresPhotoOnFail: boolean;
+  /** Donde se hace. `null` = tarea general del turno: se responde en el cierre. */
+  checkpointId: string | null;
+  /**
+   * A que hora toca, en la zona DEL RECINTO y sin fecha ("11:00:00"), tal como
+   * la guarda la columna `time`. `null` = en cualquier momento de la ronda. El
+   * telefono la MUESTRA; cuanto se atraso una respuesta lo decide el servidor.
+   */
+  dueLocalTime: string | null;
+  /** Foto siempre, este todo bien o mal. Distinta de `requiresPhotoOnFail`. */
+  requiresPhoto: boolean;
 }
 
 interface FilaPlantilla {
@@ -86,6 +114,35 @@ export interface ChecklistResponseResult {
   status: ResponseStatus;
   responseId?: string;
   reason?: string;
+  /**
+   * Minutos de atraso de una tarea CON hora. Ausente = la tarea no tenia hora
+   * pedida, que no es lo mismo que cero (ver `tarea-atrasada.policy.ts`).
+   *
+   * Viaja de vuelta al telefono a proposito: el guardia tiene que enterarse de
+   * que quedo tarde en el momento, no en el informe del mes siguiente. Es un
+   * aviso, no un rechazo — la respuesta ya quedo guardada cuando esto se lee.
+   */
+  lateMinutes?: number;
+  /** La hora de la tarea cae fuera del horario de la ronda. Se acepto igual. */
+  outsideShift?: boolean;
+  /** Texto ya redactado para la pantalla; la app no reimplementa el criterio. */
+  lateMessage?: string;
+}
+
+/** Lo que hace falta para fechar las tareas de esta ronda, resuelto en SQL. */
+interface HorarioDeLasTareas {
+  readonly ahora: Date;
+  readonly ventana: VentanaDelTurno;
+  readonly porItem: ReadonlyMap<string, CandidatosDeVencimiento>;
+}
+
+interface FilaVencimiento {
+  item_id: string;
+  ahora: Date;
+  ventana_inicio: Date;
+  ventana_fin: Date;
+  vence_del_dia: Date;
+  vence_del_dia_siguiente: Date;
 }
 
 type Interpretacion =
@@ -105,11 +162,22 @@ export class ChecklistsService {
 
   // ------------------------------------------------------------- plantillas
 
-  async listTemplates() {
+  /**
+   * Sin `siteId` devuelve las plantillas de toda la empresa, que es lo que ve el
+   * ADMIN. Con `siteId` devuelve solo las de ese recinto: es lo que necesita el
+   * editor del SUPERVISOR, que esta acotado a sus recintos asignados y no debe
+   * llegar a enumerar los nombres de las plantillas de un recinto ajeno.
+   *
+   * El filtro NO reemplaza al control de acceso: quien pasa el `siteId` ya
+   * comprobo la asignacion (ver TareasTurnoService). Aca es solo el WHERE.
+   */
+  async listTemplates(siteId?: string) {
     const filas = await this.tenantContext.manager.query<FilaPlantilla[]>(
       `${SELECT_PLANTILLA}
+       WHERE $1::uuid IS NULL OR t.site_id = $1::uuid
        GROUP BY t.id
        ORDER BY t.is_active DESC, t.name`,
+      [siteId ?? null],
     );
     return filas.map((fila) => this.vista(fila));
   }
@@ -131,7 +199,7 @@ export class ChecklistsService {
        VALUES ($1, app_tenant_id(), $2, $3, $4)`,
       [templateId, siteId, shiftId, input.name.trim()],
     );
-    await this.insertarItems(templateId, input.items);
+    await this.insertarItems(templateId, input.items, siteId);
 
     return { id: templateId, siteId, shiftId, items: input.items.length };
   }
@@ -143,11 +211,14 @@ export class ChecklistsService {
    * vez de mutar el historico.
    */
   async updateTemplate(templateId: string, input: UpdateChecklistTemplateDto) {
-    const existentes = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `SELECT id FROM checklist_templates WHERE id = $1`,
-      [templateId],
-    );
-    if (!existentes.length) throw new NotFoundException('El checklist no existe');
+    // Se lee tambien el recinto: los items nuevos pueden traer punto y hora, y
+    // ese punto tiene que ser de ESTE recinto. El alcance no se edita (ver el
+    // DTO), asi que el recinto guardado es el que manda.
+    const existentes = await this.tenantContext.manager.query<
+      Array<{ id: string; site_id: string | null }>
+    >(`SELECT id, site_id FROM checklist_templates WHERE id = $1`, [templateId]);
+    const plantilla = existentes[0];
+    if (!plantilla) throw new NotFoundException('El checklist no existe');
     if (input.name === undefined && input.items === undefined) {
       throw new BadRequestException('Nada que actualizar');
     }
@@ -170,7 +241,7 @@ export class ChecklistsService {
         `DELETE FROM checklist_items WHERE template_id = $1`,
         [templateId],
       );
-      await this.insertarItems(templateId, input.items);
+      await this.insertarItems(templateId, input.items, plantilla.site_id ?? null);
     }
 
     await this.tenantContext.manager.query(
@@ -245,6 +316,16 @@ export class ChecklistsService {
     if (!plantilla) throw new ConflictException('Esta ronda no tiene un checklist vigente');
 
     const items = new Map(plantilla.items.map((item) => [item.id, item] as const));
+    // Solo las tareas CON hora necesitan vencimiento, y se resuelven todas de
+    // una vez antes del bucle: adentro seria una consulta por item. Un checklist
+    // sin horas —el caso de #129, que sigue siendo la mayoria— no paga nada.
+    const horario = await this.horarioDeLasTareas(
+      patrolId,
+      input.responses
+        .map((respuesta) => items.get(respuesta.itemId))
+        .filter((item): item is ChecklistItemView => Boolean(item?.dueLocalTime))
+        .map((item) => item.id),
+    );
     const results: ChecklistResponseResult[] = [];
     const fallas: Falla[] = [];
 
@@ -270,10 +351,22 @@ export class ChecklistsService {
         continue;
       }
 
+      // Llegar tarde NO es motivo de rechazo: el requisito es textual —"si la
+      // tarea queda fuera del horario de la ronda, que se envie igual". Por eso
+      // esto se evalua DESPUES de todos los rechazos y no agrega ninguno.
+      const veredicto =
+        horario && item.dueLocalTime
+          ? evaluarTareaDelTurno({
+              candidatos: horario.porItem.get(item.id) ?? null,
+              ventana: horario.ventana,
+              respondidaA: horario.ahora,
+            })
+          : TAREA_SIN_HORA;
+
       const insertadas = await this.tenantContext.manager.query<Array<{ id: string }>>(
         `INSERT INTO checklist_responses (
-          tenant_id, patrol_id, item_id, value, notes, failed, photo_id
-        ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6)
+          tenant_id, patrol_id, item_id, value, notes, failed, photo_id, late_minutes
+        ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (tenant_id, patrol_id, item_id) DO NOTHING
         RETURNING id`,
         [
@@ -283,6 +376,10 @@ export class ChecklistsService {
           respuesta.notes?.trim() ?? null,
           interpretada.failed,
           respuesta.photoId ?? null,
+          // Se escribe en el INSERT o no se escribe nunca: voxia_app tiene
+          // REVOKE UPDATE sobre checklist_responses, asi que no existe la opcion
+          // de "calcularlo despues".
+          veredicto.minutosDeAtraso,
         ],
       );
       const guardada = insertadas[0];
@@ -292,7 +389,20 @@ export class ChecklistsService {
         continue;
       }
 
-      results.push({ itemId: item.id, status: 'aplicado', responseId: guardada.id });
+      results.push({
+        itemId: item.id,
+        status: 'aplicado',
+        responseId: guardada.id,
+        // Ausentes cuando la tarea no tenia hora: mandar `lateMinutes: 0` diria
+        // "la hiciste a tiempo" de algo que nunca tuvo hora.
+        ...(veredicto.minutosDeAtraso === null
+          ? {}
+          : {
+              lateMinutes: veredicto.minutosDeAtraso,
+              outsideShift: veredicto.fueraDelTurno,
+              lateMessage: veredicto.mensaje ?? undefined,
+            }),
+      });
       if (interpretada.failed) {
         fallas.push({
           responseId: guardada.id,
@@ -317,7 +427,10 @@ export class ChecklistsService {
     }
 
     const notified = await this.avisarFallas(ronda, guardId, plantilla.name, fallas);
-    return { patrolId, templateId: plantilla.id, failed: fallas.length, notified, results };
+    // `late` es el resumen que la pantalla necesita para el aviso de arriba sin
+    // recorrer los items; el detalle de cada uno va en su propio result.
+    const late = results.filter((resultado) => (resultado.lateMinutes ?? 0) > 0).length;
+    return { patrolId, templateId: plantilla.id, failed: fallas.length, late, notified, results };
   }
 
   // ----------------------------------------------------------------- apoyo
@@ -357,6 +470,106 @@ export class ChecklistsService {
     return ronda;
   }
 
+  /**
+   * Vencimiento de cada tarea con hora, resuelto ENTERO por PostgreSQL.
+   *
+   * Tres cosas que no son obvias y que costaron dias en otros carriles:
+   *
+   * 1. La zona no se toca en JavaScript. `due_local_time` es hora de pared del
+   *    recinto y convertirla sin la tzdata obliga a un offset fijo que esta mal
+   *    la mitad del año (ver `scheduling.service.ts`). Se arma primero el
+   *    timestamp SIN zona (`service_day + due_local_time`) y recien despues se
+   *    convierte con `AT TIME ZONE`: al reves se corre una hora en cada cambio
+   *    de horario.
+   *
+   * 2. Se devuelven DOS candidatos, no uno. Una hora de pared sola no dice a que
+   *    dia pertenece cuando el turno cruza medianoche, y elegir es una decision
+   *    de producto que se prueba sin base de datos: la toma
+   *    `tarea-atrasada.policy.ts`. El `+ INTERVAL '1 day'` se aplica al
+   *    timestamp sin zona por el mismo motivo del punto 1 — significa "el mismo
+   *    reloj de pared del dia siguiente", no "24 horas despues".
+   *
+   * 3. `now()` es la hora de INICIO de la transaccion, y el request entero corre
+   *    en una sola transaccion (`TenantContextInterceptor`). Asi que este
+   *    `ahora` es EXACTAMENTE el que el INSERT dejara en `responded_at`:
+   *    `late_minutes` y `responded_at` no pueden contarse historias distintas.
+   *    Es tambien la razon de medir contra el reloj del servidor y no contra el
+   *    del telefono: `checklist_responses` no guarda hora del dispositivo ni
+   *    medicion de desfase, y aceptar la del telefono sin corregirla (ver
+   *    `sync/device-clock.ts`) dejaria que atrasar el reloj sirviera para llegar
+   *    siempre a tiempo.
+   *
+   * La ventana de referencia es la del TURNO cuando la ronda cuelga de una
+   * asignacion —el turno es el contenedor, igual que en `app_stats_service_day`—
+   * y la de la propia ronda cuando no. Con la ventana de la ronda, una tarea de
+   * las 23:00 quedaria "fuera de horario" en todas las rondas del turno menos en
+   * una.
+   */
+  private async horarioDeLasTareas(
+    patrolId: string,
+    itemIds: readonly string[],
+  ): Promise<HorarioDeLasTareas | null> {
+    if (!itemIds.length) return null;
+
+    const filas = await this.tenantContext.manager.query<FilaVencimiento[]>(
+      `WITH ronda AS (
+         SELECT p.tenant_id,
+                p.scheduled_start_at,
+                p.scheduled_end_at,
+                si.timezone,
+                a.service_date,
+                s.starts_at,
+                s.ends_at
+         FROM patrols p
+         JOIN sites si ON si.tenant_id = p.tenant_id AND si.id = p.site_id
+         LEFT JOIN shift_assignments a
+           ON a.tenant_id = p.tenant_id AND a.id = p.shift_assignment_id
+         LEFT JOIN shifts s ON s.tenant_id = a.tenant_id AND s.id = a.shift_id
+         WHERE p.id = $1
+       ),
+       dia AS (
+         SELECT r.*,
+                app_stats_service_day(r.scheduled_start_at, r.service_date, r.timezone)
+                  AS service_day
+         FROM ronda r
+       )
+       SELECT i.id AS item_id,
+              now() AS ahora,
+              COALESCE(((d.service_day + d.starts_at) AT TIME ZONE d.timezone),
+                       d.scheduled_start_at) AS ventana_inicio,
+              COALESCE(((d.service_day + d.ends_at
+                         + CASE WHEN d.ends_at <= d.starts_at
+                                THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END
+                        ) AT TIME ZONE d.timezone),
+                       d.scheduled_end_at) AS ventana_fin,
+              ((d.service_day + i.due_local_time) AT TIME ZONE d.timezone) AS vence_del_dia,
+              (((d.service_day + i.due_local_time) + INTERVAL '1 day') AT TIME ZONE d.timezone)
+                AS vence_del_dia_siguiente
+       FROM dia d
+       JOIN checklist_items i
+         ON i.tenant_id = d.tenant_id AND i.id = ANY($2::uuid[])
+       WHERE i.due_local_time IS NOT NULL`,
+      [patrolId, [...itemIds]],
+    );
+
+    // Sin filas no se inventa un vencimiento: la tarea se guarda con
+    // `late_minutes` NULL. Falla hacia "no hay atraso medido", nunca hacia un
+    // atraso adivinado que despues alguien tendria que explicar en un informe.
+    const primera = filas[0];
+    if (!primera) return null;
+
+    return {
+      ahora: primera.ahora,
+      ventana: { inicio: primera.ventana_inicio, fin: primera.ventana_fin },
+      porItem: new Map(
+        filas.map((fila) => [
+          fila.item_id,
+          { delDia: fila.vence_del_dia, delDiaSiguiente: fila.vence_del_dia_siguiente },
+        ]),
+      ),
+    };
+  }
+
   private async fotoDeLaRonda(photoId: string, patrolId: string): Promise<boolean> {
     const filas = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT id FROM scan_photos WHERE id = $1 AND patrol_id = $2`,
@@ -393,21 +606,94 @@ export class ChecklistsService {
     }
   }
 
+  /**
+   * Una tarea con LUGAR u HORA solo tiene sentido dentro de un recinto (#265).
+   *
+   * El punto: la FK compuesta de la migracion garantiza que el punto sea del
+   * mismo tenant, NO que sea de este recinto. Sin esta comprobacion se puede
+   * guardar una tarea colgada de un punto de otra sucursal, que ninguna ronda de
+   * este recinto va a escanear nunca: una tarea que se ve en el editor y no
+   * existe en terreno.
+   *
+   * La hora: `due_local_time` es hora local del recinto y se resuelve con
+   * `sites.timezone`. Una plantilla de toda la empresa no tiene una sola zona,
+   * asi que "11:00" ahi no significa nada.
+   *
+   * Se rechaza ANTES de cualquier INSERT a proposito: una sentencia que falla
+   * aborta la transaccion completa del request, y el 400 de un item se llevaria
+   * por delante el UPDATE de la plantilla.
+   */
+  private async verificarLugarYHora(
+    items: CreateChecklistTemplateDto['items'],
+    siteId: string | null,
+  ) {
+    /*
+     * `Boolean(...)` y NO `!== undefined`: los DTO usan `@IsOptional()`, que
+     * acepta `undefined` Y `null`, y un formulario web manda `null` para "sin
+     * punto" —no omite la clave—. Con `!== undefined`, una tarea sin punto de
+     * una plantilla de toda la empresa entraba en este filtro y se llevaba un
+     * 400 que no correspondia: "necesita una plantilla de recinto", cuando
+     * justamente no habia pedido ningun recinto.
+     */
+    const conLugarUHora = items.filter(
+      (item) => Boolean(item.checkpointId) || Boolean(item.dueLocalTime),
+    );
+    if (!conLugarUHora.length) return;
+    if (siteId === null) {
+      throw new BadRequestException(
+        'Una tarea con punto de control u hora necesita una plantilla de recinto',
+      );
+    }
+
+    const puntos = [
+      ...new Set(
+        conLugarUHora
+          .map((item) => item.checkpointId)
+          // Igual que arriba: `null` es "sin punto", no un punto a validar.
+          // Colarlo aqui mandaria un null dentro del arreglo de uuid a
+          // PostgreSQL, que es un error en la base y no una validacion.
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (!puntos.length) return;
+
+    // `= ANY($1::uuid[])` sobre la columna uuid, con el casteo escrito: es el
+    // arreglo el que se compara contra la columna, no la columna contra un
+    // documento. Un `= ANY(...)` mal tipado compila en TypeScript y revienta en
+    // la base, que es como se perdio un endpoint entero en produccion.
+    const encontrados = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT id FROM checkpoints
+       WHERE id = ANY($1::uuid[]) AND site_id = $2 AND is_active`,
+      [puntos, siteId],
+    );
+    if (encontrados.length !== puntos.length) {
+      throw new BadRequestException(
+        'Un punto de control de la tarea no pertenece al recinto o está inactivo',
+      );
+    }
+  }
+
   private async insertarItems(
     templateId: string,
     items: CreateChecklistTemplateDto['items'],
+    siteId: string | null,
   ) {
+    await this.verificarLugarYHora(items, siteId);
     for (const [indice, item] of items.entries()) {
       await this.tenantContext.manager.query(
         `INSERT INTO checklist_items (
-          tenant_id, template_id, position, label, response_type, requires_photo_on_fail
-        ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5)`,
+          tenant_id, template_id, position, label, response_type, requires_photo_on_fail,
+          checkpoint_id, due_local_time, requires_photo
+        ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7::time, $8)`,
         [
           templateId,
           indice + 1,
           item.label.trim(),
           item.responseType,
           item.requiresPhotoOnFail ?? false,
+          item.checkpointId ?? null,
+          item.dueLocalTime ?? null,
+          item.requiresPhoto ?? false,
         ],
       );
     }

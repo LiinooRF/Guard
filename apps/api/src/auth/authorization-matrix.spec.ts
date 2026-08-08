@@ -11,6 +11,7 @@ import { HorarioHabilController } from '../admin/horario-habil.controller';
 import { AuditController } from '../audit/audit.controller';
 import { BrandingController } from '../branding/branding.controller';
 import { ChecklistsController } from '../checklists/checklists.controller';
+import { TareasTurnoController } from '../checklists/tareas-turno.controller';
 import { EventsStreamController } from '../events-stream/events-stream.controller';
 import { DashboardController } from '../dashboard/dashboard.controller';
 import { GuardController } from '../guard/guard.controller';
@@ -257,6 +258,20 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(ChecklistsController, 'templateForPatrol', ['patrols:execute'], ['GUARDIA'], true),
   secured(ChecklistsController, 'submitResponses', ['patrols:execute'], ['GUARDIA'], true),
 
+  // El editor de tareas del turno (#265) es del SUPERVISOR y va con
+  // `checklists:manage`. Que estas filas digan ['SUPERVISOR'] y las de arriba
+  // ['ADMIN'] es el diseño, no un descuido: los permisos se exigen con Y logico
+  // y ADMIN no tiene `checklists:manage`, asi que un solo juego de rutas dejaria
+  // a uno de los dos fuera. El alcance por recinto no lo ve esta tabla —lo
+  // comprueba TareasTurnoService contra supervisor_sites— y por eso tiene sus
+  // propias pruebas.
+  secured(TareasTurnoController, 'catalogSites', ['checklists:manage'], ['SUPERVISOR'], true),
+  secured(TareasTurnoController, 'listTemplates', ['checklists:manage'], ['SUPERVISOR'], true),
+  secured(TareasTurnoController, 'createTemplate', ['checklists:manage'], ['SUPERVISOR'], true),
+  secured(TareasTurnoController, 'getTemplate', ['checklists:manage'], ['SUPERVISOR'], true),
+  secured(TareasTurnoController, 'updateTemplate', ['checklists:manage'], ['SUPERVISOR'], true),
+  secured(TareasTurnoController, 'setTemplateActive', ['checklists:manage'], ['SUPERVISOR'], true),
+
   publicEndpoint(HealthController, 'health'),
   publicEndpoint(HealthController, 'ready'),
   secured(AlertasRondaController, 'listAlerts', ['patrols:monitor'], ['SUPERVISOR'], true),
@@ -380,6 +395,7 @@ const CONTROLLERS = [
   PurgaRetencionController,
   BrandingController,
   ChecklistsController,
+  TareasTurnoController,
   EventsStreamController,
   SchedulingController,
   QrController,

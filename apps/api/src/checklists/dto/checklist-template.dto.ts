@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -36,6 +37,41 @@ export class ChecklistItemDto {
   @IsOptional()
   @IsBoolean()
   requiresPhotoOnFail?: boolean;
+
+  /**
+   * Donde se hace la tarea (#265). Omitido = tarea general del turno, que se
+   * responde al cierre; con punto, la tarea aparece al escanear ESE punto.
+   *
+   * El servicio comprueba ademas que el punto sea DEL RECINTO de la plantilla:
+   * la FK de la migracion solo garantiza que sea del mismo tenant, asi que sin
+   * esa comprobacion se pueden guardar tareas que ninguna ronda alcanza.
+   */
+  @IsOptional()
+  @IsUUID()
+  checkpointId?: string;
+
+  /**
+   * A que hora toca, `HH:MM` de 24 horas, en la zona DEL RECINTO.
+   *
+   * Se valida con un patron propio y no con `@IsMilitaryTime()` porque ese
+   * decorador acepta tambien `HH:MM:SS`, y la columna es `time`: guardar
+   * segundos aqui haria que el editor releyera "11:00:30" donde el supervisor
+   * escribio "11:00". El formato que entra es exactamente el que sale.
+   */
+  @IsOptional()
+  @Matches(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, {
+    message: 'La hora de la tarea va en formato HH:MM de 24 horas',
+  })
+  dueLocalTime?: string;
+
+  /**
+   * Foto SIEMPRE, este todo bien o mal. Distinta de `requiresPhotoOnFail`:
+   * "fotografiar el refrigerador" es evidencia del estado normal, no de una
+   * falla. Las dos pueden convivir en el mismo item.
+   */
+  @IsOptional()
+  @IsBoolean()
+  requiresPhoto?: boolean;
 }
 
 export class CreateChecklistTemplateDto {
