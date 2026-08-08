@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Brand } from './brand';
+import { SesionViva } from './sesion-viva';
 import { LogoutButton } from './logout-button';
 
 const ROLE_NAVIGATION: Record<string, Array<{ href: string; icon: string; label: string }>> = {
@@ -67,6 +68,10 @@ export function DashboardShell({
 }) {
   return (
     <main className="dashboard-shell">
+      {/* Renueva el token antes de que venza. Va en el shell y no en cada panel
+          porque el problema es de TODOS los roles: quien deja la pantalla
+          abierta sin enviar nada se queda sin sesion a los 15 minutos. */}
+      <SesionViva />
       <aside className="sidebar">
         <Brand compact />
         {streamlined ? (

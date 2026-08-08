@@ -41,9 +41,24 @@ export function contenidoFirmado(input: DatosFirmablesEscaneo): string {
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  // Expo acepta BufferSource, pero TypeScript 6 distingue ArrayBuffer de
-  // SharedArrayBuffer. La copia garantiza un ArrayBuffer propio y exacto.
-  const input = Uint8Array.from(bytes).buffer;
+  /*
+   * Se pasa el Uint8Array, NUNCA su `.buffer`.
+   *
+   * El modulo nativo de expo-crypto no sabe convertir un ArrayBuffer pelado y
+   * revienta con «Cannot convert '[object ArrayBuffer]' to a Kotlin type. no
+   * ArrayBuffer attached». La version anterior pasaba `.buffer` para callar una
+   * queja de TypeScript 6 (ArrayBuffer vs SharedArrayBuffer): el compilador
+   * quedaba contento y el TELEFONO dejaba de firmar.
+   *
+   * Lo que costo: cada escaneo NFC moria justo despues de leer la etiqueta
+   * —el UID ya estaba leido— y el guardia veia "No se pudo iniciar el lector
+   * NFC", que ni siquiera menciona la firma. Ningun test con mocks lo ve,
+   * porque el fallo esta en el cruce entre JavaScript y Kotlin.
+   *
+   * La copia con `Uint8Array.from` se conserva: garantiza un buffer propio y
+   * exacto, que era la parte legitima del cambio original.
+   */
+  const input = Uint8Array.from(bytes);
   return new Uint8Array(await digest(CryptoDigestAlgorithm.SHA256, input));
 }
 

@@ -85,15 +85,8 @@ export interface OpcionesPuente {
   readonly manejadores: ManejadoresNativos;
   /** El shell debe pintar la pantalla bloqueante correspondiente. */
   readonly alIncompatible: (motivo: MotivoIncompatible, mensaje: string) => void;
-  /**
-   * El portal cargo pero nunca saludo. Casi siempre significa que se abrio una
-   * pagina que no es el portal, o un portal anterior al puente. Sin esto, el
-   * guardia se queda mirando una pantalla que no escanea y sin explicacion.
-   */
-  readonly alSinSaludo?: () => void;
   /** Solo `tenant_id`/`request_id` y codigos. Nunca nombres ni ubicaciones. */
   readonly alRegistrar?: (evento: string, detalle?: string) => void;
-  readonly msEsperaSaludo?: number;
 }
 
 export interface PuenteNativo {
@@ -157,16 +150,26 @@ true;
 export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   const { manejadores, inyectar, portalOrigen, alIncompatible } = opciones;
   const registrar = opciones.alRegistrar ?? (() => undefined);
-  let saludado = false;
   let listo = false;
   let bloqueado = false;
 
-  const esperaSaludo: ReturnType<typeof setTimeout> = setTimeout(() => {
-    if (!saludado) {
-      registrar('puente.sin-saludo');
-      opciones.alSinSaludo?.();
-    }
-  }, opciones.msEsperaSaludo ?? 10_000);
+  /*
+   * A proposito NO hay temporizador de saludo. Lo hubo, y bloqueaba la app
+   * entera a los 10 segundos de abrirla, en la pantalla de login.
+   *
+   * El portal saluda desde `useGuardBridge`, que solo se monta DESPUES de
+   * iniciar sesion. En el login no saluda nadie —correctamente: esa pantalla no
+   * escanea nada— y el shell lo leia como "portal incompatible". Ningun guardia
+   * alcanzaba a escribir su clave.
+   *
+   * El error de fondo es de reparto de responsabilidades: el shell no puede
+   * saber si la pagina abierta necesita el puente. El mismo portal corre en el
+   * navegador de escritorio del supervisor, donde no hay puente y eso es
+   * normal. Quien si lo sabe es la pantalla que va a escanear, y esa ya tiene
+   * su propia espera y su propio aviso (`SIN_RESPUESTA` en use-guard-bridge.ts,
+   * "La app del telefono no respondio"). La deteccion vive de ese lado, que es
+   * donde significa algo.
+   */
 
   function enviar(mensaje: MensajeShell): void {
     inyectar(`window.__voxiaPuente && window.__voxiaPuente.recibir(${comoLiteralJs(mensaje)}); true;`);
@@ -198,7 +201,6 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
   }
 
   async function atenderHola(id: string, payload: HolaPayload): Promise<void> {
-    saludado = true;
     listo = false;
     const veredicto = verificarCompatibilidad(payload.requiere);
 
@@ -457,6 +459,9 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         enviar(armarSobre('connectivity.state', estado, { prefijo: 'net' }));
       }
     },
-    detener: () => clearTimeout(esperaSaludo),
+    // Ya no hay temporizadores que cortar (ver arriba). Se conserva porque el
+    // WebView se remonta al reintentar y el desmontaje necesita a quien llamar;
+    // si mañana el puente arma uno, este es su lugar.
+    detener: () => undefined,
   };
 }
