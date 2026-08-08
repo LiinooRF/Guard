@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 import { crearManejadoresBase } from '../bridge/default-handlers';
 import type { ManejadoresNativos } from '../bridge/native';
+import { resolverCamara } from './camara';
 import { crearLectorNfc, type PuertoNfc } from './nfc-reader';
 import { borrarRutaOffline, guardarRutaOffline } from '../offline/route-store';
 import { borrarColaSync, encolarOperacion, sincronizarCola } from '../offline/sync-queue';
@@ -17,14 +18,23 @@ import { registrarClaveDispositivo } from '../security/device-signature';
  * —o sea, "se leer QR"— para despues fallar con `camara-no-disponible` con el
  * guardia parado frente al punto. Obligatorio, ese olvido no compila.
  */
-export function crearManejadoresNfc(puerto: PuertoNfc, lectorQr: LectorQr): ManejadoresNativos {
+/** El porque de esto —y el bug que costo— esta escrito en `camara.ts`. */
+const camaraDelSistema = (): Promise<boolean> =>
+  resolverCamara(() => CameraView.isAvailableAsync(), Platform.OS === 'android');
+
+export function crearManejadoresNfc(
+  puerto: PuertoNfc,
+  lectorQr: LectorQr,
+  /** Se inyecta solo en pruebas; en el telefono manda `camaraDelSistema`. */
+  hayCamara: () => Promise<boolean> = camaraDelSistema,
+): ManejadoresNativos {
   const base = crearManejadoresBase();
   const lector = crearLectorNfc(puerto);
   return {
     ...base,
     capacidades: async () => ({
       ...await lector.capacidades(),
-      tieneCamara: await CameraView.isAvailableAsync(),
+      tieneCamara: await hayCamara(),
       nivelApiAndroid: typeof Platform.Version === 'number' ? Platform.Version : 0,
     }),
     escanearNfc: ({ timeoutMs }) => lector.escanear(timeoutMs),
