@@ -18,9 +18,10 @@ import type { Criticidad, VeredictoSync } from './guard-outbox';
  * Son funciones puras más la persistencia local. Existen separadas del
  * componente por dos razones concretas:
  *
- * 1. `GET /guard/home` no devuelve qué puntos ya se escanearon
- *    (`completedCheckpointCount` viene fijo en 0), así que si el WebView se
- *    cierra a mitad de ronda la única memoria es esta. Ver INTEGRACION.md.
+ * 1. La ronda ocurre sin señal: si el WebView se cierra a mitad de ronda, esta
+ *    es la única memoria HASTA que vuelve la conexión. Al recargar con señal,
+ *    `reconciliarConServidor()` cruza esto con lo que el servidor confirma —
+ *    ninguna de las dos memorias manda sola.
  * 2. Cada punto tiene DOS estados y hay que distinguirlos: lo que pasó en
  *    terreno (pendiente / escaneado / con anomalía) y si eso ya está en el
  *    servidor (`confirmado`). Mezclarlos es lo que hace que el guardia repita
@@ -65,6 +66,13 @@ export interface PuntoRuta {
   /** Coordenadas para el visor de ruta (#76). `null`/ausente = punto sin ubicar. */
   latitude?: number | null;
   longitude?: number | null;
+  /**
+   * Primer escaneo aceptado por el SERVIDOR para este punto en esta ronda;
+   * `null`/ausente = el servidor no tiene ninguno. Llega en `GET /guard/home`
+   * y es la mitad que le faltaba a la reconciliación: sin ella, el teléfono
+   * era la única memoria de la ronda.
+   */
+  scannedAt?: string | null;
 }
 
 /**
@@ -189,6 +197,71 @@ export function cargarEstadoRonda(patrolId: string): EstadoRonda {
 
 export function guardarEstadoRonda(estado: EstadoRonda): void {
   escribirJson(`${CLAVE_RONDA}:${estado.patrolId}`, estado);
+}
+
+/**
+ * Cruza lo que recuerda el TELÉFONO con lo que confirma el SERVIDOR.
+ *
+ * Antes de esto, "lo que quedó en el teléfono manda" era la regla completa —
+ * obligada, porque `GET /guard/home` traía `completedCheckpointCount: 0`
+ * escrito a mano y no decía qué puntos estaban escaneados. Las consecuencias se
+ * vieron en un teléfono real: un avance fantasma que sobrevivía a reinstalar la
+ * app ("PUNTO 2 DE 2" saliendo de un login fresco), y el caso inverso, peor: un
+ * escaneo perdido quedaba como hecho PARA SIEMPRE y el guardia no podía volver
+ * a marcarlo.
+ *
+ * La regla ahora, por punto:
+ *
+ *   servidor lo tiene       →  confirmado, gane lo que gane el teléfono. Se
+ *                              conserva el registro local si existe (sabe el
+ *                              método y la deuda de foto); si no, se levanta
+ *                              uno mínimo SIN inventar método — la ficha de
+ *                              `metodo` explica por qué no se inventa.
+ *
+ *   teléfono lo reclama     →  se mantiene SOLO si está en cola (confirmado:
+ *   y servidor no           →  false): sin señal el teléfono es la única
+ *                              memoria, y borrarle la cola es perder la ronda.
+ *                              Pero un registro que DICE confirmado y no está
+ *                              en el servidor es un fantasma: vuelve a
+ *                              pendiente, que es la verdad.
+ *
+ * El cierre local sigue la misma lógica: si el servidor sirve esta ronda como
+ * abierta, un cierre local "confirmado" es de una sesión anterior y se
+ * descarta; uno en cola se respeta.
+ */
+export function reconciliarConServidor(
+  estado: EstadoRonda,
+  puntosDelServidor: readonly PuntoRuta[],
+): EstadoRonda {
+  const puntos: Record<string, RegistroPunto> = {};
+
+  for (const punto of puntosDelServidor) {
+    const local = estado.puntos[punto.id];
+    if (punto.scannedAt) {
+      puntos[punto.id] = local
+        ? { ...local, confirmado: true }
+        : {
+            estado: 'escaneado',
+            confirmado: true,
+            anomalias: [],
+            scannedAt: punto.scannedAt,
+            // Sintético y reconocible: nunca colisiona con un clientScanId real
+            // (los reales son UUID), así que ninguna foto en cola se le cuelga.
+            clientScanId: `desde-servidor:${punto.id}`,
+          };
+    } else if (local && !local.confirmado) {
+      puntos[punto.id] = local;
+    }
+    // local?.confirmado sin respaldo del servidor: fantasma. No se copia.
+  }
+
+  const resultado: EstadoRonda = { ...estado, puntos };
+  if (resultado.cierre?.confirmado) {
+    // El servidor sirve esta ronda como ABIERTA: un cierre local "confirmado"
+    // es de una sesión anterior. Uno en cola (confirmado: false) se respeta.
+    delete resultado.cierre;
+  }
+  return resultado;
 }
 
 /**

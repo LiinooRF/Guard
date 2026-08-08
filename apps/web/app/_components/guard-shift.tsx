@@ -31,6 +31,7 @@ import {
   marcarFotoSubida,
   puntoExigeFoto,
   puntosFaltantes,
+  reconciliarConServidor,
   registrarCierre,
   registrarEscaneo,
   registrarNovedad,
@@ -235,12 +236,20 @@ function Ronda({
     });
   }, []);
 
-  // Lo que quedó en el teléfono manda: `GET /guard/home` no devuelve los puntos
-  // ya escaneados, así que sin esto una recarga a mitad de ronda los borra.
+  // Lo local se CRUZA con el servidor, ya no manda a secas. La regla vieja
+  // ("lo que quedó en el teléfono manda") era obligada cuando `guard/home`
+  // traía el avance en cero; sus dos consecuencias se vieron en un teléfono
+  // real: un avance fantasma que sobrevivía a reinstalar la app, y un escaneo
+  // perdido que dejaba el punto como hecho PARA SIEMPRE. Ahora: lo confirmado
+  // por el servidor gana; lo pendiente en cola gana el teléfono.
   // Se lee después de montar para no romper la hidratación.
   useEffect(() => {
-    setEstado(cargarEstadoRonda(patrol.id));
-  }, [patrol.id]);
+    const reconciliado = reconciliarConServidor(cargarEstadoRonda(patrol.id), puntos);
+    // Se persiste de inmediato: si el estado viejo tenía un fantasma, dejarlo
+    // en el disco es dejarlo listo para reaparecer en la próxima recarga.
+    guardarEstadoRonda(reconciliado);
+    setEstado(reconciliado);
+  }, [patrol.id, puntos]);
 
   useEffect(() => iniciarAutoSync(apiUrl), [apiUrl]);
 

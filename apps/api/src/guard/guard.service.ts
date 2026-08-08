@@ -28,6 +28,8 @@ interface PatrolRow {
   scheduled_end_at: Date;
   started_at: Date | null;
   site_id: string;
+  /** Puntos esperados con al menos un escaneo aceptado. Lo calcula el SQL. */
+  completed_checkpoint_count: number;
   site_name: string;
   site_timezone: string;
   route_name: string;
@@ -49,6 +51,8 @@ interface PatrolRow {
     latitude: number | null;
     longitude: number | null;
     tagUids: string[];
+    /** Primer escaneo aceptado del punto en esta ronda; null = pendiente. */
+    scannedAt: string | null;
   }>;
 }
 
@@ -100,6 +104,18 @@ export class GuardService {
           p.scheduled_end_at,
           p.started_at,
           p.site_id,
+          -- Cuantos puntos ESPERADOS tienen al menos un escaneo aceptado. Es el
+          -- dato que estuvo anos como un cero escrito a mano (con un test que
+          -- fijaba el cero): sin el, el portal no podia saber el avance real y
+          -- decidio que "lo que quedo en el telefono manda" — con lo cual un
+          -- escaneo perdido dejaba el punto marcado como hecho para siempre.
+          (
+            SELECT COUNT(DISTINCT sc.checkpoint_id)::int
+            FROM scans sc
+            WHERE sc.tenant_id = p.tenant_id
+              AND sc.patrol_id = p.id
+              AND sc.checkpoint_id = ANY(p.expected_checkpoint_ids)
+          ) AS completed_checkpoint_count,
           s.name AS site_name,
           s.timezone AS site_timezone,
           r.name AS route_name,
@@ -125,7 +141,18 @@ export class GuardService {
                   WHERE t.tenant_id = p.tenant_id
                     AND t.checkpoint_id = c.id
                     AND t.is_active
-                ), '[]'::jsonb)
+                ), '[]'::jsonb),
+                -- Hora del primer escaneo aceptado de ESTE punto en ESTA ronda,
+                -- o null si sigue pendiente. Es lo que le permite al portal
+                -- reconstruir la ronda tras una recarga sin fiarse solo del
+                -- almacenamiento local del telefono.
+                'scannedAt', (
+                  SELECT min(sc.scanned_at_device)
+                  FROM scans sc
+                  WHERE sc.tenant_id = p.tenant_id
+                    AND sc.patrol_id = p.id
+                    AND sc.checkpoint_id = c.id
+                )
               )
               ORDER BY rc.position
             ) FILTER (WHERE c.id IS NOT NULL),
@@ -213,7 +240,7 @@ export class GuardService {
         routeName: patrol.route_name,
         estimatedDurationMin: patrol.estimated_duration_min,
         startedAt: patrol.started_at,
-        completedCheckpointCount: 0,
+        completedCheckpointCount: patrol.completed_checkpoint_count,
         checkpoints: patrol.checkpoints,
       },
       /*
