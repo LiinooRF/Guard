@@ -662,14 +662,35 @@ export class GuardService {
       checkpoint_id: string;
       client_scan_id: string;
       anomalies: ScanAnomaly[];
+      scanned_at_server: Date;
     }>>(
-      `SELECT id, checkpoint_id, client_scan_id, anomalies FROM scans WHERE patrol_id = $1`,
+      `SELECT id, checkpoint_id, client_scan_id, anomalies, scanned_at_server
+       FROM scans WHERE patrol_id = $1`,
       [patrolId],
     );
     const scanId =
       inserted[0]?.id ??
       allScans.find((s) => s.client_scan_id === input.clientScanId)?.id ??
       null;
+
+    /*
+     * (B9) ¿Este punto YA estaba marcado en esta ronda por OTRO escaneo?
+     *
+     * No es el replay: el replay es el MISMO escaneo reenviado (mismo
+     * clientScanId) y no crea fila. Esto es el guardia pasando la etiqueta de
+     * un punto que ya marco hace un rato — la fila nueva se conserva (marca,
+     * no rechaza), pero antes el telefono no recibia ninguna señal y el
+     * guardia no sabia si el primero habia contado. Se avisa con la hora del
+     * primero, que es la que vale para el informe.
+     */
+    const previos = allScans.filter(
+      (s) => s.checkpoint_id === target.checkpoint_id && s.client_scan_id !== input.clientScanId,
+    );
+    const primerEscaneo = previos.reduce<Date | null>(
+      (min, s) => (min === null || s.scanned_at_server < min ? s.scanned_at_server : min),
+      null,
+    );
+    const alreadyScanned = !replay && previos.length > 0;
     const compliance = computeCompliance(
       patrol.expected_checkpoint_ids,
       allScans.map((s) => ({ checkpointId: s.checkpoint_id, anomalies: s.anomalies })),
@@ -725,6 +746,9 @@ export class GuardService {
 
     return {
       replay,
+      /** El punto ya tenia OTRO escaneo en esta ronda; este quedo igual (marca, no rechaza). */
+      alreadyScanned,
+      firstScannedAt: alreadyScanned ? primerEscaneo : null,
       alertSent: closed && compliance.belowThreshold,
       // El id del escaneo recien creado (o el del original, si esto fue un
       // reenvio). Es donde el telefono cuelga la foto del punto.

@@ -193,6 +193,37 @@ export class SyncService {
 
     // Agregacion sin GROUP BY: siempre devuelve exactamente una fila.
     const fila = filas[0]!;
+
+    /*
+     * Lo que el guardia de verdad tiene en el servidor, venga por donde venga.
+     *
+     * El contador de arriba mide OPERACIONES DE LA COLA offline — y un escaneo
+     * directo, con señal, no pasa por la cola. El panel del telefono convertia
+     * ese numero en la frase "El servidor todavia no tiene registros tuyos", y
+     * la frase era mentira: se mostro con dos escaneos aceptados en la base,
+     * confundio al guardia en terreno y desvio un diagnostico entero. Un
+     * contador que dice "registros" tiene que contar registros.
+     */
+    const registros = await this.tenantContext.manager.query<Array<{
+      escaneos: number;
+      eventos: number;
+      ultimo: Date | null;
+    }>>(
+      `SELECT
+         (SELECT count(*)::int FROM scans
+           WHERE guard_id = $1
+             AND scanned_at_server >= now() - interval '24 hours') AS escaneos,
+         (SELECT count(*)::int FROM field_events
+           WHERE guard_id = $1
+             AND reported_at_server >= now() - interval '24 hours') AS eventos,
+         GREATEST(
+           (SELECT max(scanned_at_server) FROM scans WHERE guard_id = $1),
+           (SELECT max(reported_at_server) FROM field_events WHERE guard_id = $1)
+         ) AS ultimo`,
+      [guardId],
+    );
+    const reales = registros[0]!;
+
     return {
       guardId,
       windowHours: 24,
@@ -201,6 +232,13 @@ export class SyncService {
         duplicated: fila.duplicadas,
         rejected: fila.rechazadas,
         retransmissions: fila.reenvios,
+      },
+      /** Escaneos y novedades REALES del guardia, por cola o directos. */
+      records: {
+        scans: reales.escaneos,
+        events: reales.eventos,
+        total: reales.escaneos + reales.eventos,
+        lastReceivedAt: reales.ultimo,
       },
       lastSyncedAt: fila.ultima_sync,
       offlineGapSeconds: { max: fila.gap_max_s, avg: fila.gap_prom_s },
