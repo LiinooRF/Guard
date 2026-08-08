@@ -9,6 +9,11 @@ import type {
   RutaOfflinePayload,
 } from '../_lib/bridge/protocol';
 import { crearClientePuente } from '../_lib/bridge/web-client';
+import {
+  EVENTO_CONSENTIMIENTO_ACEPTADO,
+  reportarPermisoUbicacion,
+  traducirEstadoPermiso,
+} from './guard-permiso-ubicacion';
 
 export { ErrorEscaneoPortal } from '../_lib/bridge/web-client';
 export type {
@@ -34,6 +39,26 @@ const SIN_PUENTE =
 const NFC_APAGADO = 'El NFC está apagado. Actívalo en los ajustes del teléfono para escanear.';
 const SIN_RESPUESTA =
   'La app del teléfono no respondió. Ciérrala y vuelve a abrirla antes de seguir la ronda.';
+
+/**
+ * POST /geo/permission con la sesión del guardia (#275). Lanza si no es 2xx
+ * para que `reportarPermisoUbicacion` lo cuente como reporte rechazado.
+ */
+async function reportarPermisoAlServidor(
+  apiUrl: string,
+  status: 'concedido' | 'solo_primer_plano' | 'denegado' | 'no_disponible',
+  deviceInfo: string,
+): Promise<void> {
+  const respuesta = await fetch(`${apiUrl}/geo/permission`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status, deviceInfo }),
+  });
+  if (!respuesta.ok) {
+    throw new Error(`HTTP ${respuesta.status}`);
+  }
+}
 
 /**
  * MINOR del protocolo que trajo `qr.scan.start` (#226). Pedirlo a un shell
@@ -77,6 +102,11 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   const [puedeEscanearQr, setPuedeEscanearQr] = useState(false);
   const [sinAntenaNfc, setSinAntenaNfc] = useState(false);
   const [soportaRutaOffline, setSoportaRutaOffline] = useState(false);
+  // Marca del EQUIPO (api de Android + version de la app), sin datos de la
+  // persona. Doble uso: viaja como deviceInfo en el reporte del permiso de
+  // ubicacion (#275) y su presencia le dice al efecto de abajo que el saludo
+  // ya paso.
+  const [infoEquipo, setInfoEquipo] = useState<string>();
   // Valor fijo en el primer render: leer `navigator` acá rompería la hidratación.
   const [conexion, setConexion] = useState<EstadoConexionPayload>({
     enLinea: true,
@@ -135,6 +165,29 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
           return;
         }
       }
+
+      /*
+       * El cable de #275: el servidor exige saber como quedo el permiso de
+       * ubicacion del sistema ANTES de dejar iniciar la ronda, y no tiene forma
+       * de averiguarlo solo. Aca solo se CONSULTA (permission.query, sin
+       * dialogos) y se reporta lo que haya — concedido, denegado o no
+       * disponible, todo es dato. El permission.request, que si puede abrir el
+       * dialogo del sistema, vive en el efecto del consentimiento: el dialogo
+       * de Android solo puede aparecer despues de la divulgacion destacada.
+       *
+       * Sin await y con fallo blando: un reporte caido no puede detener la
+       * conexion del puente ni la ronda. La proxima carga lo reintenta.
+       */
+      const marcaEquipo =
+        `android api ${dispositivo.nivelApiAndroid} · app ${estado.info.app.version}`;
+      setInfoEquipo(marcaEquipo);
+      if (apiUrl) {
+        void reportarPermisoUbicacion({
+          consultar: (permiso) => cliente.consultarPermiso(permiso),
+          reportar: (estadoApi, deviceInfo) => reportarPermisoAlServidor(apiUrl, estadoApi, deviceInfo),
+          deviceInfo: marcaEquipo,
+        });
+      }
       // Con la antena apagada se deja intentar igual: el shell responde
       // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto. Sin
       // antena no hay aviso acá: el texto depende de si la empresa permite el
@@ -154,6 +207,41 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
       cliente.desconectar();
     };
   }, [apiUrl, cliente]);
+
+  /*
+   * La otra mitad de #275: cuando el guardia ACABA de aceptar el aviso de
+   * geolocalización, ese es el único momento en que corresponde el
+   * `permission.request` — la divulgación destacada que Google Play exige
+   * antes del diálogo del sistema acaba de mostrarse y aceptarse. El flujo de
+   * consentimiento lo anuncia con un evento del DOM para no acoplar tres capas
+   * de componentes a un asunto de permisos.
+   *
+   * El resultado se reporta SIEMPRE, también "denegado": que un guardia no
+   * comparta ubicación es un dato que el supervisor necesita, no un fallo.
+   */
+  useEffect(() => {
+    if (fase !== 'listo' || !apiUrl || !infoEquipo || typeof window === 'undefined') {
+      return undefined;
+    }
+    const alAceptarElAviso = () => {
+      void (async () => {
+        try {
+          const resultado = await cliente.pedirPermiso('ubicacion', true);
+          await reportarPermisoAlServidor(
+            apiUrl,
+            traducirEstadoPermiso(resultado.estado),
+            infoEquipo,
+          );
+        } catch {
+          // Sin puente o reporte caído: la próxima carga de la pantalla lo
+          // reintenta por la vía de la consulta. No hay nada útil que mostrar
+          // encima de la confirmación del consentimiento.
+        }
+      })();
+    };
+    window.addEventListener(EVENTO_CONSENTIMIENTO_ACEPTADO, alAceptarElAviso);
+    return () => window.removeEventListener(EVENTO_CONSENTIMIENTO_ACEPTADO, alAceptarElAviso);
+  }, [fase, apiUrl, infoEquipo, cliente]);
 
   // Sin shell nativo la conectividad la reporta el navegador. Con shell manda el
   // shell, que además avisa los cambios sin que se los pidan.

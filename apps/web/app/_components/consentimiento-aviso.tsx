@@ -21,6 +21,8 @@
  */
 import { useState } from 'react';
 
+import { EVENTO_CONSENTIMIENTO_ACEPTADO } from './guard-permiso-ubicacion';
+
 export interface AvisoConsentimiento {
   hasPolicy: boolean;
   policy: {
@@ -80,6 +82,16 @@ export function ConsentimientoAviso({
         return;
       }
       setMensaje({ tono: 'ok', texto: 'Listo. Quedó registrada tu aceptación con fecha y hora.' });
+      /*
+       * Aviso al puente (#275): con la divulgación destacada recién aceptada,
+       * ESTE es el momento en que la app puede pedir el permiso de ubicación
+       * del sistema y reportar cómo quedó. Lo escucha `use-guard-bridge`; en el
+       * navegador de escritorio no lo escucha nadie y no pasa nada, que es
+       * exactamente lo que corresponde sin teléfono.
+       */
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(EVENTO_CONSENTIMIENTO_ACEPTADO));
+      }
       onCambio?.();
     } catch {
       setMensaje({
