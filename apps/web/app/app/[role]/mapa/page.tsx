@@ -38,7 +38,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { DashboardShell } from '../../../_components/dashboard-shell';
+import { DashboardShell, type MarcaDelShell } from '../../../_components/dashboard-shell';
+import { marcaDelTenant } from '../../../_lib/marca-del-tenant';
 import { ProveedorOrigenTiles } from '../../../_components/mapa-origen-tiles';
 import { MapaRecintos } from '../../../_components/mapa-recintos';
 import {
@@ -119,9 +120,20 @@ export default async function PantallaDeMapa({
   // blanco.
   const mapaHabilitado = modulos?.enabled?.map === true;
 
+  // La marca de la empresa (#117): misma resolucion en servidor que en el
+  // panel principal, para que esta pantalla no pinte la marca del producto
+  // mientras el resto pinta la del cliente.
+  const tema = await marcaDelTenant();
+  const marca: MarcaDelShell = {
+    commercialName: tema.branding.commercialName,
+    logoUri: tema.branding.logoUri,
+    cssVariables: tema.cssVariables,
+  };
+
   return (
     <DashboardShell
       role={configuracion.role}
+      marca={marca}
       title="Mapa de recintos"
       subtitle={
         esAdmin

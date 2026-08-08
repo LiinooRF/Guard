@@ -825,3 +825,23 @@ a.stats-boton { display: inline-flex; align-items: center; }
   .tareas-turno-toolbar { grid-template-columns: repeat(4,minmax(0,1fr)); }
   .tareas-turno-fila { grid-template-columns: auto minmax(12rem,2fr) minmax(7rem,1fr) minmax(9rem,1fr) minmax(6rem,auto) auto; }
 }
+
+/* ------------------------------------------------------------------ */
+/* La marca de la empresa (#117)                                       */
+/* ------------------------------------------------------------------ */
+/* El logo del tenant en la esquina: misma caja que .brand-mark para que
+   cambiar de marca no mueva la interfaz un pixel. object-fit contiene
+   logos de cualquier proporcion sin deformarlos. */
+.brand-logo { width: 2.75rem; height: 2.75rem; border-radius: .9rem; object-fit: contain; background: #fff; padding: .2rem; box-sizing: border-box; }
+.marca-configuracion { display: grid; gap: 1rem; }
+.marca-color { display: inline-flex; align-items: center; gap: .5rem; }
+.marca-color input[type=color] { inline-size: 3rem; block-size: 2rem; padding: 0; border: 1px solid #d5dbeb; border-radius: .4rem; background: none; }
+.marca-contraste-malo { color: #c8394a; font-weight: 600; }
+/* La vista previa usa las MISMAS variables --marca-* que el shell real:
+   lo que se ve aqui es lo que veran todos al guardar. */
+.marca-vista-previa { border: 1px dashed #c9d2e8; border-radius: .8rem; padding: 1rem; display: grid; gap: .6rem; }
+.marca-vista-previa-titulo { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #7986a8; }
+.marca-vista-previa-shell { display: flex; align-items: center; gap: .8rem; }
+.marca-vista-previa-shell .primary-button { background: var(--marca-primario, #1f3b73); color: var(--marca-primario-texto, #fff); }
+.mensaje-ok { color: #1a7f4e; }
+.mensaje-error { color: #c8394a; }
