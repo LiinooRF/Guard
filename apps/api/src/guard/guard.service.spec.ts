@@ -57,9 +57,12 @@ describe('GuardService', () => {
         {
           id: 'patrol-id',
           status: 'pendiente',
-          scheduled_start_at: new Date('2026-07-30T22:00:00-04:00'),
-          scheduled_end_at: new Date('2026-07-31T06:00:00-04:00'),
+          // Ventana VIGENTE, relativa a ahora. Con fechas fijas del pasado esta
+          // ronda venceria (patrol-expiry.ts) y el test probaria otra cosa.
+          scheduled_start_at: new Date(Date.now() - 60 * 60_000),
+          scheduled_end_at: new Date(Date.now() + 7 * 3_600_000),
           started_at: null,
+          site_id: 'site-id',
           site_name: 'Recinto demostración',
           route_name: 'Ronda nocturna demo',
           estimated_duration_min: 30,
@@ -85,6 +88,36 @@ describe('GuardService', () => {
     expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('p.guard_id = $1'), [
       'guard-id',
     ]);
+  });
+
+  it('vence al mirarla la ronda que quedo abierta de un turno pasado', async () => {
+    // El caso real de staging: iniciada hace 48 horas, "tu turno" dos dias
+    // despues. Al cargar home, la ronda se vence y el guardia ya no la ve.
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{
+        id: 'patrol-id',
+        status: 'en_curso',
+        scheduled_start_at: new Date(Date.now() - 49 * 3_600_000),
+        scheduled_end_at: new Date(Date.now() - 41 * 3_600_000),
+        started_at: new Date(Date.now() - 48 * 3_600_000),
+        site_id: 'site-id',
+        site_name: 'Recinto demostración',
+        route_name: 'Ronda nocturna demo',
+        estimated_duration_min: 30,
+        checkpoints: [],
+      }])
+      .mockResolvedValueOnce([]); // UPDATE a vencida
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await expect(service.getHome('guard-id')).resolves.toMatchObject({
+      hasAssignment: false,
+      message: expect.stringContaining('venció'),
+    });
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining("SET status = 'vencida'"),
+      ['patrol-id'],
+    );
   });
 
   // Un mock devuelve lo que le pidas y no sabe SQL: el GROUP BY se puede romper
@@ -236,6 +269,11 @@ describe('GuardService.registerScan', () => {
     status: 'en_curso',
     route_id: 'route-id',
     expected_checkpoint_ids: ['cp-1', 'cp-2'],
+    site_id: 'site-id',
+    // Recien iniciada: lejos de vencer. Los tests de vencimiento la envejecen.
+    started_at: new Date(Date.now() - 30 * 60_000),
+    scheduled_end_at: new Date(Date.now() + 6 * 3_600_000),
+    closed_at: null,
   };
   const dto = (extra = {}) => ({
     uid: 'ABCD1234',
@@ -268,9 +306,66 @@ describe('GuardService.registerScan', () => {
       patrol: { status: 'completada', compliancePct: 100 },
       progress: { scanned: 2, expected: 2, pct: 100 },
     });
+    // El estado sale de un CASE sobre el porcentaje: 'completada' solo al 100%.
+    // Antes era un literal incondicional y una ronda al 40% quedaba "completada".
     expect(manager.query).toHaveBeenCalledWith(
-      expect.stringContaining("status = 'completada'"),
+      expect.stringContaining("CASE WHEN $2 >= 100 THEN 'completada' ELSE 'incompleta' END"),
       ['patrol-id', 100],
+    );
+  });
+
+  it('cerrar con puntos faltantes deja la ronda incompleta, no completada', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-2', checkpoint_name: 'Porteria',
+        kind: 'normal', latitude: null, longitude: null,
+        is_closing_point: true,
+      }])
+      .mockResolvedValueOnce([{ id: 'scan-id' }])
+      // Solo el punto de cierre esta escaneado: cp-1 falta, 50%.
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-2', anomalies: [] }])
+      .mockResolvedValueOnce([]); // cierre
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto())).resolves.toMatchObject({
+      patrol: { status: 'incompleta', compliancePct: 50 },
+      progress: { scanned: 1, expected: 2, pct: 50 },
+    });
+  });
+
+  it('una ronda mas vieja que maxPatrolDurationMin vence al escanearla y el escaneo se preserva', async () => {
+    /*
+     * El caso real de staging que motivo esto: una ronda de 22:00-06:00 siguio
+     * `en_curso` 48 horas y acepto escaneos a mediodia del dia subsiguiente,
+     * cerrando "completada" al 100%. Nadie escribia 'vencida', nunca.
+     *
+     * Y el detalle que importa tanto como el vencimiento: el escaneo NO se
+     * pierde. Antes el camino directo respondia un 409 pelado y lo tiraba; el
+     * mismo escaneo por la cola offline quedaba en late_scans. El guardia CON
+     * señal era el que perdia su registro.
+     */
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{
+        ...PATROL,
+        started_at: new Date(Date.now() - 9 * 3_600_000), // 9 h > 480 min
+      }])
+      .mockResolvedValueOnce([]) // UPDATE a vencida
+      .mockResolvedValueOnce([]); // INSERT en late_scans
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await expect(service.registerScan('patrol-id', 'guard-id', dto()))
+      .rejects.toThrow(/marca atrasada/);
+
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining("SET status = 'vencida'"),
+      ['patrol-id'],
+    );
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO late_scans'),
+      expect.arrayContaining(['patrol-id', 'guard-id']),
     );
   });
 
@@ -331,7 +426,9 @@ describe('GuardService.registerScan', () => {
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
     ).resolves.toMatchObject({
       alertSent: true,
-      patrol: { status: 'completada', compliancePct: 50 },
+      // Al 50% la palabra dice la verdad: incompleta. Antes decia "completada"
+      // incondicional, con la mitad de los puntos sin marcar.
+      patrol: { status: 'incompleta', compliancePct: 50 },
     });
 
     // El requisito de #64 sigue en pie —la alerta va DIRECTO al admin— pero la
@@ -366,7 +463,7 @@ describe('GuardService.registerScan', () => {
 
     await expect(
       service.registerScan('patrol-id', 'guard-id', dto({ latitude: undefined, longitude: undefined })),
-    ).resolves.toMatchObject({ patrol: { status: 'completada' } });
+    ).resolves.toMatchObject({ patrol: { status: 'incompleta' } });
   });
 
   it('el boton de panico registra sin texto y delega el escalamiento (#123, #126)', async () => {
@@ -621,6 +718,10 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     status: 'en_curso',
     route_id: 'route-id',
     expected_checkpoint_ids: ['cp-1'],
+    site_id: 'site-id',
+    started_at: new Date(Date.now() - 30 * 60_000),
+    scheduled_end_at: new Date(Date.now() + 6 * 3_600_000),
+    closed_at: null,
   };
   const CLIENT_SCAN_ID = '3a0c8f7e-1111-4222-8333-444455556666';
   const entrada = () => ({

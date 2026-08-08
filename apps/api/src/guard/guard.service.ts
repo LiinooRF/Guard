@@ -13,7 +13,13 @@ import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 import type { ShiftMarkDto } from './dto/shift-mark.dto';
 import { DeviceSignatureService } from './device-signature.service';
+import { rondaVencida } from './patrol-expiry';
 import { filasDe } from '../consent/sql-result';
+import {
+  esRondaCerrada,
+  evaluarEscaneoAtrasado,
+  type EstadoDeRondaCerrada,
+} from '../sync/late-scan.policy';
 
 interface PatrolRow {
   id: string;
@@ -160,6 +166,33 @@ export class GuardService {
     }
 
     const reglas = await this.rules.effective({ siteId: patrol.site_id });
+
+    /*
+     * Vencimiento perezoso (ver patrol-expiry.ts). Se decide AQUI, al mirarla,
+     * porque este es el momento en que el estado le importa a alguien: sin
+     * esto, una ronda de un turno que termino ayer sigue apareciendo como "tu
+     * turno" y acepta escaneos dias despues — pasa exactamente eso en staging,
+     * 48 horas en curso y cierre al 100% sin una anomalia.
+     */
+    if (rondaVencida(
+      { status: patrol.status, startedAt: patrol.started_at, scheduledEndAt: patrol.scheduled_end_at },
+      reglas,
+      new Date(),
+    )) {
+      await this.tenantContext.manager.query(
+        `UPDATE patrols SET status = 'vencida'
+         WHERE id = $1 AND status IN ('pendiente', 'en_curso')`,
+        [patrol.id],
+      );
+      return {
+        hasAssignment: false as const,
+        message:
+          'Tu última ronda venció por tiempo y quedó cerrada. No tienes un turno activo en este momento.',
+        connection: { status: 'online' as const },
+        synchronization: { pendingItems: 0 },
+      };
+    }
+
     const politicaFoto = await this.politicaDeFoto(patrol.site_id, reglas);
 
     return {
@@ -322,6 +355,75 @@ export class GuardService {
   }
 
   /**
+   * Guarda un escaneo que llego DIRECTO sobre una ronda ya cerrada y corta con
+   * el mensaje que redacta late-scan.policy.ts. Es el espejo del camino de la
+   * cola (sync.service.ts): mismo criterio, misma tabla, misma clave de
+   * idempotencia — reenviar no duplica.
+   *
+   * La correccion por desfase de reloj vive solo en el camino de la cola, donde
+   * el escaneo puede llegar horas despues y el desfase importa. Aca llega en
+   * vivo: se toma la hora del dispositivo si viene y es sensata, y si no, la
+   * del servidor. Un atraso de horas domina cualquier desfase de minutos.
+   */
+  private async preservarEscaneoAtrasado(
+    patrol: { id: string; scheduled_end_at: Date; closed_at: Date | null },
+    estado: EstadoDeRondaCerrada,
+    guardId: string,
+    input: CreateScanDto,
+    graciaMin: number,
+  ): Promise<never> {
+    const delDispositivo = input.scannedAt ? new Date(input.scannedAt) : null;
+    const esSensata =
+      delDispositivo !== null &&
+      !Number.isNaN(delDispositivo.getTime()) &&
+      delDispositivo.getTime() <= Date.now();
+    const instante = esSensata && delDispositivo !== null ? delDispositivo : new Date();
+
+    const veredicto = evaluarEscaneoAtrasado(
+      { status: estado, closedAt: patrol.closed_at, scheduledEndAt: patrol.scheduled_end_at },
+      instante,
+      graciaMin,
+    );
+
+    // Mismas columnas y misma clave que sync-conflicts.service.ts: los dos
+    // caminos terminan en la misma bandeja del supervisor (#222).
+    await this.tenantContext.manager.query(
+      `INSERT INTO late_scans (
+         tenant_id, patrol_id, guard_id, client_scan_id, tag_uid, method,
+         patrol_status, classification, minutes_late, grace_min,
+         scanned_at_device, scanned_at_effective, effective_source, clock_offset_ms,
+         latitude, longitude, accuracy_m
+       ) VALUES (
+         app_tenant_id(), $1, $2, $3, $4, $5,
+         $6, $7, $8, $9,
+         $10, $11, $12, $13,
+         $14, $15, $16
+       )
+       ON CONFLICT (tenant_id, patrol_id, client_scan_id) DO NOTHING`,
+      [
+        patrol.id,
+        guardId,
+        input.clientScanId,
+        input.uid.trim(),
+        input.method,
+        estado,
+        veredicto.clasificacion,
+        veredicto.minutosDeAtraso,
+        graciaMin,
+        input.scannedAt ?? null,
+        instante,
+        esSensata ? 'dispositivo' : 'servidor',
+        null,
+        input.latitude ?? null,
+        input.longitude ?? null,
+        input.accuracyM ?? null,
+      ],
+    );
+
+    throw new ConflictException(veredicto.mensaje);
+  }
+
+  /**
    * El nucleo del producto: el guardia acerca el telefono a la etiqueta y esto
    * queda registrado. Al escanear el punto de cierre, la ronda se cierra sola
    * con su porcentaje de cumplimiento.
@@ -338,15 +440,58 @@ export class GuardService {
       status: string;
       route_id: string;
       expected_checkpoint_ids: string[];
+      site_id: string;
+      started_at: Date | null;
+      scheduled_end_at: Date;
+      closed_at: Date | null;
     }>>(
-      `SELECT id, status, route_id, expected_checkpoint_ids
+      `SELECT id, status, route_id, expected_checkpoint_ids,
+              site_id, started_at, scheduled_end_at, closed_at
        FROM patrols WHERE id = $1 AND guard_id = $2`,
       [patrolId, guardId],
     );
     const patrol = patrols[0];
     if (!patrol) throw new NotFoundException('La ronda asignada no existe');
-    if (!['pendiente', 'en_curso'].includes(patrol.status)) {
-      throw new ConflictException('La ronda ya está cerrada');
+
+    // Reglas del RECINTO de la ronda. Antes esto se resolvia mas abajo y SIN
+    // contexto de sitio, o sea con la cascada cortada en el tenant: un recinto
+    // con su propio radio de GPS o su propia tolerancia de reloj no las veia.
+    const reglasDelRecinto = await this.rules.effective({ siteId: patrol.site_id });
+
+    // Vencimiento perezoso (ver patrol-expiry.ts): la ronda que quedo abierta
+    // de un turno pasado se vence en el momento en que alguien la toca.
+    let estado = patrol.status;
+    if (
+      (estado === 'pendiente' || estado === 'en_curso') &&
+      rondaVencida(
+        { status: estado, startedAt: patrol.started_at, scheduledEndAt: patrol.scheduled_end_at },
+        reglasDelRecinto,
+        new Date(),
+      )
+    ) {
+      await this.tenantContext.manager.query(
+        `UPDATE patrols SET status = 'vencida'
+         WHERE id = $1 AND status IN ('pendiente', 'en_curso')`,
+        [patrolId],
+      );
+      estado = 'vencida';
+    }
+
+    if (esRondaCerrada(estado)) {
+      /*
+       * Antes aca habia un 409 pelado ("La ronda ya está cerrada") y el escaneo
+       * SE PERDIA. Eso dejaba una asimetria absurda: el mismo escaneo tardio,
+       * llegando por la cola offline, quedaba preservado en late_scans con su
+       * clasificacion — pero llegando en vivo, con señal, se tiraba a la
+       * basura. El guardia CON señal era el que perdia su registro.
+       *
+       * Ahora los dos caminos terminan igual: el escaneo queda guardado como
+       * marca atrasada, el supervisor lo revisa, y el guardia recibe el mismo
+       * mensaje que redacta late-scan.policy.ts.
+       */
+      await this.preservarEscaneoAtrasado(
+        patrol, estado, guardId, input, reglasDelRecinto.lateScanGraceMin,
+      );
     }
 
     // El primer escaneo inicia la ronda si venia pendiente: en terreno el
@@ -394,9 +539,11 @@ export class GuardService {
       throw new ConflictException('El punto escaneado no pertenece a esta ronda');
     }
 
-    // Reglas efectivas del tenant (#16): el umbral o el radio GPS que cambie
-    // el admin rigen la proxima ronda, sin deploy.
-    const rules = await this.rules.effective();
+    // Reglas efectivas del RECINTO (#16), resueltas una sola vez al entrar al
+    // escaneo. Antes aca habia un `effective()` sin contexto de sitio: un
+    // recinto con su propio radio GPS o su propia tolerancia de reloj no las
+    // veia — la cascada quedaba cortada en el tenant.
+    const rules = reglasDelRecinto;
     const anomalies: ScanAnomaly[] = [];
     if (estadoFirma === 'legacy') anomalies.push('firma_dispositivo_ausente');
     if (input.latitude === undefined || input.longitude === undefined) {
@@ -488,13 +635,18 @@ export class GuardService {
       rules.complianceThreshold,
     );
 
-    // El escaneo del punto de cierre cierra la ronda, este o no completa: el
-    // porcentaje real queda registrado.
+    // El escaneo del punto de cierre cierra la ronda, este o no completa — pero
+    // el ESTADO dice la verdad. Antes aca se escribia 'completada'
+    // incondicional: una ronda cerrada al 40% quedaba con la misma palabra que
+    // una al 100%, y 'incompleta' era un estado que existia en el CHECK, en las
+    // estadisticas y en los informes sin que nadie lo escribiera jamas. El
+    // porcentaje real quedaba guardado, pero la palabra que lee el admin mentia.
     let closed = false;
     if (target.is_closing_point && !replay) {
       await this.tenantContext.manager.query(
         `UPDATE patrols
-         SET status = 'completada', closed_at = now(), compliance_pct = $2
+         SET status = CASE WHEN $2 >= 100 THEN 'completada' ELSE 'incompleta' END,
+             closed_at = now(), compliance_pct = $2
          WHERE id = $1 AND status = 'en_curso'`,
         [patrolId, compliance.pct],
       );
@@ -553,7 +705,9 @@ export class GuardService {
       },
       patrol: {
         id: patrolId,
-        status: closed ? 'completada' : 'en_curso',
+        // El MISMO criterio que el UPDATE de arriba: si divergieran, el telefono
+        // mostraria "completada" mientras la base dice "incompleta".
+        status: closed ? (compliance.pct >= 100 ? 'completada' : 'incompleta') : 'en_curso',
         compliancePct: closed ? compliance.pct : null,
       },
     };
