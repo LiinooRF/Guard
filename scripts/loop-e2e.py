@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -67,12 +68,28 @@ def cuerpo_json(texto):
         return {}
 
 
+def cuerpo_json_lista(texto):
+    """Una lista, venga suelta o envuelta. Nunca None: el llamador itera."""
+    dato = cuerpo_json(texto)
+    if isinstance(dato, list):
+        return dato
+    if isinstance(dato, dict):
+        for clave in ('items', 'sites', 'routes', 'guards', 'data'):
+            if isinstance(dato.get(clave), list):
+                return dato[clave]
+    return []
+
+
 print('=' * 72)
 print('EL LOOP DEL PRODUCTO: publicar aviso -> aceptar -> iniciar ronda -> escanear')
 print('=' * 72)
 
 admin = entrar('admin@demo-andina.test')
 guardia = entrar('guardia@demo-andina.test', UA_APP)
+# El SUPERVISOR entra para poder sembrar la ronda si no hay ninguna. Se hace con
+# el rol que de verdad la crea —`shifts:manage`— y no por la puerta de atras:
+# si el permiso se rompiera, esta prueba tiene que enterarse.
+supervisor = entrar('supervisor@demo-andina.test')
 
 # ---------------------------------------------------------------- 1. el aviso
 version = 'e2e-%s' % uuid.uuid4().hex[:8]
@@ -125,9 +142,70 @@ check('el telefono confirma el permiso de ubicacion del sistema', estado in (200
       'HTTP %s %s' % (estado, cuerpo[:200]))
 
 # -------------------------------------------------------------- 3. la ronda
+#
+# La ronda se SIEMBRA si no hay ninguna, y esto no es comodidad: sin esto la
+# prueba solo pasaba porque staging tenia una ronda abierta que nadie cerraba
+# nunca. Desde que existe el barrido de rondas vencidas (#270) eso ya no ocurre
+# —el recinto demo tiene `maxPatrolDurationMin` en 30— asi que la ronda que deja
+# una corrida vence antes de la siguiente y la prueba fallaba con cuatro rojos
+# que no eran del producto.
+#
+# Un guion que depende de un estado que otro dejo no prueba lo que dice probar:
+# prueba que alguien paso por ahi antes. Se siembra solo cuando hace falta, para
+# no acumular una ronda por corrida.
+def sembrar_ronda():
+    """Crea una ronda para el guardia demo. Devuelve el motivo si no pudo."""
+    estado, cuerpo, _ = pedir('GET', API + '/supervisor/sites', None, supervisor)
+    sitios = cuerpo_json_lista(cuerpo)
+    if not sitios:
+        return 'el supervisor no tiene recintos asignados (HTTP %s)' % estado
+
+    for sitio in sitios:
+        estado, cuerpo, _ = pedir('GET', API + '/supervisor/sites/%s/routes' % sitio['id'],
+                                  None, supervisor)
+        rutas = [r for r in cuerpo_json_lista(cuerpo) if r.get('isActive') is not False]
+        estado, cuerpo, _ = pedir('GET', API + '/supervisor/sites/%s/guards' % sitio['id'],
+                                  None, supervisor)
+        # El endpoint entrega `{id, name}` y NO el correo — a proposito: es una
+        # lista para elegir en pantalla, no un directorio. Asi que el guardia se
+        # elige por nombre, y si el recinto tiene uno solo, ese es.
+        guardias = cuerpo_json_lista(cuerpo)
+        elegido = next((g for g in guardias if 'demo' in (g.get('name') or '').lower()), None)
+        if not elegido and len(guardias) == 1:
+            elegido = guardias[0]
+        if not rutas or not elegido:
+            continue
+
+        # La ventana arranca cinco minutos ANTES: una ronda que empieza en el
+        # futuro exacto es un borde que no interesa probar aca, y arrancarla
+        # antes de su hora es justo lo que dejaba rondas raras en staging.
+        ahora = datetime.now(timezone.utc)
+        estado, cuerpo, _ = pedir(
+            'POST', API + '/supervisor/routes/%s/patrols' % rutas[0]['id'],
+            {'guardId': elegido['id'],
+             'scheduledStartAt': (ahora - timedelta(minutes=5)).isoformat(),
+             'scheduledEndAt': (ahora + timedelta(hours=4)).isoformat()},
+            supervisor)
+        if estado in (200, 201):
+            return None
+        return 'POST /supervisor/routes/%s/patrols -> HTTP %s %s' % (
+            rutas[0]['id'], estado, cuerpo[:160])
+    return 'ningun recinto del supervisor tiene ruta activa y guardia demo'
+
+
 estado, cuerpo, _ = pedir('GET', API + '/guard/home', None, guardia, UA_APP)
 casa = cuerpo_json(cuerpo)
 ronda = casa.get('patrol') or {}
+if not ronda:
+    motivo = sembrar_ronda()
+    if motivo:
+        check('el e2e puede sembrar su ronda', False, motivo)
+    else:
+        print('  (no habia ronda abierta; el e2e sembro una)')
+        estado, cuerpo, _ = pedir('GET', API + '/guard/home', None, guardia, UA_APP)
+        casa = cuerpo_json(cuerpo)
+        ronda = casa.get('patrol') or {}
+
 check('el guardia ve su ronda', estado == 200 and bool(ronda), 'HTTP %s' % estado)
 check('  con la zona horaria del recinto', bool(ronda.get('timezone')), str(ronda.get('timezone')))
 
