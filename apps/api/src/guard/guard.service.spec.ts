@@ -185,6 +185,8 @@ describe('GuardService.registerScan', () => {
           tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
           kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
         }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 'scan-id' }])
         .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
       const reglas = {
@@ -196,7 +198,7 @@ describe('GuardService.registerScan', () => {
       await service.registerScan('patrol-id', 'guard-id', dto({
         scannedAt: new Date(Date.now() - desfaseMin * 60_000).toISOString(),
       }));
-      const insercion = manager.query.mock.calls[2]?.[1] as unknown[];
+      const insercion = manager.query.mock.calls[3]?.[1] as unknown[];
       return JSON.stringify(insercion);
     }
 
@@ -227,6 +229,8 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
         kind: 'acceso_critico', latitude: null, longitude: null, is_closing_point: false,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockImplementation((sql: string) => {
         if (String(sql).includes('INSERT INTO scans')) orden.push('escribe');
         return Promise.resolve([{ id: 'scan-id' }]);
@@ -299,7 +303,9 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-id', checkpoint_id: 'cp-2', checkpoint_name: 'Porteria',
         kind: 'acceso_critico', latitude: '-33.45', longitude: '-70.66',
         is_closing_point: true,
-      }]) // resolucion de la etiqueta
+      }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([]) // resolucion de la etiqueta
       .mockResolvedValueOnce([{ id: 'scan-id' }]) // insert
       .mockResolvedValueOnce([
         { checkpoint_id: 'cp-1', anomalies: [] },
@@ -330,6 +336,8 @@ describe('GuardService.registerScan', () => {
         kind: 'normal', latitude: null, longitude: null,
         is_closing_point: true,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       // Solo el punto de cierre esta escaneado: cp-1 falta, 50%.
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-2', anomalies: [] }])
@@ -361,6 +369,8 @@ describe('GuardService.registerScan', () => {
           tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
           kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
         }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 'scan-id' }])
         .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
       const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
@@ -420,6 +430,8 @@ describe('GuardService.registerScan', () => {
         kind: 'normal', latitude: null, longitude: null,
         is_closing_point: false,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
     const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
@@ -429,8 +441,9 @@ describe('GuardService.registerScan', () => {
       patrol: { status: 'en_curso' },
       progress: { scanned: 1, expected: 2, pct: 50 },
     });
-    // 4 queries: nunca intenta cerrar ni insertar de nuevo
-    expect(manager.query).toHaveBeenCalledTimes(4);
+    // 5 queries (la 3.a es la de escaneos previos de #60): nunca intenta
+    // cerrar ni insertar de nuevo
+    expect(manager.query).toHaveBeenCalledTimes(5);
   });
 
   it('re-escanear un punto ya marcado lo DICE, con la hora del primero', async () => {
@@ -447,6 +460,8 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
         kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-2' }]) // el nuevo SI se inserta
       .mockResolvedValueOnce([
         {
@@ -476,7 +491,9 @@ describe('GuardService.registerScan', () => {
       .mockResolvedValueOnce([{
         tag_id: 'tag-x', checkpoint_id: 'cp-de-otro-recinto', checkpoint_name: 'Bodega ajena',
         kind: 'normal', latitude: null, longitude: null, is_closing_point: null,
-      }]);
+      }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([]);
     const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
 
     await expect(service.registerScan('patrol-id', 'guard-id', dto())).rejects.toThrow(
@@ -493,6 +510,8 @@ describe('GuardService.registerScan', () => {
         kind: 'acceso_critico', latitude: null, longitude: null,
         is_closing_point: true,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-id' }]) // insert
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-2', anomalies: [] }]) // solo 1 de 2 -> 50%
       .mockResolvedValueOnce([]); // cierre
@@ -528,6 +547,8 @@ describe('GuardService.registerScan', () => {
         tag_id: 'tag-id', checkpoint_id: 'cp-2', checkpoint_name: 'Porteria',
         kind: 'normal', latitude: null, longitude: null, is_closing_point: true,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-2', anomalies: [] }])
       .mockResolvedValueOnce([]) // cierre
@@ -622,6 +643,8 @@ describe('GuardService.registerScan', () => {
         kind: 'normal', latitude: '-33.45', longitude: '-70.66',
         is_closing_point: false,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: ['sin_fix_gps'] }]);
     const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
@@ -644,6 +667,8 @@ describe('GuardService.registerScan', () => {
         kind: 'normal', latitude: '-33.45', longitude: '-70.66',
         is_closing_point: false,
       }])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-id' }])
       .mockResolvedValueOnce([{
         checkpoint_id: 'cp-1',
@@ -831,6 +856,8 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     manager.query
       .mockResolvedValueOnce([RONDA_ESCANEO])
       .mockResolvedValueOnce([PUNTO_CRITICO])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
       .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
 
@@ -849,14 +876,17 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     manager.query
       .mockResolvedValueOnce([RONDA_ESCANEO])
       .mockResolvedValueOnce([PUNTO_CRITICO])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]) // ON CONFLICT DO NOTHING: ya existia
       .mockResolvedValueOnce([escaneoDeLaRonda('scan-original')]);
 
     await expect(
       conEvidencia(manager).registerScan('patrol-id', 'guard-id', entrada()),
     ).resolves.toMatchObject({ replay: true, scanId: 'scan-original' });
-    // Las mismas 4 consultas de antes: el id no cuesta un viaje mas a la base.
-    expect(manager.query).toHaveBeenCalledTimes(4);
+    // Las mismas consultas del camino normal (5 con la de escaneos previos
+    // de #60): el id no cuesta un viaje mas a la base.
+    expect(manager.query).toHaveBeenCalledTimes(5);
   });
 
   it('un fallo resolviendo la foto no tumba el escaneo, solo lo deja sin veredicto', async () => {
@@ -864,6 +894,8 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     manager.query
       .mockResolvedValueOnce([RONDA_ESCANEO])
       .mockResolvedValueOnce([PUNTO_CRITICO])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
       .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
     const evidencia = {
@@ -886,6 +918,8 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     manager.query
       .mockResolvedValueOnce([RONDA_ESCANEO])
       .mockResolvedValueOnce([PUNTO_CRITICO])
+      // (#60) los escaneos previos de la ronda: sin ninguno, sin marcas
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'scan-nuevo' }])
       .mockResolvedValueOnce([escaneoDeLaRonda('scan-nuevo')]);
     const service = new GuardService(

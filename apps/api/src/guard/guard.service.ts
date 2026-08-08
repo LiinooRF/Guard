@@ -13,6 +13,7 @@ import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
 import type { ShiftMarkDto } from './dto/shift-mark.dto';
 import { DeviceSignatureService } from './device-signature.service';
+import { dispositivoDuplicado, velocidadImposible } from './anomalias-de-secuencia';
 import { rondaVencida } from './patrol-expiry';
 import { filasDe } from '../consent/sql-result';
 import {
@@ -633,6 +634,61 @@ export class GuardService {
         instante.getTime() > patrol.scheduled_end_at.getTime() + margenMs
       ) {
         anomalies.push('fuera_de_turno');
+      }
+    }
+
+    /*
+     * (#60) Las dos anomalias de SECUENCIA, que estaban declaradas en el
+     * catalogo con CERO escritores — y son literalmente el antifraude del
+     * producto: el guardia que escanea las etiquetas todas juntas desde la
+     * caseta, y el que le presta el telefono a un compañero.
+     *
+     * La consulta trae los escaneos previos de la ronda con las coordenadas de
+     * SU punto. La velocidad se mide entre puntos (fijos) con hora del SERVIDOR
+     * en ambos extremos — ni el GPS impreciso ni el reloj del telefono pueden
+     * fabricarla ni taparla. Ver anomalias-de-secuencia.ts.
+     *
+     * Corre antes del INSERT a proposito: el nuevo escaneo no esta en la lista
+     * y no se compara consigo mismo. Un replay (ON CONFLICT DO NOTHING) no
+     * llega a doble-marcar porque el INSERT no devuelve fila y el escaneo
+     * original conserva sus anomalias de la primera vez.
+     */
+    const escaneosPrevios = filasDe<{
+      scanned_at_server: Date;
+      device_id: string | null;
+      latitude: string | null;
+      longitude: string | null;
+    }>(
+      await this.tenantContext.manager.query(
+        `SELECT sc.scanned_at_server, sc.device_id, c.latitude, c.longitude
+         FROM scans sc
+         JOIN checkpoints c ON c.tenant_id = sc.tenant_id AND c.id = sc.checkpoint_id
+         WHERE sc.tenant_id = app_tenant_id() AND sc.patrol_id = $1
+         ORDER BY sc.scanned_at_server DESC`,
+        [patrolId],
+      ),
+    );
+    if (escaneosPrevios.length > 0) {
+      const ultimo = escaneosPrevios[0]!;
+      if (
+        velocidadImposible(
+          {
+            latitude: ultimo.latitude === null ? null : Number(ultimo.latitude),
+            longitude: ultimo.longitude === null ? null : Number(ultimo.longitude),
+            at: new Date(ultimo.scanned_at_server),
+          },
+          {
+            latitude: target.latitude === null ? null : Number(target.latitude),
+            longitude: target.longitude === null ? null : Number(target.longitude),
+            at: new Date(),
+          },
+          rules.impossibleSpeedKmh,
+        )
+      ) {
+        anomalies.push('velocidad_imposible');
+      }
+      if (dispositivoDuplicado(escaneosPrevios.map((p) => p.device_id), input.deviceId ?? null)) {
+        anomalies.push('dispositivo_duplicado');
       }
     }
 
