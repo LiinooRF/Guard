@@ -23,6 +23,7 @@ import type { SiteBusinessHourDto, SiteHolidayDto } from './dto/site-calendar.dt
 import type { UpdateAuthPolicyDto } from './dto/update-auth-policy.dto';
 import type { UpdateCheckpointDto } from './dto/update-checkpoint.dto';
 import type { UpdateSiteDto } from './dto/update-site.dto';
+import { normalizarUidDeEtiqueta, normalizarUidNfc, uidNfcValido } from './uid-nfc';
 
 interface UserRow {
   id: string;
@@ -745,8 +746,17 @@ export class AdminService {
 
   async registerTag(checkpointId: string, input: RegisterTagDto) {
     await this.ensureCheckpoint(checkpointId);
-    const uid = input.uid.trim();
     const tech = input.tech ?? 'nfc';
+    // Se normaliza a la forma que produce la app al leer el chip. Ver uid-nfc.ts:
+    // sin esto, un UID pegado como `04:AA:BB:CC` se guarda con los dos puntos y
+    // no coincide con ningun escaneo, nunca.
+    const uid = normalizarUidDeEtiqueta(input.uid, tech);
+    if (tech === 'nfc' && !uidNfcValido(uid)) {
+      throw new BadRequestException(
+        'El UID de una etiqueta NFC son 8, 14 o 20 caracteres hexadecimales. ' +
+        'Revisa lo que copiaste del lector.',
+      );
+    }
 
     // Reemplazo con historial: si el punto ya tiene una etiqueta activa de esta
     // tecnologia, queda desactivada con su fecha. Nunca se borra una fila.
@@ -816,8 +826,11 @@ export class AdminService {
        JOIN checkpoints checkpoint
          ON checkpoint.id = tag.checkpoint_id AND checkpoint.is_active
        JOIN sites site ON site.id = checkpoint.site_id AND site.is_active
-       WHERE tag.uid = $1 AND tag.is_active`,
-      [uid.trim()],
+       WHERE tag.uid IN ($1, $2) AND tag.is_active`,
+      // Dos formas porque aqui no se sabe la tecnologia: el texto tal cual (un
+      // QR, `VXQ-...`) y el mismo texto normalizado como UID de NFC. Asi el
+      // instalador puede pegar `04:aa:bb:cc` o `04AABBCC` y resuelve igual.
+      [uid.trim(), normalizarUidNfc(uid.trim())],
     );
     const [row] = rows;
     if (!row) throw new NotFoundException('La etiqueta no resuelve a ningún punto');

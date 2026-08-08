@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
+import { Camera } from 'expo-camera';
 
 import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
@@ -23,18 +24,56 @@ import { registrarSincronizacionBackground } from './src/offline/sync-task';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
+/**
+ * Cuanto se espera antes de recargar sola, y otra vez antes de rendirse.
+ * Ocho segundos porque la ronda empieza en la puerta del recinto, donde la
+ * señal es mala: menos convierte una red lenta en un falso error, y mas hace
+ * que el guardia crea que la app se colgo.
+ */
+const PACIENCIA_MS = 8_000;
+/*
+ * Deja inspeccionar el portal desde `chrome://inspect` de un PC, con DevTools
+ * completas: consola, red, elementos.
+ *
+ * Solo en los perfiles que NO son de tienda (`eas.json` lo pone en `preview` y
+ * no en `production`), y no es un detalle de comodidad: con la depuracion
+ * abierta, cualquiera con el telefono y un cable ve la sesion, las cookies y
+ * los datos del recinto. En un producto que vende trazabilidad de trabajadores
+ * eso es exactamente lo que no puede pasar.
+ */
+const DEPURABLE = process.env.EXPO_PUBLIC_DEPURABLE === '1';
 const APP_LIKE_DOCUMENT = `
   (function () {
-    var viewport = document.querySelector('meta[name="viewport"]');
-    if (!viewport) {
-      viewport = document.createElement('meta');
-      viewport.name = 'viewport';
-      document.head.appendChild(viewport);
+    // Esto corre en document-start: \`document.head\` puede ser null todavia, y
+    // como este guion va CONCATENADO con el del puente, una excepcion aca
+    // abortaba los dos y el portal se quedaba sin puente sin saber por que.
+    // El viewport tiene que estar ANTES de que la pagina se maquete, o el
+    // navegador la dibuja a escala de escritorio y despues salta. Esperar a
+    // DOMContentLoaded rompia el layout de forma visible.
+    //
+    // Si todavia no hay <head>, se crea: es valido y es lo que hace el propio
+    // parser un instante despues. Lo que NO se puede es esperar.
+    function cabeza() {
+      if (!document.head) {
+        var creada = document.createElement('head');
+        document.documentElement.insertBefore(creada, document.documentElement.firstChild);
+      }
+      return document.head;
     }
-    viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
-    var style = document.createElement('style');
-    style.textContent = 'body, button, a, label { -webkit-user-select: none; user-select: none; } input, textarea { -webkit-user-select: text; user-select: text; }';
-    document.head.appendChild(style);
+    (function () {
+      try {
+        var viewport = document.querySelector('meta[name="viewport"]');
+        if (!viewport) {
+          viewport = document.createElement('meta');
+          viewport.name = 'viewport';
+          cabeza().appendChild(viewport);
+        }
+        viewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
+        var style = document.createElement('style');
+        style.textContent = 'body, button, a, label { -webkit-user-select: none; user-select: none; } input, textarea { -webkit-user-select: text; user-select: text; }';
+        cabeza().appendChild(style);
+      } catch (e) { /* cosmetico: nunca debe tumbar el puente */ }
+    })();
     true;
   })();
 `;
@@ -57,6 +96,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [rutaOffline, setRutaOffline] = useState<RutaOfflineGuardada>();
+  /*
+   * Que fallo exactamente. Sin esto, cualquier problema del WebView se ve
+   * igual —una pantalla que no avanza— y lo unico que la persona puede
+   * reportar es "no abre". Con el motivo a la vista, un guardia en terreno
+   * puede leerlo por radio y soporte sabe si es la red, el portal o el
+   * componente del sistema.
+   */
+  const [motivoFallo, setMotivoFallo] = useState<string>();
+  /** Solo se recarga sola UNA vez: en bucle taparia un fallo de verdad. */
+  const reintentado = useRef(false);
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -74,15 +123,66 @@ export default function App() {
     inyectar: (javaScript) => webView.current?.injectJavaScript(javaScript),
     manejadores,
     alIncompatible: (motivo, mensaje) => setBloqueo({ motivo, mensaje }),
-    alSinSaludo: () => setBloqueo({
-      motivo: 'portal-sin-puente',
-      mensaje: 'El portal no pudo conectarse con las funciones del teléfono. Avisa a soporte.',
-    }),
   }), [manejadores, portal.origin]);
 
   useEffect(() => puente.detener, [puente]);
+
+  /*
+   * Si la carga no termina, se avisa. Antes la pantalla giraba para siempre.
+   *
+   * No es hipotetico: en un Android 9 con Chrome 124 de proveedor de WebView, el
+   * componente **no llega a inicializarse** —`NoClassDefFoundError:
+   * android/webkit/PacProcessor`, una clase que existe desde Android 10— asi que
+   * `onLoadEnd` no dispara nunca y la app se queda en "Abriendo VoxIA Control..."
+   * sin un solo mensaje. A un guardia con un telefono viejo le pasa lo mismo, y
+   * lo unico que puede reportar es "no abre".
+   *
+   * 20 segundos: una ronda empieza en la puerta del recinto, donde la señal
+   * suele ser mala. Menos que eso convierte una red lenta en un falso error.
+   */
+  useEffect(() => {
+    if (!loading || failed) return undefined;
+    const aviso = setTimeout(() => {
+      // Primero se reintenta SOLO. Comprobado en varios telefonos: la primera
+      // carga se queda colgada y la recarga entra sin problema — o sea que es
+      // una carrera del arranque, no la red ni el portal.
+      //
+      // Pedirle al guardia que toque "Reintentar" para empezar su turno no es
+      // una solucion: lo hace todos los dias, y el dia que no funcione a la
+      // primera va a pensar que la app esta rota. Que lo haga la app.
+      if (!reintentado.current) {
+        reintentado.current = true;
+        webView.current?.reload();
+        return;
+      }
+      setMotivoFallo('La pagina no termino de cargar, ni siquiera al reintentar.');
+      setLoading(false);
+      setFailed(true);
+    }, PACIENCIA_MS);
+    return () => clearTimeout(aviso);
+  }, [loading, failed]);
   useEffect(() => {
     void registrarSincronizacionBackground().catch(() => undefined);
+  }, []);
+
+  /*
+   * El permiso de camara se pide al arrancar, no cuando se necesita.
+   *
+   * La foto de evidencia la toma el PORTAL con `<input type="file"
+   * capture="environment">`, y en Android eso lo resuelve el WebView abriendo la
+   * camara del sistema. Ese camino **no pide el permiso por su cuenta**: si la
+   * app no lo tiene concedido, el boton "Tomar foto" no hace absolutamente nada
+   * — sin dialogo, sin error, sin nada.
+   *
+   * Y la foto del acceso critico no es un extra: es la evidencia por la que el
+   * cliente paga. Un guardia que toca el boton y no pasa nada no puede ni
+   * reportar el problema.
+   *
+   * Se pide al inicio y no en el momento porque el momento es *dentro* del
+   * WebView, donde ya no hay forma de interceptarlo.
+   */
+  useEffect(() => {
+    void Camera.requestCameraPermissionsAsync().catch(() => undefined);
   }, []);
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
@@ -104,6 +204,8 @@ export default function App() {
 
   const retry = () => {
     setBloqueo(null);
+    reintentado.current = false;
+    setMotivoFallo(undefined);
     setFailed(false);
     setRutaOffline(undefined);
     setLoading(true);
@@ -132,14 +234,25 @@ export default function App() {
           setFailed(false);
         }}
         onLoadEnd={() => setLoading(false)}
-        onError={mostrarFallo}
+        onError={({ nativeEvent }) => {
+          setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
+          mostrarFallo();
+        }}
         onHttpError={({ nativeEvent }) => {
           if (nativeEvent.statusCode >= 400) {
+            setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
             mostrarFallo();
           }
         }}
+        webviewDebuggingEnabled={DEPURABLE}
         javaScriptEnabled
         domStorageEnabled
+        // Sin esto el selector de archivos del WebView no entrega la foto.
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        // La camara se abre sin que el usuario toque otra vez: el guardia ya
+        // apreto "Tomar foto", pedirle un gesto mas es una foto menos.
+        mediaPlaybackRequiresUserAction={false}
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
         setSupportMultipleWindows={false}
@@ -180,10 +293,26 @@ export default function App() {
         </ScrollView>
       ) : failed ? (
         <View accessibilityRole="alert" style={styles.overlay}>
-          <Text style={styles.title}>Sin conexión</Text>
+          <Text style={styles.title}>No pudimos abrir el portal</Text>
+          {/*
+            Se nombran las DOS causas porque desde adentro no se distinguen, y
+            decir solo "revisa tu conexión" manda a la persona a mirar donde no
+            es. El componente WebView del sistema puede estar desactualizado o
+            ser incompatible con la version de Android — ahi la señal esta
+            perfecta y no hay nada que revisar en la red.
+          */}
           <Text style={styles.description}>
-            No pudimos abrir el portal. Revisa tu conexión y vuelve a intentarlo.
+            Revisa tu conexión y vuelve a intentarlo. Si tienes señal y sigue sin
+            abrir, actualiza «Android System WebView» desde la Play Store y
+            reinicia el teléfono.
           </Text>
+          {/*
+            El motivo tecnico, a la vista. Un guardia no lo va a entender, pero
+            lo puede leer por radio o mandar en una foto — y eso convierte un
+            "no abre" en algo que soporte puede resolver sin tener el telefono
+            en la mano. Sin esto, cualquier fallo del WebView se ve igual.
+          */}
+          {motivoFallo ? <Text style={styles.motivo}>{motivoFallo}</Text> : null}
           <Pressable
             accessibilityRole="button"
             onPress={retry}
@@ -232,6 +361,13 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 28,
     backgroundColor: '#f8fafc',
+  },
+  motivo: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    fontFamily: 'monospace',
+    marginTop: 4,
   },
   loadingText: {
     color: '#475569',

@@ -76,7 +76,6 @@ function setup() {
     inyectar: (script) => inyectados.push(script),
     manejadores,
     alIncompatible: () => undefined,
-    msEsperaSaludo: 60_000,
   });
   return {
     puente,
@@ -87,6 +86,31 @@ function setup() {
     operaciones,
   };
 }
+
+test('abrir la app no arma ningún temporizador que pueda bloquearla', () => {
+  /*
+   * La regresión que fija esta prueba tumbaba el producto entero: el shell
+   * armaba una espera de 10 s por el saludo del portal y, como el portal solo
+   * saluda desde `useGuardBridge` —que se monta DESPUÉS del login—, la app se
+   * declaraba "Portal incompatible" sola, con el guardia todavía escribiendo su
+   * clave. Nadie podía iniciar sesión.
+   *
+   * Se comprueba contando temporizadores en vez de esperando 10 segundos: la
+   * prueba tiene que fallar al reintroducir el bug, no tardar.
+   */
+  const real = globalThis.setTimeout;
+  const armados: number[] = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = (fn: () => void, ms?: number) => {
+    armados.push(ms ?? 0);
+    return real(fn, ms);
+  };
+  try {
+    setup();
+  } finally {
+    (globalThis as { setTimeout: unknown }).setTimeout = real;
+  }
+  assert.deepEqual(armados, []);
+});
 
 test('rechaza payloads mal formados antes de llegar a los módulos nativos', () => {
   const crudo = JSON.stringify({
