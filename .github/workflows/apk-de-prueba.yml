@@ -1,0 +1,95 @@
+# APK de prueba, a demanda y sin cola.
+#
+# Existe porque EAS es la via correcta para lo que se PUBLICA —administra el
+# keystore real, que es lo unico irreversible del proyecto— pero su cola gratuita
+# tarda entre 10 y 25 minutos. Para "quiero ver si esto funciona en el emulador"
+# eso es demasiado.
+#
+# Aca sale un APK **firmado con la clave de DEPURACION**: se instala en cualquier
+# telefono o emulador, y NO sirve para Play Store. Es a proposito. Mezclar las dos
+# cosas es como se pierde el control de la firma, y dos builds con claves
+# distintas no se pueden actualizar entre si.
+#
+# Lo mismo que hace `Tamano de la app Android`, pero con `assembleRelease` en vez
+# de `bundleRelease`: un APK se instala, un AAB no.
+name: APK de prueba
+
+on:
+  workflow_dispatch:
+    inputs:
+      portal:
+        description: 'A que portal apunta la app'
+        required: true
+        default: 'https://test-sentrycore.voxtilabs.cl'
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: construir el APK instalable
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - uses: android-actions/setup-android@v3
+
+      # apps/mobile va FUERA de los workspaces de npm a proposito (Metro no se
+      # lleva bien con el hoisting), asi que se instala por su cuenta.
+      - name: Instalar dependencias
+        run: npm ci
+
+      # android/ esta en .gitignore: el flujo es CNG y la fuente de verdad es
+      # app.config.ts. Se regenera en cada corrida.
+      #
+      # NODE_ENV=production apaga el trafico en claro, igual que en un build de
+      # tienda: es justo lo que se rompe fuera de debug y hay que verlo aca.
+      - name: Generar el proyecto Android
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_WEB_URL: ${{ inputs.portal }}
+        run: npx expo prebuild --platform android --clean --no-install
+
+      # setup-java va DESPUES del prebuild: con `cache: gradle` busca **/*.gradle
+      # para la llave de cache, y antes del prebuild esos archivos no existen.
+      # Al reves fallaba con "No file matched" y tumbaba el job entero.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Construir el APK
+        working-directory: apps/mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
+
+      - name: Publicar el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: voxia-control-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Como instalarlo
+        run: |
+          echo "### APK listo" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Descargalo del artefacto **voxia-control-apk** de esta corrida." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Apunta a: \`${{ inputs.portal }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Firmado con la clave de **depuracion**: se instala en emulador y" >> "$GITHUB_STEP_SUMMARY"
+          echo "telefono, pero **no** sirve para Play Store. Para publicar se usa" >> "$GITHUB_STEP_SUMMARY"
+          echo "EAS, que administra el keystore real." >> "$GITHUB_STEP_SUMMARY"
