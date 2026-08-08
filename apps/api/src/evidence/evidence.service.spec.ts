@@ -140,13 +140,17 @@ describe('EvidenceService.requiresPhoto', () => {
     ...extra,
   });
 
-  it('fuera de horario la foto es obligatoria aunque el punto no la exija', async () => {
+  it('con la regla de fuera-de-horario ENCENDIDA, la foto es obligatoria aunque el punto no la exija', async () => {
+    // Apagada de fabrica desde el 8-ago (la foto la exige una tarea, no el
+    // reloj); este test cubre a la empresa que la enciende.
     const manager = { query: jest.fn() };
     manager.query
       .mockResolvedValueOnce([punto()]) // punto normal, sin override
       .mockResolvedValueOnce([{ has_hours: true, within: false }]);
 
-    await expect(servicio(manager).requiresPhoto('cp-1')).resolves.toMatchObject({
+    await expect(
+      servicio(manager, reglas({ photoRequiredOutsideHours: true })).requiresPhoto('cp-1'),
+    ).resolves.toMatchObject({
       required: true,
       withinBusinessHours: false,
     });

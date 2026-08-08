@@ -136,14 +136,16 @@ const llamadas = (rules: RulesService) => (rules.effective as jest.Mock).mock.ca
 beforeEach(() => jest.clearAllMocks());
 
 describe('HorarioHabilService.comprobar', () => {
-  it('sábado de madrugada fuera de horario: todos los puntos exigen foto', async () => {
+  it('con la regla de fuera-de-horario ENCENDIDA, de madrugada todos los puntos exigen foto', async () => {
+    // La regla viene apagada de fabrica desde el 8-ago (la foto la exige una
+    // tarea, no el reloj); este test cubre a la empresa que la enciende.
     const query = consultas({ puntos: PUNTOS_NORMALES });
 
-    const resultado = await servicio(query, evidencia(false)).comprobar(
-      'site-1',
-      '2026-08-08',
-      '03:00',
-    );
+    const resultado = await servicio(
+      query,
+      evidencia(false),
+      reglas({ tenant: { photoRequiredOutsideHours: true } }),
+    ).comprobar('site-1', '2026-08-08', '03:00');
 
     expect(resultado.withinBusinessHours).toBe(false);
     expect(resultado.checkpoints).toEqual({ total: 3, requirePhoto: 3, exempt: [] });
@@ -184,7 +186,11 @@ describe('HorarioHabilService.comprobar', () => {
       ],
     });
 
-    const resultado = await servicio(query, evidencia(false)).comprobar('site-1');
+    const resultado = await servicio(
+      query,
+      evidencia(false),
+      reglas({ tenant: { photoRequiredOutsideHours: true } }),
+    ).comprobar('site-1');
 
     expect(resultado.checkpoints).toEqual({
       total: 4,

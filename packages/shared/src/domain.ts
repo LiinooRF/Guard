@@ -209,10 +209,15 @@ export type BusinessHours = z.infer<typeof businessHoursSchema>;
 /**
  * Decide si la foto es obligatoria en un punto.
  *
- * Requisito explicito del cliente: en horario NO habil la foto es obligatoria si
- * o si, en todos los puntos. En horario habil, solo en los criticos.
+ * La foto la exige una TAREA, no el reloj (decision de producto, 8-ago-2026):
+ * los accesos criticos siempre —fotografiar el estado de la puerta es la
+ * promesa central del producto—, y los puntos cuyo override la pide. La regla
+ * de "todo punto fuera de horario" sigue existiendo pero apagada de fabrica:
+ * era el requisito original de #13 y en la practica convertia una ronda
+ * nocturna de 40 puntos en 40 fotos de tramite por vuelta. Cuando exista el
+ * checklist por turno, "la tarea que exige foto" vivira ahi.
  *
- * Ver issue #13.
+ * Ver issues #13 y el issue del modelo por tareas.
  */
 export function isPhotoRequired(args: {
   checkpoint: Pick<Checkpoint, 'kind' | 'requiresPhoto'>;

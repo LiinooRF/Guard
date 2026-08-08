@@ -18,8 +18,16 @@ export const patrolRulesSchema = z.object({
   /** Bajo este porcentaje de cumplimiento, el informe va DIRECTO al admin. */
   complianceThreshold: z.number().int().min(0).max(100).default(70),
 
-  /** Fuera del horario habil del recinto, la foto es obligatoria en todo punto. */
-  photoRequiredOutsideHours: z.boolean().default(true),
+  /**
+   * Fuera del horario habil del recinto, la foto es obligatoria en todo punto.
+   *
+   * Default `false` por decision de producto (8-ago-2026, ver #13): la foto la
+   * exige una TAREA —hoy, el punto critico o el override del punto; manana, el
+   * checklist—, no el reloj. Una ronda nocturna de 40 puntos con 40 fotos por
+   * vuelta convierte la evidencia en tramite. La regla queda disponible para la
+   * empresa que quiera el comportamiento anterior: es cascada, no codigo.
+   */
+  photoRequiredOutsideHours: z.boolean().default(false),
 
   /** En accesos, puertas y porterias la foto es obligatoria siempre. */
   photoRequiredOnCritical: z.boolean().default(true),
@@ -485,7 +493,8 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     key: 'photoRequiredOutsideHours',
     label: 'Foto obligatoria fuera de horario',
     description:
-      'Fuera del horario habil del recinto, el guardia debe fotografiar cada punto que marca.',
+      'Fuera del horario habil del recinto, el guardia debe fotografiar cada punto que marca. ' +
+      'Apagada de fabrica: la foto la exigen los accesos criticos y los puntos que la piden, no el reloj.',
     type: 'boolean',
     unit: null,
     default: DEFAULT_PATROL_RULES.photoRequiredOutsideHours,

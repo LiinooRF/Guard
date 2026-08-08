@@ -44,8 +44,9 @@ describe('RulesService.effective', () => {
     await expect(servicio(query).effective()).resolves.toMatchObject({
       complianceThreshold: 85,
       randomizeRouteOrder: true,
-      // lo no sobreescrito sigue en su default
-      photoRequiredOutsideHours: true,
+      // lo no sobreescrito sigue en su default (false desde la decision de
+      // producto del 8-ago: la foto la exige una tarea, no el reloj)
+      photoRequiredOutsideHours: false,
       gpsValidationRadiusM: 50,
       maxPatrolDurationMin: 480,
     });
