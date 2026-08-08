@@ -158,9 +158,14 @@ export function GuardCheckpointList({
         </button>
       ) : null}
 
-      {/* Los cambios del escaneo se anuncian: el guardia camina y no mira la pantalla. */}
+      {/* Los cambios del escaneo se anuncian: el guardia camina y no mira la
+          pantalla. El nodo aria-live queda SIEMPRE en el DOM (un live region
+          que aparece recién con el contenido no siempre se anuncia), pero si el
+          mismo texto ya está en la caja de error de abajo, acá no se repite:
+          el mismo mensaje dos veces en pantalla se vio en un teléfono real y
+          lee como si fueran dos errores distintos. */}
       <p className="guardia-anuncio" role="status" aria-live="polite">
-        {anuncio}
+        {anuncio === error ? '' : anuncio}
       </p>
       {aviso ? <p className="guardia-aviso">{aviso}</p> : null}
       {error ? (
