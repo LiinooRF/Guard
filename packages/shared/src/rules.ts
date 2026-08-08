@@ -63,6 +63,20 @@ export const patrolRulesSchema = z.object({
   gpsValidationRadiusM: z.number().int().min(5).max(1000).default(50),
 
   /**
+   * Velocidad implicada entre dos escaneos seguidos (distancia entre las
+   * coordenadas FIJAS de los puntos sobre el tiempo del servidor) por encima
+   * de la cual el segundo escaneo se marca `velocidad_imposible` (#60).
+   *
+   * Es LA señal del fraude conocido del rubro: el guardia que se lleva las
+   * etiquetas a la caseta y las escanea todas juntas. Se mide entre puntos y
+   * no entre posiciones GPS a proposito — las etiquetas no se mueven, asi que
+   * un GPS impreciso en un subterraneo no puede fabricar la anomalia ni
+   * taparla. 15 km/h es trote sostenido: nadie recorre una ronda mas rapido
+   * caminando, y el que "recorre" 1 km en 10 segundos esta sentado.
+   */
+  impossibleSpeedKmh: z.number().int().min(5).max(100).default(15),
+
+  /**
    * Cada cuantos segundos muestrea la posicion la app durante la ronda. Lo lee
    * el dispositivo: el intervalo no se codifica en el cliente. Mas frecuente =
    * traza mas fiel y bateria mas corta.
@@ -394,6 +408,7 @@ export const RULE_UNITS = [
   'attempts',
   'operations',
   'rows',
+  'kmh',
 ] as const;
 export type RuleUnit = (typeof RULE_UNITS)[number];
 
@@ -408,6 +423,7 @@ export const RULE_UNIT_LABELS: Record<RuleUnit, string> = {
   attempts: 'intentos',
   operations: 'operaciones',
   rows: 'filas',
+  kmh: 'km/h',
 };
 
 /** Agrupacion para la interfaz. No cambia el comportamiento. */
@@ -550,6 +566,19 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     // que la porteria de la entrada.
     scopes: TODOS_LOS_NIVELES,
     group: 'ubicacion',
+  },
+  impossibleSpeedKmh: {
+    key: 'impossibleSpeedKmh',
+    label: 'Velocidad imposible entre puntos',
+    description:
+      'Si entre dos escaneos seguidos la velocidad implicada (distancia entre los puntos sobre el tiempo transcurrido) supera este valor, el escaneo queda marcado como velocidad imposible. Es la señal del guardia que escanea etiquetas sueltas sin recorrer. Marca, no rechaza.',
+    type: 'integer',
+    unit: 'kmh',
+    min: 5,
+    max: 100,
+    default: DEFAULT_PATROL_RULES.impossibleSpeedKmh,
+    scopes: HASTA_RECINTO,
+    group: 'seguridad',
   },
   gpsTrackIntervalSeconds: {
     key: 'gpsTrackIntervalSeconds',
