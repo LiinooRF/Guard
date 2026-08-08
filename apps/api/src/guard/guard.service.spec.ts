@@ -731,7 +731,9 @@ describe('GuardService.getHome — foto obligatoria del punto', () => {
     expect(home).toMatchObject({
       photoPolicy: {
         withinBusinessHours: false,
-        rules: { photoRequiredOutsideHours: true, photoRequiredOnCritical: true },
+        // El default de fuera-de-horario es false desde el 8-ago: la foto la
+        // exige una tarea (critico u override), no el reloj.
+        rules: { photoRequiredOutsideHours: false, photoRequiredOnCritical: true },
       },
     });
     // El horario es el DEL RECINTO de esta ronda, no uno cualquiera.
