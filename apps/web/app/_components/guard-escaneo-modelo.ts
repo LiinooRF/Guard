@@ -60,10 +60,18 @@ const SIN_ANTENA_APP_ANTIGUA =
 
 /** Texto del boton cuando el QR es el unico camino. */
 export const BOTON_QR_PRINCIPAL = 'Escanear código QR del punto';
-/** Texto del acceso discreto al respaldo cuando el NFC funciona. */
-export const BOTON_QR_RESPALDO = 'La etiqueta no responde: usar el QR del punto';
+/**
+ * Texto del acceso discreto al respaldo cuando el NFC funciona.
+ *
+ * Es una ACCIÓN, no un diagnóstico. Decía "La etiqueta no responde: usar el QR
+ * del punto" y un usuario real lo leyó como un error DOS veces en la misma
+ * sesión de prueba — un botón siempre visible cuyo texto afirma una falla se
+ * lee como falla, sobre todo a las 3 de la mañana. El "cuándo usarlo" vive en
+ * la nota de abajo, que es donde se explica sin gritar.
+ */
+export const BOTON_QR_RESPALDO = 'Usar el QR del punto';
 export const NOTA_QR_RESPALDO =
-  'El QR es respaldo: queda marcado como evidencia más débil que la etiqueta.';
+  'Si la etiqueta no responde, escanea el QR del punto: queda marcado como evidencia más débil que la etiqueta.';
 
 export function opcionesDeEscaneo(capacidades: CapacidadesEscaneo): OpcionesEscaneo {
   // Sin shell nativo no se escanea de ninguna forma: el QR tambien viaja por el
