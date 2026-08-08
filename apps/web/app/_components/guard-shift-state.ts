@@ -38,6 +38,7 @@ const ETIQUETAS_ANOMALIA: Record<ScanAnomaly, string> = {
   reloj_desfasado: 'Reloj del teléfono desfasado',
   dispositivo_duplicado: 'Otro dispositivo escaneó en tu nombre',
   firma_dispositivo_ausente: 'Escaneo de una versión antigua sin firma del dispositivo',
+  fuera_de_turno: 'Escaneado fuera del horario del turno',
 };
 
 /**

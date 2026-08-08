@@ -275,8 +275,10 @@ describe('GuardService.registerScan', () => {
     route_id: 'route-id',
     expected_checkpoint_ids: ['cp-1', 'cp-2'],
     site_id: 'site-id',
-    // Recien iniciada: lejos de vencer. Los tests de vencimiento la envejecen.
+    // Recien iniciada y DENTRO de su ventana: lejos de vencer y sin anomalia de
+    // turno. Los tests que necesitan otra cosa la envejecen o mueven la ventana.
     started_at: new Date(Date.now() - 30 * 60_000),
+    scheduled_start_at: new Date(Date.now() - 60 * 60_000),
     scheduled_end_at: new Date(Date.now() + 6 * 3_600_000),
     closed_at: null,
   };
@@ -338,6 +340,41 @@ describe('GuardService.registerScan', () => {
       patrol: { status: 'incompleta', compliancePct: 50 },
       progress: { scanned: 1, expected: 2, pct: 50 },
     });
+  });
+
+  it('un escaneo fuera de la ventana del turno queda MARCADO, no rechazado', async () => {
+    /*
+     * El caso real: un turno de 22:00-06:00 escaneado a mediodia pasaba limpio,
+     * porque ninguna anomalia del catalogo miraba el reloj del TURNO. Aca la
+     * ronda esta viva (iniciada hace 30 min, no vence por duracion) pero su
+     * ventana termino hace 12 horas: el guardia que la arranco tardisimo.
+     */
+    async function anomaliasConVentana(finHaceHoras: number) {
+      const manager = { query: jest.fn() };
+      manager.query
+        .mockResolvedValueOnce([{
+          ...PATROL,
+          scheduled_start_at: new Date(Date.now() - (finHaceHoras + 8) * 3_600_000),
+          scheduled_end_at: new Date(Date.now() - finHaceHoras * 3_600_000),
+        }])
+        .mockResolvedValueOnce([{
+          tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+          kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
+        }])
+        .mockResolvedValueOnce([{ id: 'scan-id' }])
+        .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
+      const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+      const respuesta = await service.registerScan('patrol-id', 'guard-id', dto());
+      return { anomalias: respuesta.anomalies, estado: respuesta.patrol.status };
+    }
+
+    // Ventana terminada hace 12 h: marcado — y el escaneo ENTRO igual.
+    const fuera = await anomaliasConVentana(12);
+    expect(fuera.anomalias).toContain('fuera_de_turno');
+    expect(fuera.estado).toBe('en_curso');
+    // Termino hace 1 h: dentro de la gracia de lateScanGraceMin (120 min), limpio.
+    const enGracia = await anomaliasConVentana(1);
+    expect(enGracia.anomalias).not.toContain('fuera_de_turno');
   });
 
   it('una ronda mas vieja que maxPatrolDurationMin vence al escanearla y el escaneo se preserva', async () => {
@@ -621,12 +658,17 @@ describe('GuardService.registerScan', () => {
       latitude: -33.4455,
       scannedAt: '2020-01-01T00:00:00.000Z',
     }))).resolves.toMatchObject({
-      anomalies: ['fuera_de_radio_gps', 'reloj_desfasado'],
+      // Un reloj corrido SEIS AÑOS deja tres marcas, y las tres son verdad: el
+      // GPS esta lejos, el reloj esta desfasado, y la hora que el escaneo
+      // AFIRMA cae fuera de la ventana del turno. Mas señal para el supervisor,
+      // no ruido: cada una se explica sola.
+      anomalies: ['fuera_de_radio_gps', 'reloj_desfasado', 'fuera_de_turno'],
     });
     const insert = manager.query.mock.calls.find(([sql]: [string]) =>
       sql.includes('INSERT INTO scans'));
     expect(insert?.[1][10]).toContain('fuera_de_radio_gps');
     expect(insert?.[1][10]).toContain('reloj_desfasado');
+    expect(insert?.[1][10]).toContain('fuera_de_turno');
   });
 });
 
@@ -763,6 +805,7 @@ describe('GuardService.registerScan — id del escaneo y foto del punto', () => 
     expected_checkpoint_ids: ['cp-1'],
     site_id: 'site-id',
     started_at: new Date(Date.now() - 30 * 60_000),
+    scheduled_start_at: new Date(Date.now() - 60 * 60_000),
     scheduled_end_at: new Date(Date.now() + 6 * 3_600_000),
     closed_at: null,
   };

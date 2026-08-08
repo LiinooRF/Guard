@@ -483,11 +483,12 @@ export class GuardService {
       expected_checkpoint_ids: string[];
       site_id: string;
       started_at: Date | null;
+      scheduled_start_at: Date;
       scheduled_end_at: Date;
       closed_at: Date | null;
     }>>(
       `SELECT id, status, route_id, expected_checkpoint_ids,
-              site_id, started_at, scheduled_end_at, closed_at
+              site_id, started_at, scheduled_start_at, scheduled_end_at, closed_at
        FROM patrols WHERE id = $1 AND guard_id = $2`,
       [patrolId, guardId],
     );
@@ -605,6 +606,34 @@ export class GuardService {
       // se nota, porque el panel diria una cosa y el informe otra.
       const driftMs = Math.abs(Date.now() - new Date(input.scannedAt).getTime());
       if (driftMs > rules.clockSkewToleranceMin * 60_000) anomalies.push('reloj_desfasado');
+    }
+    /*
+     * (B5) Fuera de la ventana del turno. Existia todo el catalogo de anomalias
+     * y ninguna miraba el RELOJ DEL TURNO: un turno de 22:00-06:00 escaneado a
+     * mediodia del dia siguiente pasaba limpio — comprobado en staging con una
+     * ronda real, que ademas se habia INICIADO 10 horas antes de su ventana sin
+     * que nada lo marcara.
+     *
+     * La gracia es la misma del escaneo tardio (`lateScanGraceMin`), a ambos
+     * lados: llegar un poco antes o salir un poco despues es terreno normal.
+     * El vencimiento por duracion (patrol-expiry.ts) cubre otra cosa — una
+     * ronda ABIERTA demasiado tiempo; esto marca el escaneo puntual que cae
+     * fuera del horario aunque la ronda este viva y sana. Marca, no rechaza.
+     */
+    if (patrol.scheduled_start_at && patrol.scheduled_end_at) {
+      const margenMs = rules.lateScanGraceMin * 60_000;
+      const delDispositivo = input.scannedAt ? new Date(input.scannedAt) : null;
+      const sensata =
+        delDispositivo !== null &&
+        !Number.isNaN(delDispositivo.getTime()) &&
+        delDispositivo.getTime() <= Date.now();
+      const instante = sensata && delDispositivo !== null ? delDispositivo : new Date();
+      if (
+        instante.getTime() < patrol.scheduled_start_at.getTime() - margenMs ||
+        instante.getTime() > patrol.scheduled_end_at.getTime() + margenMs
+      ) {
+        anomalies.push('fuera_de_turno');
+      }
     }
 
     /*
