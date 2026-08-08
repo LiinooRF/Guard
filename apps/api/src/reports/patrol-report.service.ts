@@ -15,6 +15,7 @@ import {
   type InformeRonda,
   type PuntoEsperadoRow,
   type ScanRow,
+  type TareaRow,
 } from './patrol-report.model';
 import { renderizarInformeRonda, type ResumenRender } from './patrol-report.renderer';
 
@@ -57,6 +58,77 @@ export interface InformeRondaPdf {
   readonly compliance: ComplianceResult;
   readonly render: ResumenRender;
 }
+
+/**
+ * Las tareas del turno de esta ronda, respondidas o no (#265).
+ *
+ * Se exporta para que `informes.integration.spec.ts` corra EXACTAMENTE este
+ * texto contra el esquema real: es una consulta con nombres de columna nuevos y
+ * un mock jamas diria si `late_minutes` o `due_local_time` existen.
+ *
+ * QUE PLANTILLA SE LISTA. Un LEFT JOIN desde checklist_items es obligatorio —la
+ * tarea NO hecha no tiene fila en checklist_responses y es justo la que hay que
+ * mostrar—, pero eso obliga a elegir una plantilla, y la ronda no la tiene
+ * congelada como si congela `expected_checkpoint_ids`. Manda la plantilla de
+ * los items YA RESPONDIDOS: es la unica que consta que el guardia vio. La
+ * vigente hoy se usa solo cuando no contesto nada, porque una ronda de julio
+ * puede resolver ahora a una plantilla creada en agosto y el informe estaria
+ * inventando tareas que nunca existieron.
+ */
+export const SQL_TAREAS_DEL_TURNO = `
+  WITH ronda AS (
+    SELECT rp.id, rp.site_id, sa.shift_id
+    FROM patrols rp
+    LEFT JOIN shift_assignments sa
+      ON sa.tenant_id = rp.tenant_id AND sa.id = rp.shift_assignment_id
+    WHERE rp.id = $1
+  ),
+  respondida AS (
+    SELECT i.template_id
+    FROM checklist_responses r
+    JOIN checklist_items i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+    WHERE r.patrol_id = $1
+    GROUP BY i.template_id
+    ORDER BY count(*) DESC, i.template_id
+    LIMIT 1
+  ),
+  elegida AS (
+    (SELECT template_id FROM respondida)
+    UNION ALL
+    (SELECT t.id
+     FROM checklist_templates t, ronda
+     WHERE NOT EXISTS (SELECT 1 FROM respondida)
+       AND t.is_active
+       AND (t.site_id IS NULL OR t.site_id = ronda.site_id)
+       AND (t.shift_id IS NULL OR t.shift_id = ronda.shift_id)
+     ORDER BY (t.site_id IS NOT NULL)::int + (t.shift_id IS NOT NULL)::int DESC
+     LIMIT 1)
+  )
+  SELECT
+    i.id AS item_id,
+    i.position,
+    i.label,
+    i.response_type,
+    i.requires_photo,
+    i.requires_photo_on_fail,
+    i.due_local_time,
+    i.checkpoint_id,
+    c.name AS checkpoint_name,
+    r.id AS response_id,
+    r.value,
+    r.notes,
+    r.failed,
+    r.photo_id,
+    r.late_minutes,
+    r.responded_at
+  FROM checklist_items i
+  JOIN elegida e ON e.template_id = i.template_id
+  LEFT JOIN checklist_responses r
+    ON r.tenant_id = i.tenant_id AND r.item_id = i.id AND r.patrol_id = $1
+  LEFT JOIN checkpoints c
+    ON c.tenant_id = i.tenant_id AND c.id = i.checkpoint_id
+  ORDER BY i.due_local_time ASC NULLS LAST, i.position
+`;
 
 @Injectable()
 export class PatrolReportService {
@@ -156,6 +228,12 @@ export class PatrolReportService {
       [patrolId],
     );
 
+    // Una ronda sin checklist devuelve cero filas y el informe sale igual que
+    // antes de #265: sin seccion de tareas y sin una linea de mas.
+    const tareas = await this.tenantContext.manager.query<TareaRow[]>(SQL_TAREAS_DEL_TURNO, [
+      patrolId,
+    ]);
+
     const fotos = incluirAnexo ? await this.leerMetadatosFotos(patrolId) : [];
 
     const [reglas, marca] = await Promise.all([
@@ -169,6 +247,7 @@ export class PatrolReportService {
       scans,
       fotos,
       incidentes,
+      tareas,
       // La marca del TENANT, no la de la plataforma ni la del revendedor: en un
       // producto white-label un informe con la marca equivocada es el cliente
       // viendo la marca de otro.

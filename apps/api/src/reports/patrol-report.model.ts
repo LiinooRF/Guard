@@ -65,6 +65,37 @@ export interface IncidenteRow {
   reported_at_server: Date;
 }
 
+/**
+ * Una tarea del turno con su respuesta, si la hubo (#265).
+ *
+ * Es un LEFT JOIN de checklist_items contra checklist_responses: la tarea que
+ * NO se hizo —el caso que mas importa en un informe— no tiene fila en
+ * responses, asi que todo lo que viene de la respuesta es anulable.
+ *
+ * `due_local_time` es `time` en PostgreSQL y el driver lo entrega como STRING
+ * ('11:00:00'), nunca como Date. Pasarlo por formatearFechaHora daria
+ * `new Date('11:00:00')` -> invalido -> '—', y el informe perderia justo la
+ * hora que el producto pidio mostrar.
+ */
+export interface TareaRow {
+  item_id: string;
+  position: number | string;
+  label: string;
+  response_type: string;
+  requires_photo: boolean;
+  requires_photo_on_fail: boolean;
+  due_local_time: string | null;
+  checkpoint_id: string | null;
+  checkpoint_name: string | null;
+  response_id: string | null;
+  value: string | null;
+  notes: string | null;
+  failed: boolean | null;
+  photo_id: string | null;
+  late_minutes: number | string | null;
+  responded_at: Date | null;
+}
+
 // ------------------------------------------------------------------- modelo
 
 export interface FilaPunto {
@@ -92,6 +123,12 @@ export interface FotoAnexo {
   /** Prefijo del sha256: la huella que permite verificar que la imagen no cambio. */
   readonly huella: string;
   readonly capturadaEn: Date;
+  /**
+   * Tarea del turno que pidio esta foto, o null si es evidencia de escaneo.
+   * Sin esto, la foto del refrigerador queda en el anexo rotulada solo con el
+   * punto y nadie sabe que era la tarea de las 11.
+   */
+  readonly tarea: string | null;
 }
 
 export interface IncidenteInforme {
@@ -100,6 +137,46 @@ export interface IncidenteInforme {
   readonly texto: string;
   readonly reportadoEn: Date;
   readonly destacado: boolean;
+}
+
+/** 'pendiente' = la tarea nunca se respondio; es un estado, no un vacio. */
+export type EstadoTarea = 'cumplida' | 'falla' | 'pendiente';
+
+export interface TareaInforme {
+  readonly itemId: string;
+  readonly etiqueta: string;
+  /** Numero del punto en la ronda; null si la tarea es general del turno. */
+  readonly numeroPunto: number | null;
+  /** Nombre del punto donde toca hacerla; null = en cualquier parte del recinto. */
+  readonly punto: string | null;
+  /** "11:00" en la zona DEL RECINTO. null = a cualquier hora de la ronda. */
+  readonly horaPedida: string | null;
+  readonly estado: EstadoTarea;
+  readonly respuesta: string | null;
+  readonly observacion: string | null;
+  readonly respondidaEn: Date | null;
+  /** Si esta respuesta tenia que traer foto (por la tarea o por ser falla). */
+  readonly exigeFoto: boolean;
+  readonly fotoId: string | null;
+  /** Respondida, exigia foto y no la tiene: estado propio, se imprime. */
+  readonly faltaFoto: boolean;
+  /**
+   * Minutos de atraso TAL COMO los guardo quien registro la respuesta. No se
+   * recalcula aca —igual que `omitido` sale de computeCompliance— porque un
+   * recalculo con otra zona horaria daria una cifra distinta a la que ya vio el
+   * guardia, y el informe contradiria al sistema.
+   */
+  readonly atrasoMinutos: number | null;
+  readonly atrasada: boolean;
+}
+
+export interface ResumenTareas {
+  readonly total: number;
+  readonly cumplidas: number;
+  readonly fallidas: number;
+  readonly pendientes: number;
+  readonly atrasadas: number;
+  readonly sinFoto: number;
 }
 
 export interface InformeRonda {
@@ -120,6 +197,15 @@ export interface InformeRonda {
   readonly umbral: number;
   readonly puntos: readonly FilaPunto[];
   readonly omitidos: readonly FilaPunto[];
+  /**
+   * Tareas del turno con su respuesta. Vacio cuando la ronda no tiene checklist
+   * —que es el 100% de las rondas de antes de #265— y ahi el informe sale
+   * exactamente igual que siempre.
+   *
+   * NO entran al porcentaje de cumplimiento: ese numero es sobre puntos
+   * escaneados, y mezclarlo dejaria de cuadrar con la tabla que va debajo.
+   */
+  readonly tareas: readonly TareaInforme[];
   readonly incidentes: readonly IncidenteInforme[];
   readonly anexo: readonly FotoAnexo[];
   /** false cuando el informe se genera liviano para adjuntarlo a un correo. */
@@ -132,6 +218,8 @@ export interface EntradaModelo {
   readonly scans: readonly ScanRow[];
   readonly fotos: readonly FotoRow[];
   readonly incidentes: readonly IncidenteRow[];
+  /** Opcional: una ronda sin checklist no manda esta lista y no cambia en nada. */
+  readonly tareas?: readonly TareaRow[];
   readonly marca: MarcaDocumento;
   readonly umbral: number;
   readonly incluirAnexo?: boolean;
@@ -154,6 +242,7 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
     scans,
     fotos,
     incidentes,
+    tareas = [],
     marca,
     umbral,
     incluirAnexo = true,
@@ -192,6 +281,14 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
 
   const numeroPorPunto = new Map(filas.map((fila) => [fila.checkpointId, fila.numero]));
 
+  // El orden de las tareas lo decide la consulta (hora pedida, despues posicion
+  // en la plantilla) y aca se respeta: reordenar seria una segunda verdad.
+  const tareasInforme = tareas.map((tarea) => armarTarea(tarea, numeroPorPunto));
+  const tareaPorFoto = new Map<string, string>();
+  for (const tarea of tareasInforme) {
+    if (tarea.fotoId !== null) tareaPorFoto.set(tarea.fotoId, tarea.etiqueta);
+  }
+
   return {
     patrolId: ronda.id,
     filename: `informe-ronda-${ronda.id}.pdf`,
@@ -210,6 +307,7 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
     umbral,
     puntos: filas,
     omitidos: filas.filter((fila) => fila.omitido),
+    tareas: tareasInforme,
     incidentes: incidentes.map((incidente) => ({
       id: incidente.id,
       criticidad: incidente.criticality,
@@ -218,12 +316,18 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
       reportadoEn: incidente.reported_at_server,
       destacado: criticidadesDestacadas.includes(incidente.criticality),
     })),
-    anexo: incluirAnexo ? fotos.map((foto) => armarFoto(foto, numeroPorPunto)) : [],
+    anexo: incluirAnexo
+      ? fotos.map((foto) => armarFoto(foto, numeroPorPunto, tareaPorFoto))
+      : [],
     incluyeAnexo: incluirAnexo,
   };
 }
 
-function armarFoto(foto: FotoRow, numeroPorPunto: ReadonlyMap<string, number>): FotoAnexo {
+function armarFoto(
+  foto: FotoRow,
+  numeroPorPunto: ReadonlyMap<string, number>,
+  tareaPorFoto: ReadonlyMap<string, string>,
+): FotoAnexo {
   return {
     id: foto.id,
     checkpointId: foto.checkpoint_id,
@@ -237,6 +341,82 @@ function armarFoto(foto: FotoRow, numeroPorPunto: ReadonlyMap<string, number>): 
     sizeBytes: Number(foto.size_bytes),
     huella: foto.sha256.slice(0, 12),
     capturadaEn: foto.taken_at_device ?? foto.created_at,
+    tarea: tareaPorFoto.get(foto.id) ?? null,
+  };
+}
+
+function armarTarea(
+  tarea: TareaRow,
+  numeroPorPunto: ReadonlyMap<string, number>,
+): TareaInforme {
+  const respondida = tarea.response_id !== null && tarea.response_id !== undefined;
+  const fallo = respondida && tarea.failed === true;
+  const fotoId = tarea.photo_id ?? null;
+  // La foto la puede exigir la tarea (requires_photo, "fotografia el
+  // refrigerador") o la falla (requires_photo_on_fail, el caso de #129). Las dos
+  // terminan en lo mismo: una respuesta que tenia que traer evidencia.
+  const exigeFoto =
+    respondida &&
+    (tarea.requires_photo === true || (fallo && tarea.requires_photo_on_fail === true));
+  const atrasoMinutos = aMinutos(tarea.late_minutes);
+
+  return {
+    itemId: tarea.item_id,
+    etiqueta: tarea.label,
+    numeroPunto: tarea.checkpoint_id ? (numeroPorPunto.get(tarea.checkpoint_id) ?? null) : null,
+    punto: tarea.checkpoint_name ?? null,
+    horaPedida: horaLocal(tarea.due_local_time),
+    estado: !respondida ? 'pendiente' : fallo ? 'falla' : 'cumplida',
+    respuesta: respondida ? tarea.value : null,
+    observacion: tarea.notes?.trim() || null,
+    respondidaEn: tarea.responded_at ?? null,
+    exigeFoto,
+    fotoId,
+    // Solo tiene sentido en lo ya respondido: en una tarea pendiente lo que
+    // falta es la tarea entera, y marcarle ademas "sin foto" es ruido.
+    faltaFoto: exigeFoto && fotoId === null,
+    atrasoMinutos,
+    atrasada: atrasoMinutos !== null && atrasoMinutos > 0,
+  };
+}
+
+/**
+ * `time` de PostgreSQL -> "HH:MM".
+ *
+ * El driver entrega '11:00:00' (o '11:00:00.123456'), un STRING. Si esto no
+ * existiera, el renderer haria new Date('11:00:00') -> Invalid Date -> '—', y
+ * ningun mock lo delataria porque el mock devuelve lo que el autor escribio.
+ * Un formato inesperado se devuelve tal cual: perder el dato es peor que
+ * mostrarlo raro.
+ */
+function horaLocal(valor: string | null | undefined): string | null {
+  if (valor === null || valor === undefined) return null;
+  const texto = String(valor).trim();
+  if (texto === '') return null;
+  const partes = /^(\d{1,2}):(\d{2})/.exec(texto);
+  return partes ? `${partes[1]!.padStart(2, '0')}:${partes[2]}` : texto;
+}
+
+/** integer anulable del driver; se acepta string por si viaja serializado. */
+function aMinutos(valor: number | string | null | undefined): number | null {
+  if (valor === null || valor === undefined) return null;
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+/**
+ * Los contadores que el informe (y el correo) mencionan sin repetir la cuenta
+ * en cada superficie. Es una funcion y no un campo del modelo para no obligar a
+ * cada llamador que arma un InformeRonda a mano a mantener el numero al dia.
+ */
+export function resumirTareas(tareas: readonly TareaInforme[]): ResumenTareas {
+  return {
+    total: tareas.length,
+    cumplidas: tareas.filter((t) => t.estado === 'cumplida').length,
+    fallidas: tareas.filter((t) => t.estado === 'falla').length,
+    pendientes: tareas.filter((t) => t.estado === 'pendiente').length,
+    atrasadas: tareas.filter((t) => t.atrasada).length,
+    sinFoto: tareas.filter((t) => t.faltaFoto).length,
   };
 }
 

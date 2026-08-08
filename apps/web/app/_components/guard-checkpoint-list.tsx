@@ -46,6 +46,7 @@ export function GuardCheckpointList({
   opciones,
   politicaFoto,
   esperandoFoto,
+  esperandoTareas,
   aviso,
   error,
   anuncio,
@@ -67,6 +68,13 @@ export function GuardCheckpointList({
    * QR único—, no solo el botón grande.
    */
   esperandoFoto?: boolean;
+  /**
+   * Las tareas del punto recién marcado están en pantalla (#265). Misma palanca
+   * que `esperandoFoto` y por la misma razón: lo del punto que se acaba de
+   * marcar se resuelve antes de ir al siguiente. No es un bloqueo del turno —el
+   * panel se cierra en un toque— y por eso la tarea sin responder solo avisa.
+   */
+  esperandoTareas?: boolean;
   aviso?: string;
   error?: string;
   anuncio: string;
@@ -79,7 +87,7 @@ export function GuardCheckpointList({
   // `esperandoFoto` entra acá y no en cada botón: apagar el camino de marcado
   // mientras falta una evidencia es lo mismo que estar ocupado escaneando, y
   // así ningún camino nuevo se olvida de mirarlo.
-  const ocupado = fase !== 'inactivo' || esperandoFoto === true;
+  const ocupado = fase !== 'inactivo' || esperandoFoto === true || esperandoTareas === true;
   const soloQr = opciones.modo === 'solo-qr';
 
   return (

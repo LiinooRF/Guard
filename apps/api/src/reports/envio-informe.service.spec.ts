@@ -70,6 +70,9 @@ const MODELO: InformeRonda = {
   umbral: 70,
   puntos: [],
   omitidos: [],
+  // El despacho por correo no depende de las tareas del turno (#265): una ronda
+  // sin checklist es el caso normal y se envia igual.
+  tareas: [],
   incidentes: [],
   anexo: [],
   incluyeAnexo: false,

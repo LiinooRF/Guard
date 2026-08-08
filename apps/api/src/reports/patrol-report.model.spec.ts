@@ -3,12 +3,14 @@ import { computeCompliance, patrolRulesSchema } from '@voxia/shared';
 import {
   construirInformeRonda,
   etiquetaAnomalia,
+  resumirTareas,
   type EncabezadoRondaRow,
   type EntradaModelo,
   type FotoRow,
   type IncidenteRow,
   type PuntoEsperadoRow,
   type ScanRow,
+  type TareaRow,
 } from './patrol-report.model';
 import type { MarcaDocumento } from './pdf-primitivas';
 
@@ -70,6 +72,41 @@ const foto = (id: string, checkpointId: string, extra: Partial<FotoRow> = {}): F
   created_at: new Date('2026-07-31T05:41:00-04:00'),
   ...extra,
 });
+
+/**
+ * Fila cruda de tarea TAL COMO la entrega el driver, no como uno querria que
+ * viniera: `due_local_time` es un string ('11:00:00') porque la columna es
+ * `time`, y `late_minutes` puede ser null. Ese detalle es el que se prueba.
+ */
+const tarea = (parcial: Partial<TareaRow> = {}): TareaRow => ({
+  item_id: 'it-1',
+  position: 1,
+  label: 'Fotografiar el refrigerador',
+  response_type: 'ok_falla',
+  requires_photo: false,
+  requires_photo_on_fail: false,
+  due_local_time: null,
+  checkpoint_id: null,
+  checkpoint_name: null,
+  response_id: null,
+  value: null,
+  notes: null,
+  failed: null,
+  photo_id: null,
+  late_minutes: null,
+  responded_at: null,
+  ...parcial,
+});
+
+/** La misma tarea, ya respondida por el guardia. */
+const respondida = (parcial: Partial<TareaRow> = {}): TareaRow =>
+  tarea({
+    response_id: 'rs-1',
+    value: 'ok',
+    failed: false,
+    responded_at: new Date('2026-07-31T00:05:00-04:00'),
+    ...parcial,
+  });
 
 const entrada = (parcial: Partial<EntradaModelo> = {}): EntradaModelo => ({
   ronda: RONDA,
@@ -271,6 +308,211 @@ describe('construirInformeRonda · incidentes y marca', () => {
 
     expect(informe.marca).toEqual(otra);
     expect(informe.filename).toBe('informe-ronda-patrol-id.pdf');
+  });
+});
+
+describe('construirInformeRonda · tareas del turno', () => {
+  it('lista la tarea aunque nadie la haya respondido, y la marca pendiente', () => {
+    // Es el caso que mas importa del informe: la tarea NO hecha no tiene fila en
+    // checklist_responses, y si el modelo solo mirara las respuestas seria
+    // invisible justo cuando hay que reclamarla.
+    const informe = construirInformeRonda(entrada({ tareas: [tarea()] }));
+
+    expect(informe.tareas).toHaveLength(1);
+    expect(informe.tareas[0]).toMatchObject({
+      etiqueta: 'Fotografiar el refrigerador',
+      estado: 'pendiente',
+      respuesta: null,
+      respondidaEn: null,
+    });
+  });
+
+  it('la hora pedida sale como "11:00" desde el string que entrega el driver', () => {
+    // due_local_time es `time` en PostgreSQL: llega '11:00:00', NO un Date. Si
+    // el informe lo tratara como fecha, new Date('11:00:00') seria invalido y la
+    // celda quedaria en '—' — la hora que el producto pidio mostrar.
+    const informe = construirInformeRonda(
+      entrada({ tareas: [tarea({ due_local_time: '11:00:00' })] }),
+    );
+
+    expect(informe.tareas[0]!.horaPedida).toBe('11:00');
+  });
+
+  it('sin hora pedida la tarea vale para cualquier momento de la ronda', () => {
+    const informe = construirInformeRonda(entrada({ tareas: [tarea()] }));
+    expect(informe.tareas[0]!.horaPedida).toBeNull();
+  });
+
+  it('cruza el punto de la tarea con su número en la ronda', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        tareas: [
+          tarea({ checkpoint_id: 'cp-3', checkpoint_name: 'Portería' }),
+          tarea({ item_id: 'it-2', label: 'Revisar bitácora' }),
+        ],
+      }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ numeroPunto: 3, punto: 'Portería' });
+    // checkpoint_id NULL = tarea general del turno, no un punto sin nombre.
+    expect(informe.tareas[1]).toMatchObject({ numeroPunto: null, punto: null });
+  });
+
+  it('la tarea de un punto que no está en el orden de la ronda no pierde el nombre', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        tareas: [tarea({ checkpoint_id: 'cp-fuera', checkpoint_name: 'Patio trasero' })],
+      }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ numeroPunto: null, punto: 'Patio trasero' });
+  });
+
+  it('el atraso se LEE de late_minutes y no se recalcula con responded_at', () => {
+    // Quien registro la respuesta ya midio el atraso contra la zona del recinto.
+    // Si el informe volviera a calcularlo podria contradecir a la cifra que el
+    // guardia y el supervisor ya vieron, igual que pasaria recalculando omitido.
+    const informe = construirInformeRonda(
+      entrada({
+        tareas: [
+          respondida({
+            due_local_time: '11:00:00',
+            late_minutes: 35,
+            responded_at: new Date('2026-07-31T20:00:00-04:00'),
+          }),
+        ],
+      }),
+    );
+
+    expect(informe.tareas[0]!.atrasoMinutos).toBe(35);
+    expect(informe.tareas[0]!.atrasada).toBe(true);
+  });
+
+  it('respondida a tiempo no queda marcada como atrasada', () => {
+    const informe = construirInformeRonda(
+      entrada({ tareas: [respondida({ due_local_time: '11:00:00', late_minutes: 0 })] }),
+    );
+
+    expect(informe.tareas[0]!.atrasoMinutos).toBe(0);
+    expect(informe.tareas[0]!.atrasada).toBe(false);
+  });
+
+  it('la tarea atrasada se acepta igual: sigue siendo una respuesta cumplida', () => {
+    // Regla del producto: "si la tarea queda fuera del horario de la ronda, que
+    // se envie igual". El atraso se menciona, no invalida.
+    const informe = construirInformeRonda(
+      entrada({ tareas: [respondida({ late_minutes: 120 })] }),
+    );
+
+    expect(informe.tareas[0]!.estado).toBe('cumplida');
+    expect(informe.tareas[0]!.atrasada).toBe(true);
+  });
+
+  it('la falla se marca como estado propio', () => {
+    const informe = construirInformeRonda(
+      entrada({ tareas: [respondida({ value: 'falla', failed: true })] }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ estado: 'falla', respuesta: 'falla' });
+  });
+
+  it('la tarea con foto obligatoria y sin foto queda marcada', () => {
+    // Puede pasar sin que nadie haga trampa: la purga por retencion pone
+    // photo_id en NULL. El informe tiene que decirlo, no callarlo.
+    const informe = construirInformeRonda(
+      entrada({ tareas: [respondida({ requires_photo: true, photo_id: null })] }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ exigeFoto: true, faltaFoto: true });
+  });
+
+  it('con la foto adjunta la tarea de foto obligatoria no reclama nada', () => {
+    const informe = construirInformeRonda(
+      entrada({ tareas: [respondida({ requires_photo: true, photo_id: 'f1' })] }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ exigeFoto: true, faltaFoto: false, fotoId: 'f1' });
+  });
+
+  it('la falla que exige foto solo al fallar también cuenta como foto faltante', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        tareas: [respondida({ value: 'falla', failed: true, requires_photo_on_fail: true })],
+      }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ estado: 'falla', faltaFoto: true });
+  });
+
+  it('la tarea pendiente no se acusa además de "sin foto"', () => {
+    // Lo que falta ahi es la tarea entera; marcarle tambien la foto es ruido que
+    // hace desconfiar del resto de la tabla.
+    const informe = construirInformeRonda(
+      entrada({ tareas: [tarea({ requires_photo: true })] }),
+    );
+
+    expect(informe.tareas[0]).toMatchObject({ estado: 'pendiente', faltaFoto: false });
+  });
+
+  it('las tareas NO alteran el porcentaje de cumplimiento', () => {
+    // El cumplimiento es sobre puntos escaneados. Si una tarea moviera ese
+    // numero, el encabezado dejaria de cuadrar con la tabla de puntos.
+    const scans = PUNTOS.map((p) => escaneo(p.id, '2026-07-30T23:00:00-04:00'));
+    const conTareas = construirInformeRonda(
+      entrada({
+        scans,
+        tareas: [tarea(), respondida({ item_id: 'it-2', value: 'falla', failed: true })],
+      }),
+    );
+    const sinTareas = construirInformeRonda(entrada({ scans }));
+
+    expect(conTareas.compliance).toEqual(sinTareas.compliance);
+    expect(conTareas.compliance.pct).toBe(100);
+  });
+
+  it('una ronda sin checklist deja la lista vacía y no rompe nada', () => {
+    const informe = construirInformeRonda(entrada());
+
+    expect(informe.tareas).toEqual([]);
+    expect(resumirTareas(informe.tareas)).toMatchObject({ total: 0, pendientes: 0 });
+  });
+
+  it('rotula la foto del anexo con la tarea que la exigió', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        fotos: [foto('f1', 'cp-3'), foto('f2', 'cp-1')],
+        tareas: [respondida({ requires_photo: true, photo_id: 'f1' })],
+      }),
+    );
+
+    expect(informe.anexo[0]!.tarea).toBe('Fotografiar el refrigerador');
+    // La foto de un escaneo normal sigue sin rotulo de tarea.
+    expect(informe.anexo[1]!.tarea).toBeNull();
+  });
+});
+
+describe('resumirTareas', () => {
+  it('cuenta lo que el informe tiene que mencionar', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        tareas: [
+          respondida({ item_id: 'it-1' }),
+          respondida({ item_id: 'it-2', value: 'falla', failed: true }),
+          respondida({ item_id: 'it-3', late_minutes: 42 }),
+          respondida({ item_id: 'it-4', requires_photo: true }),
+          tarea({ item_id: 'it-5' }),
+        ],
+      }),
+    );
+
+    expect(resumirTareas(informe.tareas)).toEqual({
+      total: 5,
+      cumplidas: 3,
+      fallidas: 1,
+      pendientes: 1,
+      atrasadas: 1,
+      sinFoto: 1,
+    });
   });
 });
 

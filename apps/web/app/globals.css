@@ -802,3 +802,26 @@ a.stats-boton { display: inline-flex; align-items: center; }
   .route-editor-columns { grid-template-columns: minmax(15rem,.65fr) minmax(28rem,1.35fr); }
   .route-editor-settings { grid-template-columns: repeat(3,minmax(0,1fr)) auto; align-items: end; }
 }
+
+/* Editor de tareas del turno (#265): una fila por tarea, legible sin drag. */
+.tareas-turno { margin-top: 1.5rem; }
+.tareas-turno-toolbar { display: grid; gap: .7rem; margin-top: 1rem; }
+.tareas-turno label { display: grid; gap: .3rem; color: var(--muted); font-size: .65rem; font-weight: 750; }
+.tareas-turno input, .tareas-turno select { min-width: 0; min-height: 2.6rem; border: 1px solid #d9deea; border-radius: .65rem; padding: 0 .65rem; color: var(--ink); background: white; }
+.tareas-turno-zona { margin: .8rem 0 0; color: var(--muted); font-size: .68rem; }
+.tareas-turno-lista { display: grid; gap: .6rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.tareas-turno-lista li { border: 1px solid var(--line); border-radius: .7rem; padding: .65rem; background: white; }
+.tareas-turno-fila { display: grid; grid-template-columns: auto 1fr; gap: .55rem; align-items: end; }
+.tareas-turno-fila > b { align-self: center; color: var(--muted); font-size: .75rem; }
+.tareas-turno-botones { display: flex; gap: .25rem; }
+.tareas-turno-botones button { border: 1px solid var(--line); border-radius: .5rem; padding: .35rem .5rem; color: var(--ink); background: #f8f9fc; cursor: pointer; }
+.tareas-turno-fotos { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-top: .5rem; padding-top: .5rem; border-top: 1px dashed var(--line); }
+.tareas-turno-fotos label { display: flex; grid-template-columns: none; align-items: center; gap: .3rem; white-space: nowrap; }
+.tareas-turno-fotos label input { min-height: auto; }
+.tareas-turno-fotos small { color: var(--muted); font-size: .63rem; }
+.tareas-turno-tarde { border-radius: 99px; padding: .2rem .5rem; color: #765000; background: #fff5d9; font-size: .6rem; font-style: normal; font-weight: 750; }
+.tareas-turno-acciones { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+@media (min-width: 901px) {
+  .tareas-turno-toolbar { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .tareas-turno-fila { grid-template-columns: auto minmax(12rem,2fr) minmax(7rem,1fr) minmax(9rem,1fr) minmax(6rem,auto) auto; }
+}

@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EventsStreamService } from '../events-stream/events-stream.service';
@@ -31,6 +33,9 @@ const ITEM_SIMPLE: ChecklistItemView = {
   label: 'Extintor de la bodega',
   responseType: 'ok_falla',
   requiresPhotoOnFail: false,
+  checkpointId: null,
+  dueLocalTime: null,
+  requiresPhoto: false,
 };
 
 const ITEM_CON_FOTO: ChecklistItemView = {
@@ -39,6 +44,21 @@ const ITEM_CON_FOTO: ChecklistItemView = {
   label: 'Puerta de acceso norte',
   responseType: 'ok_falla',
   requiresPhotoOnFail: true,
+  checkpointId: null,
+  dueLocalTime: null,
+  requiresPhoto: false,
+};
+
+/** La tarea del requisito: a las 11, en ESE punto, y con foto del refrigerador. */
+const TAREA_DEL_PUNTO: ChecklistItemView = {
+  id: 'item-3',
+  position: 3,
+  label: 'Fotografiar el refrigerador',
+  responseType: 'ok_falla',
+  requiresPhotoOnFail: false,
+  checkpointId: 'punto-cocina',
+  dueLocalTime: '11:00:00',
+  requiresPhoto: true,
 };
 
 const PLANTILLA = {
@@ -352,5 +372,217 @@ describe('ChecklistsService — administracion de plantillas (#129)', () => {
 
     const sqls = query.mock.calls.map(([sql]: [string]) => sql);
     expect(sqls.some((sql: string) => /DELETE\s+FROM\s+checklist_items/.test(sql))).toBe(false);
+  });
+});
+
+/**
+ * La plantilla que viaja al TELEFONO (#265).
+ *
+ * Estas dos pruebas miran el SQL y no lo que devuelve el mock, a proposito: el
+ * mock devuelve lo que el autor escribio en `PLANTILLA`, asi que confirmar la
+ * forma del objeto no prueba que la consulta traiga las columnas. Es el error
+ * que ya tumbo un endpoint entero en produccion con 1900 pruebas en verde. Los
+ * nombres de columna se leen de la MIGRACION, que es la unica fuente que la base
+ * respeta.
+ */
+function columnasAgregadasAChecklistItems(): string[] {
+  const carpeta = join(__dirname, '..', 'database', 'migrations');
+  // Por nombre de clase y no por sello: el sello se elige al final y renumerar
+  // es seguro mientras no se haya aplicado (CLAUDE.md), asi que fijarlo aca
+  // romperia la prueba por un cambio que no cambia nada.
+  const archivo = readdirSync(carpeta).find((nombre) => nombre.endsWith('-TareasDelTurno.ts'));
+  if (!archivo) throw new Error('No esta la migracion de tareas del turno');
+
+  const migracion = readFileSync(join(carpeta, archivo), 'utf8');
+  const columnas: string[] = [];
+  for (const bloque of migracion.split(/ALTER TABLE\s+/g).slice(1)) {
+    if (!bloque.startsWith('checklist_items')) continue;
+    for (const [, columna] of bloque.matchAll(/ADD COLUMN\s+(\w+)/g)) {
+      if (columna) columnas.push(columna);
+    }
+  }
+  return columnas;
+}
+
+describe('ChecklistsService — la plantilla que viaja al telefono (#265)', () => {
+  async function sqlDeLaPlantilla(): Promise<string> {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([{ ...PLANTILLA, items: [TAREA_DEL_PUNTO] }]);
+    const { service } = servicio(query);
+    await service.templateForPatrol('patrol-1', 'guard-1');
+    const [sql] = query.mock.calls[1] as [string];
+    return sql;
+  }
+
+  it('proyecta TODAS las columnas que la migracion agrego a checklist_items', async () => {
+    const columnas = columnasAgregadasAChecklistItems();
+    // Que el lector de la migracion funcione es parte de la prueba: si dejara de
+    // encontrar columnas, el bucle de abajo pasaria sin comprobar nada.
+    expect(columnas).toEqual(
+      expect.arrayContaining(['checkpoint_id', 'due_local_time', 'requires_photo']),
+    );
+
+    const sql = await sqlDeLaPlantilla();
+    for (const columna of columnas) expect(sql).toContain(`i.${columna}`);
+  });
+
+  it('la tarea llega con su punto, su hora y su foto obligatoria, con esos nombres', async () => {
+    const sql = await sqlDeLaPlantilla();
+    // Las claves del jsonb son el contrato con el telefono: una columna
+    // proyectada con otro nombre es una tarea que el guardia nunca ve al
+    // escanear el punto, aunque el SELECT la traiga.
+    for (const clave of Object.keys(TAREA_DEL_PUNTO)) expect(sql).toContain(`'${clave}',`);
+  });
+});
+
+/**
+ * El atraso de una tarea con hora (#265).
+ *
+ * Las fechas del fixture son las que devolveria PostgreSQL para un turno de
+ * 22:00 a 06:00 del viernes 7-ago-2026 en un recinto de Santiago (UTC-4 en
+ * invierno). El offset vive solo aca: en produccion la conversion la hace
+ * `AT TIME ZONE sites.timezone` y nadie escribe un offset en el codigo.
+ */
+const VENTANA_DEL_TURNO = {
+  ventana_inicio: new Date('2026-08-08T02:00:00Z'), // viernes 22:00 local
+  ventana_fin: new Date('2026-08-08T10:00:00Z'), // sabado 06:00 local
+};
+
+/** La respuesta llega a las 02:00 locales del sabado. */
+const AHORA = new Date('2026-08-08T06:00:00Z');
+
+function filaDeVencimiento(itemId: string, delDia: string, delDiaSiguiente: string) {
+  return {
+    item_id: itemId,
+    ahora: AHORA,
+    ...VENTANA_DEL_TURNO,
+    vence_del_dia: new Date(delDia),
+    vence_del_dia_siguiente: new Date(delDiaSiguiente),
+  };
+}
+
+const TAREA_DE_LAS_23: ChecklistItemView = {
+  id: 'item-tarea',
+  position: 1,
+  label: 'Fotografiar el refrigerador',
+  responseType: 'ok_falla',
+  requiresPhotoOnFail: false,
+  checkpointId: null,
+  dueLocalTime: '23:00:00',
+  requiresPhoto: false,
+};
+
+const PLANTILLA_CON_TAREA = { ...PLANTILLA, items: [TAREA_DE_LAS_23] };
+
+describe('ChecklistsService — la tarea que llega tarde se acepta igual (#265)', () => {
+  it('guarda los minutos de atraso en late_minutes y NO rechaza la respuesta', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([PLANTILLA_CON_TAREA])
+      .mockResolvedValueOnce([
+        // Tarea de las 23:00 del viernes: el candidato del dia cae dentro del
+        // turno, el del dia siguiente no.
+        filaDeVencimiento('item-tarea', '2026-08-08T03:00:00Z', '2026-08-09T03:00:00Z'),
+      ])
+      .mockResolvedValueOnce([{ id: 'resp-1' }]);
+    const { service } = servicio(query);
+
+    const resultado = await service.saveResponses('patrol-1', 'guard-1', {
+      responses: [{ itemId: 'item-tarea', value: 'ok' }],
+    });
+
+    // 23:00 pedidas, respondida a las 02:00: tres horas, no veintiuna.
+    expect(resultado.results[0]).toEqual({
+      itemId: 'item-tarea',
+      status: 'aplicado',
+      responseId: 'resp-1',
+      lateMinutes: 180,
+      outsideShift: false,
+      lateMessage: expect.stringContaining('180 min'),
+    });
+    expect(resultado.late).toBe(1);
+
+    const insert = query.mock.calls.find(([sql]: [string]) =>
+      sql.includes('INSERT INTO checklist_responses'),
+    ) as [string, unknown[]];
+    expect(insert[0]).toContain('late_minutes');
+    expect(insert[1][6]).toBe(180);
+  });
+
+  it('una tarea SIN hora guarda NULL, no cero, y no paga una consulta de mas', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([PLANTILLA]) // ITEM_SIMPLE no tiene dueLocalTime
+      .mockResolvedValueOnce([{ id: 'resp-1' }]);
+    const { service } = servicio(query);
+
+    const resultado = await service.saveResponses('patrol-1', 'guard-1', {
+      responses: [{ itemId: 'item-1', value: 'ok' }],
+    });
+
+    expect(resultado.results[0]).not.toHaveProperty('lateMinutes');
+    const insert = query.mock.calls.find(([sql]: [string]) =>
+      sql.includes('INSERT INTO checklist_responses'),
+    ) as [string, unknown[]];
+    expect(insert[1][6]).toBeNull();
+    // Ronda, plantilla e INSERT: sin horas no se resuelve ningun vencimiento.
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('la tarea cuya hora cae fuera del horario de la ronda se acepta y lo dice', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([
+        { ...PLANTILLA, items: [{ ...TAREA_DE_LAS_23, dueLocalTime: '11:00:00' }] },
+      ])
+      .mockResolvedValueOnce([
+        // Las 11:00 no ocurren nunca dentro de un turno de 22:00 a 06:00.
+        filaDeVencimiento('item-tarea', '2026-08-07T15:00:00Z', '2026-08-08T15:00:00Z'),
+      ])
+      .mockResolvedValueOnce([{ id: 'resp-1' }]);
+    const { service } = servicio(query);
+
+    const resultado = await service.saveResponses('patrol-1', 'guard-1', {
+      responses: [{ itemId: 'item-tarea', value: 'ok' }],
+    });
+
+    expect(resultado.results[0]?.status).toBe('aplicado');
+    expect(resultado.results[0]?.outsideShift).toBe(true);
+    expect(resultado.results[0]?.lateMessage).toContain('fuera del horario de la ronda');
+    const insert = query.mock.calls.find(([sql]: [string]) =>
+      sql.includes('INSERT INTO checklist_responses'),
+    ) as [string, unknown[]];
+    // Cero, no NULL: la tarea SI tenia hora y se respondio antes de ella.
+    expect(insert[1][6]).toBe(0);
+  });
+
+  it('el dia siguiente se suma al timestamp SIN zona, y los ids van como uuid[]', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([PLANTILLA_CON_TAREA])
+      .mockResolvedValueOnce([
+        filaDeVencimiento('item-tarea', '2026-08-08T03:00:00Z', '2026-08-09T03:00:00Z'),
+      ])
+      .mockResolvedValueOnce([{ id: 'resp-1' }]);
+    const { service } = servicio(query);
+
+    await service.saveResponses('patrol-1', 'guard-1', {
+      responses: [{ itemId: 'item-tarea', value: 'ok' }],
+    });
+
+    const [sql, parametros] = query.mock.calls[2] as [string, unknown[]];
+    // Convertir primero y sumar el dia despues corre una hora en cada cambio de
+    // horario: el INTERVAL va ANTES del AT TIME ZONE, sobre el timestamp local.
+    expect(sql).toContain(`+ INTERVAL '1 day') AT TIME ZONE`);
+    // El arreglo se compara contra la columna uuid con el casteo escrito; un
+    // `= ANY(...)` mal tipado compila en TypeScript y revienta en la base.
+    expect(sql).toContain('= ANY($2::uuid[])');
+    expect(parametros).toEqual(['patrol-1', ['item-tarea']]);
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { pedirApi } from './guard-outbox';
 import { escribirJson, leerJson } from './guard-storage';
+import { tareasDelCierre } from './guard-tareas-modelo';
 
 /**
  * Checklist del turno (#93).
@@ -16,6 +17,11 @@ import { escribirJson, leerJson } from './guard-storage';
  * OJO con lo offline: `POST /sync/push` solo acepta operaciones `scan` y
  * `event`, así que el checklist NO tiene cola. Sin señal las respuestas quedan
  * guardadas en el teléfono y el guardia reintenta. Ver INTEGRACION.md.
+ *
+ * Acá quedan SOLO las tareas sin punto (#265). Las que tienen `checkpointId` se
+ * responden al escanear su punto, con su propia cola —`guard-tareas-punto`—, y
+ * ofrecerlas otra vez en el cierre haría que el guardia conteste algo que el
+ * servidor va a descartar por duplicado.
  */
 
 const CLAVE_RESPUESTAS = 'voxia.guard.checklist.v1';
@@ -28,6 +34,8 @@ interface ItemChecklist {
   label: string;
   responseType: TipoRespuesta;
   requiresPhotoOnFail: boolean;
+  /** Con punto, la tarea se responde al escanearlo y no acá. Ver #265. */
+  checkpointId?: string | null;
 }
 
 type Plantilla =
@@ -130,7 +138,10 @@ export function GuardChecklist({ patrolId, apiUrl }: { patrolId: string; apiUrl:
     }
   }
 
-  const items = [...plantilla.template.items].sort((a, b) => a.position - b.position);
+  const items = tareasDelCierre(plantilla.template.items);
+  // Una plantilla cuyas tareas son todas de un punto no deja nada que responder
+  // en el cierre: la sección entera sobra.
+  if (!items.length) return null;
 
   return (
     <section className="guardia-checklist" aria-labelledby="guardia-checklist-titulo">

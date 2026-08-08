@@ -16,6 +16,7 @@ import { RouteEditor, type RouteEditorSite } from '../../_components/route-edito
 import { StatsCharts } from '../../_components/stats-charts';
 import { SupervisorPanel } from '../../_components/supervisor-panel';
 import { SupervisorSchedule } from '../../_components/supervisor-schedule';
+import { TareasTurnoEditor } from '../../_components/tareas-turno-editor';
 import {
   AdminManagement,
   type AuthPolicy,
@@ -192,6 +193,16 @@ export default async function RoleDashboard({
         mapTileUrl={process.env.MAP_TILE_URL ?? null}
         mapAttribution={process.env.MAP_ATTRIBUTION ?? ''}
       />}
+      {/* Editor de tareas del turno (#265): "ir a las 11, a cierto punto, y
+          tomar una imagen al refrigerador". Va junto al editor de rutas porque
+          es la otra mitad de lo mismo — la ruta dice por donde pasa el guardia y
+          esto dice que hace cuando llega.
+
+          Carga su propio catalogo desde el navegador en vez de recibirlo por
+          props: necesita `timezone` por recinto, que es lo unico que le da
+          sentido a la hora de una tarea, y el catalogo del editor de rutas no lo
+          trae. Ver `/checklists/supervisor/sites`. */}
+      {isSupervisor && <TareasTurnoEditor apiUrl={publicApiUrl()} />}
       {/* Al SUPERVISOR se le REEMPLAZA el panel de informes generico, no se le
           suma otro (#99). El de arriba se alimenta de `/dashboard/tenant`, que
           mezcla las rondas de todos sus recintos sin poder elegir; el del panel

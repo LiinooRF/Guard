@@ -442,7 +442,7 @@ export async function subirFotoNovedad(
   foto: File,
   takenAtDevice: string,
 ): Promise<boolean> {
-  return subirFoto(apiUrl, `/evidence/events/${eventId}/photos`, foto, takenAtDevice);
+  return (await subirFoto(apiUrl, `/evidence/events/${eventId}/photos`, foto, takenAtDevice)).ok;
 }
 
 /**
@@ -460,7 +460,31 @@ export async function subirFotoPunto(
   foto: File,
   takenAtDevice: string,
 ): Promise<boolean> {
+  return (await subirFoto(apiUrl, `/evidence/scans/${scanId}/photos`, foto, takenAtDevice)).ok;
+}
+
+/**
+ * Foto de una TAREA del turno (#265). Cuelga del mismo escaneo que la foto del
+ * punto —es la misma ruta, la misma cola y la misma marca de agua— pero acá sí
+ * hace falta el id que devuelve el servidor: la respuesta del checklist lo lleva
+ * como `photoId` y el servicio lo valida contra `scan_photos`.
+ *
+ * Que `subirFoto` tirara el cuerpo de la respuesta era justo lo que faltaba: la
+ * foto subía y la tarea se quedaba sin poder referenciarla.
+ */
+export async function subirFotoDeTarea(
+  apiUrl: string,
+  scanId: string,
+  foto: File,
+  takenAtDevice: string,
+): Promise<SubidaDeFoto> {
   return subirFoto(apiUrl, `/evidence/scans/${scanId}/photos`, foto, takenAtDevice);
+}
+
+/** `photoId` solo cuando el servidor lo devolvió: sin él la tarea no puede citarla. */
+export interface SubidaDeFoto {
+  ok: boolean;
+  photoId?: string;
 }
 
 async function subirFoto(
@@ -468,7 +492,7 @@ async function subirFoto(
   ruta: string,
   foto: File,
   takenAtDevice: string,
-): Promise<boolean> {
+): Promise<SubidaDeFoto> {
   const cuerpo = new FormData();
   cuerpo.append('foto', foto);
   // La hora de CAPTURA, que llega desde quien llama. Poner `new Date()` aca
@@ -477,10 +501,56 @@ async function subirFoto(
   cuerpo.append('takenAtDevice', takenAtDevice);
   try {
     const respuesta = await pedirApi(apiUrl, ruta, { method: 'POST', body: cuerpo });
-    return respuesta.ok;
+    if (!respuesta.ok) return { ok: false };
+    // Un cuerpo ilegible no convierte una subida buena en mala: el servidor ya
+    // tiene la foto. Lo que se pierde es el id, y quien lo necesita lo espera.
+    const cuerpoJson = (await respuesta.json().catch(() => null)) as { id?: string } | null;
+    return cuerpoJson?.id ? { ok: true, photoId: cuerpoJson.id } : { ok: true };
   } catch {
-    return false;
+    return { ok: false };
   }
+}
+
+/**
+ * Las respuestas del checklist del turno.
+ *
+ * No pasan por `POST /sync/push` —esa cola solo acepta `scan` y `event`— sino
+ * por su endpoint, y la cola es la del teléfono (`guard-tareas-modelo`).
+ *
+ * `undefined` significa "no llegó": la cola queda intacta y se reintenta. Vale
+ * también para un 4xx, y es deliberado: el veredicto por item viene en el 200
+ * —un item inválido no bota a los otros—, así que un 4xx es del lote entero y
+ * tirar por eso lo que el guardia ya respondió sería perderlo sin decírselo.
+ */
+export async function enviarRespuestasDeTareas(
+  apiUrl: string,
+  patrolId: string,
+  responses: readonly { itemId: string; value: string; notes?: string; photoId?: string }[],
+): Promise<ResultadoTareaSync[] | undefined> {
+  if (sinRed()) return undefined;
+
+  let respuesta: Response;
+  try {
+    respuesta = await pedirApi(apiUrl, `/checklists/patrols/${patrolId}/responses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ responses }),
+    });
+  } catch {
+    return undefined;
+  }
+  if (!respuesta.ok) return undefined;
+
+  const cuerpo = (await respuesta.json().catch(() => null)) as {
+    results?: ResultadoTareaSync[];
+  } | null;
+  return cuerpo?.results ?? undefined;
+}
+
+export interface ResultadoTareaSync {
+  itemId: string;
+  status: 'aplicado' | 'duplicado' | 'rechazado';
+  reason?: string;
 }
 
 export async function marcarSalidaDeJornada(
