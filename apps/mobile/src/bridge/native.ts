@@ -32,6 +32,8 @@ import {
   type RutaOfflinePayload,
   type EncolarSyncPayload,
   type RegistrarFirmaPayload,
+  type IniciarTrazaPayload,
+  type PuntoDeTrazaPayload,
 } from './protocol';
 
 /**
@@ -73,6 +75,16 @@ export interface ManejadoresNativos {
   readonly encolarSync: (payload: EncolarSyncPayload) => Promise<boolean>;
   readonly sincronizarCola: () => Promise<{ procesadas: number; pendientes: number }>;
   readonly registrarFirma: (payload: RegistrarFirmaPayload) => Promise<string>;
+  /**
+   * Traza en vivo (#280, MINOR 5). `emitir` entrega cada posicion al puente,
+   * que la reenvia al portal como `track.point`; el portal la sube con su
+   * sesion. Sin permiso de ubicacion no muestrea y no pide nada (#275).
+   */
+  readonly iniciarTraza: (
+    peticion: IniciarTrazaPayload,
+    emitir: (punto: PuntoDeTrazaPayload) => void,
+  ) => Promise<void>;
+  readonly detenerTraza: () => void;
 }
 
 export interface OpcionesPuente {
@@ -436,6 +448,19 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
           )))
           .catch(() => responderErrorPuente(mensaje.id));
         return;
+      case 'track.start':
+        // Sin respuesta: el muestreo es un grifo, no una pregunta. Cada punto
+        // llega como `track.point` suelto, igual que `connectivity.state`
+        // cuando el shell avisa por su cuenta.
+        void manejadores.iniciarTraza(mensaje.payload, (punto) => {
+          if (listo && !bloqueado) {
+            enviar(armarSobre('track.point', punto, { prefijo: 'trk' }));
+          }
+        }).catch(() => registrar('puente.traza.error'));
+        return;
+      case 'track.stop':
+        manejadores.detenerTraza();
+        return;
       case 'connectivity.query':
         void manejadores.estadoConexion()
           .then((estado) => enviar(
@@ -459,9 +484,9 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
         enviar(armarSobre('connectivity.state', estado, { prefijo: 'net' }));
       }
     },
-    // Ya no hay temporizadores que cortar (ver arriba). Se conserva porque el
-    // WebView se remonta al reintentar y el desmontaje necesita a quien llamar;
-    // si mañana el puente arma uno, este es su lugar.
-    detener: () => undefined,
+    // El WebView se remonta al reintentar, y con el se va el portal que pidio
+    // la traza: el watcher NO puede sobrevivirlo — quedaria muestreando sin
+    // nadie que suba los puntos, y ademas fuera del control de la ronda.
+    detener: () => manejadores.detenerTraza(),
   };
 }

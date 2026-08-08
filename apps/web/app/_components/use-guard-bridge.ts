@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type {
   EstadoConexionPayload,
+  PuntoDeTrazaPayload,
   ResultadoEscaneoPayload,
   ResultadoEscaneoQrPayload,
   RutaOfflinePayload,
@@ -68,6 +69,9 @@ async function reportarPermisoAlServidor(
  */
 const MINOR_CON_QR = 4;
 
+/** MINOR que trajo la familia `track.*` (traza en vivo, #280). */
+const MINOR_CON_TRAZA = 5;
+
 export type FasePuente = 'conectando' | 'sin-puente' | 'listo' | 'incompatible';
 
 export interface PuenteGuardia {
@@ -90,6 +94,15 @@ export interface PuenteGuardia {
   cancelarEscaneo: () => void;
   cancelarEscaneoQr: () => void;
   guardarRutaOffline: (ruta: RutaOfflinePayload) => Promise<boolean>;
+  /**
+   * Traza en vivo (#280). `soportaTraza` es capacidad del SHELL (minor >= 5):
+   * con un shell viejo los metodos no hacen nada y no hay error — la traza
+   * degrada en silencio, igual que el QR en su dia.
+   */
+  soportaTraza: boolean;
+  iniciarTraza: (intervalSeconds: number) => void;
+  detenerTraza: () => void;
+  alPuntoDeTraza: (fn: (punto: PuntoDeTrazaPayload) => void) => () => void;
 }
 
 export function useGuardBridge(apiUrl?: string): PuenteGuardia {
@@ -100,6 +113,7 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   const [aviso, setAviso] = useState<string>();
   const [puedeEscanear, setPuedeEscanear] = useState(false);
   const [puedeEscanearQr, setPuedeEscanearQr] = useState(false);
+  const [soportaTraza, setSoportaTraza] = useState(false);
   const [sinAntenaNfc, setSinAntenaNfc] = useState(false);
   const [soportaRutaOffline, setSoportaRutaOffline] = useState(false);
   // Marca del EQUIPO (api de Android + version de la app), sin datos de la
@@ -153,6 +167,7 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
        */
       setSinAntenaNfc(!dispositivo.tieneNfc);
       setPuedeEscanearQr(estado.info.protocolo.minor >= MINOR_CON_QR && dispositivo.tieneCamara);
+      setSoportaTraza(estado.info.protocolo.minor >= MINOR_CON_TRAZA);
 
       if (estado.info.protocolo.minor >= 3 && apiUrl && typeof window !== 'undefined') {
         try {
@@ -286,5 +301,9 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
     cancelarEscaneo,
     cancelarEscaneoQr,
     guardarRutaOffline,
+    soportaTraza,
+    iniciarTraza: cliente.iniciarTraza,
+    detenerTraza: cliente.detenerTraza,
+    alPuntoDeTraza: cliente.alPuntoDeTraza,
   };
 }

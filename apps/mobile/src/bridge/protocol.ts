@@ -50,11 +50,15 @@ export const PUENTE = 'voxia.bridge' as const;
  * Version que habla ESTE build del shell.
  *
  * MINOR 4 agrega la familia `qr.*` (respaldo por camara, issues #226 y #227).
+ * MINOR 5 agrega la familia `track.*` (traza en vivo, #280): el portal pide
+ *         muestrear mientras la ronda esta en curso y el shell entrega cada
+ *         posicion; el portal la sube con su sesion. Un shell viejo la
+ *         descarta por tipo desconocido y el portal degrada sin traza.
  * Es aditivo: el portal viejo no la pide y el shell viejo nunca la recibe, asi
  * que ningun telefono instalado se rompe mientras el parque se actualiza.
  */
 export const PROTOCOLO_MAJOR = 1;
-export const PROTOCOLO_MINOR = 4;
+export const PROTOCOLO_MINOR = 5;
 
 /**
  * Versiones mayores que este shell todavia entiende. Se agrega la anterior al
@@ -180,6 +184,24 @@ export interface RegistrarFirmaPayload {
   readonly portalOrigin: string;
 }
 
+/** El portal pide muestrear la posicion mientras la ronda esta en curso. */
+export interface IniciarTrazaPayload {
+  /** Cada cuantos segundos. Sale del plan del servidor (GET /geo/policy). */
+  readonly intervalSeconds: number;
+}
+
+/**
+ * Una posicion del muestreo. La hora es la del telefono AL MUESTREAR
+ * (`recordedAt` es la clave del punto en la ronda, ver AppendTrackDto).
+ * No lleva datos de la persona: quien es el guardia lo sabe la sesion.
+ */
+export interface PuntoDeTrazaPayload {
+  readonly recordedAt: string;
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly accuracyM?: number;
+}
+
 export type MensajePortal =
   | Sobre<'hello', HolaPayload>
   | Sobre<'nfc.scan.start', EscaneoNfcPayload>
@@ -193,7 +215,9 @@ export type MensajePortal =
   | Sobre<'sync.queue.enqueue', EncolarSyncPayload>
   | Sobre<'sync.queue.flush', Record<string, never>>
   | Sobre<'device.signature.register', RegistrarFirmaPayload>
-  | Sobre<'connectivity.query', Record<string, never>>;
+  | Sobre<'connectivity.query', Record<string, never>>
+  | Sobre<'track.start', IniciarTrazaPayload>
+  | Sobre<'track.stop', Record<string, never>>;
 
 export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'hello',
@@ -209,6 +233,8 @@ export const TIPOS_PORTAL: readonly MensajePortal['type'][] = [
   'sync.queue.flush',
   'device.signature.register',
   'connectivity.query',
+  'track.start',
+  'track.stop',
 ];
 
 // ---------------------------------------------------------------------------
@@ -387,6 +413,7 @@ export type MensajeShell =
   | Sobre<'sync.queue.flushed', { readonly processed: number; readonly pending: number }>
   | Sobre<'device.signature.registered', { readonly deviceId: string }>
   | Sobre<'connectivity.state', EstadoConexionPayload>
+  | Sobre<'track.point', PuntoDeTrazaPayload>
   | Sobre<'error', ErrorPuentePayload>;
 
 export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
@@ -403,6 +430,7 @@ export const TIPOS_SHELL: readonly MensajeShell['type'][] = [
   'sync.queue.flushed',
   'device.signature.registered',
   'connectivity.state',
+  'track.point',
   'error',
 ];
 
