@@ -18,6 +18,14 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.stat-grid \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   });
 
+  it('simplifica el guardia sin reducir sus objetivos táctiles', () => {
+    expect(css).toMatch(/\.dashboard-shell\[data-role="GUARDIA"\] \{[^}]*--guardia-azul: var\(--marca-secundario/);
+    expect(css).toMatch(/--guardia-toque: 3rem/);
+    expect(css).toMatch(/\.guardia-boton-escanear \{[^}]*min-height: 4\.75rem/);
+    expect(css).toMatch(/\.guard-shift-grid \{[^}]*grid-template-columns: repeat\(3/);
+    expect(css).not.toMatch(/\.guard-focus-card, \.empty-assignment \{[^}]*box-shadow/);
+  });
+
   it('Marca tiene grupos comprensibles, vista previa real y mensajes accesibles', () => {
     expect(marca).toContain('id="marca-identidad"');
     expect(marca).toContain('id="marca-colores"');

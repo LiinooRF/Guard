@@ -95,8 +95,11 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     const css = readFileSync(join(__dirname, '..', 'globals.css'), 'utf8');
     expect(css).toContain('.brand-logo');
     expect(css).toContain('.dashboard-shell[data-role="ADMIN"] .sidebar');
-    // La operación de terreno queda fuera de esta personalización del panel.
-    expect(css).not.toContain('.dashboard-shell[data-role="GUARDIA"] .sidebar');
+    // La operación de terreno puede compactar su cabecera, pero no convierte
+    // todo el lateral en el color principal: conserva el contraste de trabajo.
+    expect(css).not.toMatch(
+      /\.dashboard-shell\[data-role="GUARDIA"\] \.sidebar[^}]*background: var\(--marca-primario/,
+    );
   });
 
   it('convierte el color secundario en el acento de TODO panel autenticado', () => {
