@@ -582,7 +582,18 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
     case 'offline.route.clear':
     case 'sync.queue.flush':
     case 'connectivity.query':
+    case 'track.stop':
       return Object.keys(payload).length === 0;
+    // Traza en vivo (#280). SIN esta rama, `track.start` caia al `default:
+    // return false` y se descartaba en silencio ANTES de llegar al shell:
+    // el tipo estaba en TIPOS_PORTAL pero el validador de payload no lo
+    // conocia. El emisor entero quedaba muerto y no habia error que lo
+    // delatara. Agregar un tipo al protocolo son DOS ediciones, no una.
+    case 'track.start':
+      return clavesPermitidas(payload, ['intervalSeconds']) &&
+        Number.isInteger(payload['intervalSeconds']) &&
+        Number(payload['intervalSeconds']) >= 1 &&
+        Number(payload['intervalSeconds']) <= 3_600;
     case 'permission.request':
       return clavesPermitidas(payload, ['permiso', 'divulgacionMostrada']) &&
         PERMISOS.includes(payload['permiso'] as Permiso) &&
