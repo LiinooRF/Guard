@@ -134,6 +134,29 @@ test('rechaza payloads mal formados antes de llegar a los módulos nativos', () 
   assert.equal(leerMensajeShell(firmaFalsa).ok, false);
 });
 
+test('acepta track.start/track.stop y rechaza su payload malo (traza en vivo #280)', () => {
+  // El cable 12: track.start estaba en TIPOS_PORTAL pero NO en el validador de
+  // payload, asi que caia en `default: return false` y se descartaba en
+  // silencio antes de llegar al shell. El emisor entero quedaba muerto sin un
+  // solo error. Un tipo nuevo son DOS ediciones; este test las ata.
+  assert.equal(leerMensajePortal(JSON.stringify(
+    armarSobre('track.start', { intervalSeconds: 60 }),
+  )).ok, true);
+  assert.equal(leerMensajePortal(JSON.stringify(
+    armarSobre('track.stop', {}),
+  )).ok, true);
+  // Payloads malos rechazados, no colados:
+  assert.equal(leerMensajePortal(JSON.stringify(
+    armarSobre('track.start', { intervalSeconds: 0 }),
+  )).ok, false);
+  assert.equal(leerMensajePortal(JSON.stringify(
+    armarSobre('track.start', { intervalSeconds: 'un rato' }),
+  )).ok, false);
+  assert.equal(leerMensajePortal(JSON.stringify(
+    armarSobre('track.stop', { sobra: 1 }),
+  )).ok, false);
+});
+
 test('rechaza mensajes de iframes u orígenes diferentes', async () => {
   const { puente, escaneos } = setup();
   puente.alRecibirMensaje(evento(
