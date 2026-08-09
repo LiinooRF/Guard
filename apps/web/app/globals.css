@@ -87,6 +87,8 @@ a { color: inherit; text-decoration: none; }
 .sidebar { position: sticky; z-index: 20; top: 0; display: flex; width: 100%; min-width: 0; max-width: 100vw; height: auto; flex-wrap: wrap; align-items: center; gap: .65rem; padding: max(.8rem, env(safe-area-inset-top)) 1rem .8rem; color: white; background: var(--navy); }
 .sidebar .brand { margin: 0 auto 0 0; }
 .sidebar nav { display: flex; width: 100%; min-width: 0; max-width: 100%; flex: 1 0 100%; gap: .3rem; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .15rem; scrollbar-width: thin; }
+.nav-group { display: contents; }
+.nav-group-label { display: none; }
 .nav-item { display: flex; align-items: center; gap: .8rem; border-radius: .65rem; padding: .75rem .85rem; color: #94a0bc; font-size: .8rem; font-weight: 650; }
 .sidebar nav .nav-item { flex: 0 0 auto; }
 .nav-item span { width: 1rem; font-size: 1rem; text-align: center; }
@@ -99,6 +101,7 @@ a { color: inherit; text-decoration: none; }
 .guard-nav-note { display: none; border: 1px solid rgba(255,255,255,.09); border-radius: .75rem; padding: .9rem; color: #9ca8c8; font-size: .7rem; line-height: 1.55; }
 .dashboard-content { min-width: 0; padding: 1.1rem 1rem max(1.25rem, env(safe-area-inset-bottom)); }
 .dashboard-content :target { scroll-margin-top: 8.5rem; }
+.panel-view { display: grid; gap: 1rem; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; margin-bottom: 2rem; }
 .topbar h1 { margin: .35rem 0 .25rem; font-size: clamp(1.75rem, 3vw, 2.4rem); letter-spacing: -.045em; }
 .topbar p { margin: 0; color: var(--muted); font-size: .86rem; }
@@ -235,7 +238,9 @@ a { color: inherit; text-decoration: none; }
   .dashboard-shell { grid-template-columns: 15.5rem 1fr; }
   .sidebar { position: sticky; top: 0; max-width: none; height: 100vh; flex-flow: column nowrap; align-items: stretch; gap: 0; padding: 1.5rem 1.15rem; }
   .sidebar .brand { margin: 0 .6rem 2.5rem; }
-  .sidebar nav { display: grid; width: auto; max-width: none; flex: initial; overflow: visible; padding-bottom: 0; }
+  .sidebar nav { display: grid; width: auto; max-width: none; flex: initial; gap: 1rem; overflow: visible; padding-bottom: 0; }
+  .nav-group { display: grid; gap: .2rem; }
+  .nav-group-label { display: block; padding: 0 .85rem .2rem; color: #65718e; font-size: .58rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
   .guard-nav-note { display: block; }
   .sidebar-footer { display: grid; }
   .dashboard-content { padding: clamp(1.5rem, 3vw, 3rem); }

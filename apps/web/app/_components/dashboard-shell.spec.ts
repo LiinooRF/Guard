@@ -23,4 +23,9 @@ describe('navegación de los paneles (#287)', () => {
     expect(base).toMatch(/\.sidebar nav \{[^}]*overflow-x: auto;/);
     expect(base).not.toMatch(/\.sidebar nav \{[^}]*display: none;/);
   });
+
+  it('expone la vista activa a tecnologías de asistencia', () => {
+    const shell = readFileSync(join(AQUI, 'dashboard-shell.tsx'), 'utf8');
+    expect(shell).toContain("aria-current={active ? 'page' : undefined}");
+  });
 });

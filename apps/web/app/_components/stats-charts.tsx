@@ -217,6 +217,7 @@ export async function StatsCharts({
         recintos={opcionesDeRecinto(recintos)}
         sucursales={opcionesDeSucursal(recintos)}
         hoy={hoy}
+        vista={texto('vista')}
       />
 
       {/* --------------------------------------------------------- */}

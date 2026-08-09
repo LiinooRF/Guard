@@ -31,6 +31,7 @@ import {
 } from '../../_components/role-management';
 import { SessionManagement, type UserSession } from '../../_components/session-management';
 import { SiteManagement } from '../../_components/site-management';
+import { panelViewCopy, resolvePanelView, type PanelRole } from '../../_components/panel-navigation';
 
 const ROLE_CONTENT = {
   guardia: {
@@ -75,6 +76,7 @@ export default async function RoleDashboard({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { role } = await params;
+  const query = await searchParams;
   const content = ROLE_CONTENT[role as keyof typeof ROLE_CONTENT];
   if (!content) notFound();
 
@@ -128,46 +130,55 @@ export default async function RoleDashboard({
   }
 
   if (role === 'superadmin') {
-    const [tenants, billing, sessions] = await Promise.all([
-      loadPlatformTenants(),
-      loadPlatformBilling(),
-      loadSessions(),
-    ]);
+    const view = resolvePanelView('SUPERADMIN', firstParameter(query.vista));
+    const copy = panelViewCopy('SUPERADMIN', view);
+    const sessions = view === 'sesiones' ? await loadSessions() : [];
+    const [tenants, billing] = view === 'resumen'
+      ? await Promise.all([loadPlatformTenants(), loadPlatformBilling()])
+      : [[], [] as PlatformBilling[]];
     return (
       <DashboardShell
         role={content.role}
-        title="Administración de la plataforma"
-        subtitle="Crea empresas, entrega su administración y controla el acceso a la plataforma."
+        title={copy.title}
+        subtitle={copy.subtitle}
         marca={marca}
+        activeView={view}
       >
-        <PlatformManagement tenants={tenants} billing={billing} apiUrl={publicApiUrl()} />
-        <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
+        {view === 'sesiones' ? (
+          <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
+        ) : (
+          <PlatformManagement tenants={tenants} billing={billing} apiUrl={publicApiUrl()} />
+        )}
       </DashboardShell>
     );
   }
 
-  const [overview, users, sites, sessions, authPolicy, securityEvents, routeEditorSites] = await Promise.all([
-    loadTenantOverview(),
-    role === 'admin' ? loadAdminUsers() : Promise.resolve([]),
-    role === 'admin' ? loadAdminSites() : Promise.resolve([]),
-    loadSessions(),
-    role === 'admin' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
-    role === 'admin' ? loadSecurityEvents() : Promise.resolve([]),
-    role === 'supervisor' ? loadRouteEditorSites() : Promise.resolve([]),
-  ]);
   const isSupervisor = role === 'supervisor';
+  const panelRole: PanelRole = isSupervisor ? 'SUPERVISOR' : 'ADMIN';
+  const view = resolvePanelView(panelRole, firstParameter(query.vista));
+  const copy = panelViewCopy(panelRole, view);
+  const needsOverview = view === 'resumen' || (!isSupervisor && ['informes', 'envios'].includes(view));
+  const needsSites = !isSupervisor && ['personas', 'recintos', 'envios'].includes(view);
 
-  // El contenido del panel, extraido a una constante solo para poder envolverlo
-  // con el aviso cuando corresponde. No cambia nada de lo que ya habia adentro.
-  const panel = (
-    <>
-      <section className="stat-grid" id="resumen">
+  const [overview, users, sites, sessions, authPolicy, securityEvents, routeEditorSites] = await Promise.all([
+    needsOverview ? loadTenantOverview() : Promise.resolve(null),
+    !isSupervisor && view === 'personas' ? loadAdminUsers() : Promise.resolve([]),
+    needsSites ? loadAdminSites() : Promise.resolve([]),
+    view === 'sesiones' ? loadSessions() : Promise.resolve([]),
+    !isSupervisor && view === 'personas' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
+    !isSupervisor && view === 'personas' ? loadSecurityEvents() : Promise.resolve([]),
+    isSupervisor && view === 'planificacion' ? loadRouteEditorSites() : Promise.resolve([]),
+  ]);
+
+  const resumen = (
+    <div className="panel-view" data-view="resumen">
+      <section className="stat-grid">
         <Metric label="Recintos visibles" value={overview?.metrics.sites ?? 0} detail={isSupervisor ? 'Solo asignados' : 'Tenant completo'} />
         <Metric label="Rondas en curso" value={overview?.metrics.activePatrols ?? 0} detail={`${overview?.metrics.pendingPatrols ?? 0} pendientes`} />
         <Metric label="Guardias con rondas" value={overview?.metrics.guards ?? 0} detail="Datos actuales" />
       </section>
 
-      <section className="activity-card" id="rondas">
+      <section className="activity-card">
         <div className="card-heading">
           <div><span className="eyebrow">Operación real</span><h2>Rondas visibles</h2></div>
           <span className="status-pill">{overview?.patrols.length ?? 0} registradas</span>
@@ -195,69 +206,74 @@ export default async function RoleDashboard({
           </div>
         )}
       </section>
-      {isSupervisor && <SupervisorSchedule apiUrl={publicApiUrl()} />}
-      {isSupervisor && (
+    </div>
+  );
+
+  let panel;
+  if (view === 'resumen') {
+    panel = resumen;
+  } else if (isSupervisor && view === 'planificacion') {
+    panel = (
+      <div className="panel-view" data-view="planificacion">
+        <SupervisorSchedule apiUrl={publicApiUrl()} />
+        <RouteEditor
+          sites={routeEditorSites}
+          apiUrl={publicApiUrl()}
+          mapTileUrl={process.env.MAP_TILE_URL ?? null}
+          mapAttribution={process.env.MAP_ATTRIBUTION ?? ''}
+        />
+        <TareasTurnoEditor apiUrl={publicApiUrl()} />
+      </div>
+    );
+  } else if (isSupervisor && view === 'monitoreo') {
+    panel = (
+      <div className="panel-view" data-view="monitoreo">
         <LivePatrolBoard
           apiUrl={publicApiUrl()}
           tileUrl={process.env.MAP_TILE_URL ?? null}
           attribution={process.env.MAP_ATTRIBUTION ?? ''}
         />
-      )}
-      <StatsCharts role={isSupervisor ? 'SUPERVISOR' : 'ADMIN'} searchParams={searchParams} />
-      {isSupervisor && <RouteEditor
-        sites={routeEditorSites}
-        apiUrl={publicApiUrl()}
-        mapTileUrl={process.env.MAP_TILE_URL ?? null}
-        mapAttribution={process.env.MAP_ATTRIBUTION ?? ''}
-      />}
-      {/* Editor de tareas del turno (#265): "ir a las 11, a cierto punto, y
-          tomar una imagen al refrigerador". Va junto al editor de rutas porque
-          es la otra mitad de lo mismo — la ruta dice por donde pasa el guardia y
-          esto dice que hace cuando llega.
-
-          Carga su propio catalogo desde el navegador en vez de recibirlo por
-          props: necesita `timezone` por recinto, que es lo unico que le da
-          sentido a la hora de una tarea, y el catalogo del editor de rutas no lo
-          trae. Ver `/checklists/supervisor/sites`. */}
-      {isSupervisor && <TareasTurnoEditor apiUrl={publicApiUrl()} />}
-      {/* Al SUPERVISOR se le REEMPLAZA el panel de informes generico, no se le
-          suma otro (#99). El de arriba se alimenta de `/dashboard/tenant`, que
-          mezcla las rondas de todos sus recintos sin poder elegir; el del panel
-          pide por recinto y con verificacion de asignacion en el servidor. Dos
-          listas de informes en la misma pantalla, una filtrable y otra no, es
-          una invitacion a leer la equivocada.
-
-          Va DESPUES de StatsCharts porque no pinta su propia barra de filtros:
-          lee los mismos `?desde=&hasta=&recinto=&sucursal=` que esa barra ya
-          escribe. Dos periodos distintos en la misma pantalla es la forma segura
-          de comparar dos cortes creyendo que son el mismo. */}
-      {isSupervisor ? (
-        <SupervisorPanel searchParams={searchParams} />
-      ) : (
-        <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
-      )}
-      {role === 'admin' && (
-        <>
-          <AdminManagement
-            users={users}
-            sites={sites}
-            authPolicy={authPolicy}
-            securityEvents={securityEvents}
-            apiUrl={publicApiUrl()}
-          />
-          <SiteManagement
-            sites={sites}
-            apiUrl={publicApiUrl()}
-            mapTileUrl={process.env.MAP_TILE_URL ?? null}
-            mapAttribution={process.env.MAP_ATTRIBUTION ?? '© OpenStreetMap contributors'}
-          />
-        </>
-      )}
-      {role === 'admin' && <ReglasConfiguracion apiUrl={publicApiUrl()} />}
-      {/* La marca de la empresa (#117). Solo ADMIN: el PUT exige
-          tenant:rules:manage, y la marca es una decision de la empresa, no de
-          un recinto. */}
-      {role === 'admin' && (
+      </div>
+    );
+  } else if (view === 'informes') {
+    panel = (
+      <div className="panel-view" data-view="informes">
+        <StatsCharts role={panelRole} searchParams={query} />
+        {isSupervisor ? (
+          <SupervisorPanel searchParams={query} />
+        ) : (
+          <InformesPanel rondas={overview?.patrols ?? []} apiUrl={publicApiUrl()} />
+        )}
+      </div>
+    );
+  } else if (!isSupervisor && view === 'personas') {
+    panel = (
+      <div className="panel-view" data-view="personas">
+        <AdminManagement
+          users={users}
+          sites={sites}
+          authPolicy={authPolicy}
+          securityEvents={securityEvents}
+          apiUrl={publicApiUrl()}
+        />
+      </div>
+    );
+  } else if (!isSupervisor && view === 'recintos') {
+    panel = (
+      <div className="panel-view" data-view="recintos">
+        <SiteManagement
+          sites={sites}
+          apiUrl={publicApiUrl()}
+          mapTileUrl={process.env.MAP_TILE_URL ?? null}
+          mapAttribution={process.env.MAP_ATTRIBUTION ?? '© OpenStreetMap contributors'}
+        />
+      </div>
+    );
+  } else if (!isSupervisor && view === 'reglas') {
+    panel = <div className="panel-view" data-view="reglas"><ReglasConfiguracion apiUrl={publicApiUrl()} /></div>;
+  } else if (!isSupervisor && view === 'marca') {
+    panel = (
+      <div className="panel-view" data-view="marca">
         <section className="activity-card" id="marca">
           <div className="card-heading">
             <div>
@@ -271,39 +287,49 @@ export default async function RoleDashboard({
           </p>
           <MarcaConfiguracion apiUrl={publicApiUrl()} />
         </section>
-      )}
-      {/* Vista de envios de correo para soporte (#221): si el informe salio y si
-          llego. Solo ADMIN, igual que el endpoint que consulta
-          (`tenant:audit:read`): el listado incluye invitaciones y
-          recuperaciones de clave de toda la empresa, no solo informes de ronda.
-          Los recintos y las rondas se le pasan ya cargados —la pagina ya los
-          pidio para AdminManagement y para InformesPanel— para no repetir dos
-          consultas en el mismo render. */}
-      {role === 'admin' && (
+      </div>
+    );
+  } else if (!isSupervisor && view === 'envios') {
+    panel = (
+      <div className="panel-view" data-view="envios">
         <EnviosPanel
-          searchParams={searchParams}
+          searchParams={query}
           recintos={sites}
           rondas={overview?.patrols ?? []}
         />
-      )}
-      {/* Publicar el aviso y demostrar que no se registro ubicacion fuera de
-          turno (#78). Solo ADMIN: es de la empresa completa, y el SUPERVISOR
-          esta limitado a sus recintos asignados. */}
-      {role === 'admin' && <ConsentimientoAdmin apiUrl={publicApiUrl()} />}
-      <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
-    </>
-  );
+      </div>
+    );
+  } else if (!isSupervisor && view === 'cumplimiento') {
+    panel = <div className="panel-view" data-view="cumplimiento"><ConsentimientoAdmin apiUrl={publicApiUrl()} /></div>;
+  } else if (isSupervisor && view === 'consentimiento') {
+    panel = (
+      <div className="panel-view" data-view="consentimiento">
+        <section className="activity-card">
+          <div className="card-heading">
+            <div><span className="eyebrow">Privacidad en terreno</span><h2>Cómo usamos tu ubicación</h2></div>
+          </div>
+          <p>
+            La aplicación registra ubicación únicamente durante una ronda activa. Si la empresa
+            publica un aviso nuevo, tendrás que leerlo y aceptarlo antes de continuar trabajando.
+          </p>
+          <div className="dashboard-empty">
+            <strong>Tu aviso está al día</strong>
+            <span>Cuando cambie, esta pantalla bloqueará la operación hasta que revises la nueva versión.</span>
+          </div>
+        </section>
+      </div>
+    );
+  } else {
+    panel = <div className="panel-view" data-view="sesiones"><SessionManagement sessions={sessions} apiUrl={publicApiUrl()} /></div>;
+  }
 
   return (
     <DashboardShell
       role={content.role}
-      title={isSupervisor ? 'Mis recintos' : 'Resumen de la empresa'}
-      subtitle={
-        isSupervisor
-          ? 'Operación limitada a los recintos que tienes asignados.'
-          : 'Datos actuales de la empresa autenticada.'
-      }
+      title={copy.title}
+      subtitle={copy.subtitle}
       marca={marca}
+      activeView={view}
     >
       {/* El SUPERVISOR tambien opera desde la app y tambien se le registra el
           recorrido, asi que le corresponde el mismo aviso previo que al guardia.
@@ -316,6 +342,10 @@ export default async function RoleDashboard({
       )}
     </DashboardShell>
   );
+}
+
+function firstParameter(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function Metric({

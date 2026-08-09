@@ -80,7 +80,7 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
 
   it('el ADMIN tiene el editor montado y con entrada en el menu', () => {
     expect(pagina('app/[role]/page.tsx')).toContain('<MarcaConfiguracion');
-    expect(componente('dashboard-shell.tsx')).toContain("href: '#marca'");
+    expect(componente('panel-navigation.ts')).toContain("view: 'marca'");
   });
 
   it('la hoja de estilos dibuja el logo del tenant con la misma caja que la marca propia', () => {
