@@ -34,17 +34,41 @@ import type { IniciarTrazaPayload, PuntoDeTrazaPayload } from '../bridge/protoco
 let temporizador: ReturnType<typeof setInterval> | undefined;
 let midiendo = false;
 
+/**
+ * Cuanto se espera un fix FRESCO antes de conformarse con el ultimo conocido.
+ * `getCurrentPositionAsync` puede colgarse INDEFINIDAMENTE esperando un fix
+ * que bajo techo no llega — se vio en el telefono real: proveedor fused sano,
+ * ultimo fix valido, y el await que nunca volvia (con `midiendo` atascada,
+ * cada tick posterior se saltaba y la traza quedaba en cero para siempre).
+ */
+const MS_ESPERA_FIX = 12_000;
+
+/** Un fix viejo deja de ser verdad: mas alla de esto, mejor un hueco honesto. */
+const MS_MAX_FIX_CONOCIDO = 10 * 60_000;
+
 async function medir(emitir: (punto: PuntoDeTrazaPayload) => void): Promise<void> {
   // Un tick que encuentra al anterior todavia midiendo se salta: dos fixes en
   // vuelo no dan mejor traza, solo mas bateria.
   if (midiendo) return;
   midiendo = true;
   try {
-    const posicion = await Location.getCurrentPositionAsync({
-      // Balanced y no High: la traza es contexto ("por donde va"), no
-      // evidencia. La evidencia es el escaneo, que si usa High en su instante.
-      accuracy: Location.Accuracy.Balanced,
-    });
+    // Carrera contra el reloj: el fix fresco es lo ideal, pero un await que no
+    // vuelve no es un fix, es un cerrojo. Si pierde, vale el ultimo conocido
+    // (con su hora REAL, que es la honestidad del punto), y sin ninguno, el
+    // hueco: track-summary lo mide y el proximo tick reintenta.
+    const fresco = await Promise.race([
+      Location.getCurrentPositionAsync({
+        // Balanced y no High: la traza es contexto ("por donde va"), no
+        // evidencia. La evidencia es el escaneo, que si usa High en su instante.
+        accuracy: Location.Accuracy.Balanced,
+      }),
+      new Promise<null>((resolver) => {
+        setTimeout(() => resolver(null), MS_ESPERA_FIX);
+      }),
+    ]);
+    const posicion =
+      fresco ?? (await Location.getLastKnownPositionAsync({ maxAge: MS_MAX_FIX_CONOCIDO }));
+    if (!posicion) return;
     emitir({
       recordedAt: new Date(posicion.timestamp).toISOString(),
       latitude: posicion.coords.latitude,
