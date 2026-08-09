@@ -274,19 +274,7 @@ export default async function RoleDashboard({
   } else if (!isSupervisor && view === 'marca') {
     panel = (
       <div className="panel-view" data-view="marca">
-        <section className="activity-card" id="marca">
-          <div className="card-heading">
-            <div>
-              <span className="eyebrow">White-label</span>
-              <h2>Marca de la empresa</h2>
-            </div>
-          </div>
-          <p>
-            Logo, colores y nombre con los que tu equipo ve el sistema — también en el teléfono
-            del guardia, en los informes y en los correos. Se aplica al guardar, sin despliegue.
-          </p>
-          <MarcaConfiguracion apiUrl={publicApiUrl()} />
-        </section>
+        <MarcaConfiguracion apiUrl={publicApiUrl()} />
       </div>
     );
   } else if (!isSupervisor && view === 'envios') {

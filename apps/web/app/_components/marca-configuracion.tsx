@@ -123,99 +123,134 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
   }
 
   return (
-    <div className="marca-configuracion">
-      <div className="form-grid">
-        <label>
-          Nombre comercial
-          <input
-            type="text"
-            maxLength={80}
-            placeholder="El nombre que ve tu equipo (vacío = VoxIA Control)"
-            value={marca.commercialName ?? ''}
-            onChange={(e) =>
-              setMarca({ ...marca, commercialName: e.target.value.trim() ? e.target.value : null })
-            }
-          />
-        </label>
+    <section className="brand-studio" aria-label="Editor de marca">
+      <div className="brand-settings">
+        <section className="brand-setting-group" aria-labelledby="marca-identidad">
+          <header>
+            <span className="brand-setting-index">01</span>
+            <div>
+              <h2 id="marca-identidad">Identidad</h2>
+              <p>El nombre y el símbolo que reconoce tu equipo.</p>
+            </div>
+          </header>
 
-        <label>
-          Logo (PNG, JPEG, WebP o SVG, máx. 150 KB)
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml"
-            onChange={(e) => alElegirLogo(e.target.files?.[0])}
-          />
-        </label>
-        {logoEnPantalla ? (
-          <p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoEnPantalla} alt="Logo actual" style={{ maxHeight: 48 }} />{' '}
-            <button type="button" className="secondary-button" onClick={() => setQuitarLogo(true)}>
-              Quitar el logo
-            </button>
-          </p>
-        ) : null}
-
-        {(
-          [
-            ['primaryColor', 'Color primario', contrastePrimario],
-            ['secondaryColor', 'Color secundario', contrasteSecundario],
-          ] as const
-        ).map(([campo, etiqueta, contraste]) => (
-          <label key={campo}>
-            {etiqueta}
-            <span className="marca-color">
-              <input
-                type="color"
-                value={marca[campo]}
-                onChange={(e) => setMarca({ ...marca, [campo]: e.target.value })}
-              />
-              <code>{marca[campo]}</code>
-            </span>
-            {/* La misma regla que aplicara el servidor, contada antes de chocar
-                con ella: 4.5:1 sobre el fondo blanco del panel (WCAG AA). */}
-            {contraste.passes ? (
-              <small>Contraste {contraste.onSurface}:1 — legible.</small>
-            ) : (
-              <small className="marca-contraste-malo">
-                Contraste {contraste.onSurface}:1 sobre fondo blanco; se necesita {MIN_CONTRAST_AA}
-                :1. Así de claro no se lee: el servidor lo va a rechazar.
-              </small>
-            )}
+          <label className="brand-field">
+            <span>Nombre comercial</span>
+            <input
+              type="text"
+              maxLength={80}
+              placeholder="VoxIA Control"
+              value={marca.commercialName ?? ''}
+              onChange={(e) =>
+                setMarca({ ...marca, commercialName: e.target.value.trim() ? e.target.value : null })
+              }
+            />
+            <small>Se muestra en el panel, el teléfono, los informes y los correos.</small>
           </label>
-        ))}
 
-        <label>
-          Remitente del correo (nombre)
-          <input
-            type="text"
-            maxLength={80}
-            placeholder="Vacío = el remitente del producto"
-            value={marca.mailFromName ?? ''}
-            onChange={(e) =>
-              setMarca({ ...marca, mailFromName: e.target.value.trim() ? e.target.value : null })
-            }
-          />
-        </label>
+          <div className="brand-logo-field">
+            <div>
+              <span className="brand-field-label">Logo</span>
+              <small>PNG, JPEG, WebP o SVG · máximo 150 KB.</small>
+            </div>
+            <div className="brand-logo-control">
+              <span className="brand-logo-preview" aria-label={logoEnPantalla ? 'Logo actual' : 'Sin logo'}>
+                {logoEnPantalla ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoEnPantalla} alt="Logo actual" />
+                ) : (
+                  <span aria-hidden="true">{(marca.commercialName ?? 'VoxIA').slice(0, 1)}</span>
+                )}
+              </span>
+              <label className="brand-file-button">
+                <span>{logoEnPantalla ? 'Reemplazar' : 'Elegir logo'}</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={(e) => alElegirLogo(e.target.files?.[0])}
+                />
+              </label>
+              {logoEnPantalla ? (
+                <button type="button" className="brand-link-button" onClick={() => setQuitarLogo(true)}>
+                  Quitar
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </section>
 
-        <label>
-          Pie de los correos
-          <textarea
-            maxLength={500}
-            rows={3}
-            placeholder="Ej.: razón social, dirección y teléfono de contacto"
-            value={marca.mailFooter ?? ''}
-            onChange={(e) =>
-              setMarca({ ...marca, mailFooter: e.target.value.trim() ? e.target.value : null })
-            }
-          />
-        </label>
+        <section className="brand-setting-group" aria-labelledby="marca-colores">
+          <header>
+            <span className="brand-setting-index">02</span>
+            <div>
+              <h2 id="marca-colores">Colores</h2>
+              <p>Conserva el contraste para que todos puedan leer la interfaz.</p>
+            </div>
+          </header>
+          <div className="brand-color-list">
+            {(
+              [
+                ['primaryColor', 'Principal', contrastePrimario],
+                ['secondaryColor', 'Secundario', contrasteSecundario],
+              ] as const
+            ).map(([campo, etiqueta, contraste]) => (
+              <label className="brand-color-row" key={campo}>
+                <input
+                  aria-label={`Color ${etiqueta.toLowerCase()}`}
+                  type="color"
+                  value={marca[campo]}
+                  onChange={(e) => setMarca({ ...marca, [campo]: e.target.value })}
+                />
+                <span><strong>{etiqueta}</strong><code>{marca[campo]}</code></span>
+                {contraste.passes ? (
+                  <small className="brand-contrast-ok">Legible · {contraste.onSurface}:1</small>
+                ) : (
+                  <small className="marca-contraste-malo">
+                    Contraste {contraste.onSurface}:1; se necesita {MIN_CONTRAST_AA}:1.
+                  </small>
+                )}
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="brand-setting-group" aria-labelledby="marca-correo">
+          <header>
+            <span className="brand-setting-index">03</span>
+            <div>
+              <h2 id="marca-correo">Correo</h2>
+              <p>Define cómo se presenta la empresa en cada mensaje.</p>
+            </div>
+          </header>
+          <label className="brand-field">
+            <span>Nombre del remitente</span>
+            <input
+              type="text"
+              maxLength={80}
+              placeholder="VoxIA Control"
+              value={marca.mailFromName ?? ''}
+              onChange={(e) =>
+                setMarca({ ...marca, mailFromName: e.target.value.trim() ? e.target.value : null })
+              }
+            />
+          </label>
+          <label className="brand-field">
+            <span>Pie de los correos</span>
+            <textarea
+              maxLength={500}
+              rows={3}
+              placeholder="Razón social, dirección y teléfono de contacto"
+              value={marca.mailFooter ?? ''}
+              onChange={(e) =>
+                setMarca({ ...marca, mailFooter: e.target.value.trim() ? e.target.value : null })
+              }
+            />
+          </label>
+        </section>
       </div>
 
-      {/* Lo que se ve aca es lo que veran todos: las MISMAS variables CSS que
-          el shell pone en cascada, aplicadas a una esquina de muestra. */}
       <div
-        className="marca-vista-previa"
+        className="brand-preview-panel"
         style={{
           ['--marca-primario' as string]: marca.primaryColor,
           ['--marca-primario-texto' as string]: contrastePrimario.fillText,
@@ -223,24 +258,39 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
           ['--marca-secundario-texto' as string]: contrasteSecundario.fillText,
         }}
       >
-        <span className="marca-vista-previa-titulo">Vista previa</span>
-        <div className="marca-vista-previa-shell">
-          {logoEnPantalla ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoEnPantalla} alt="" style={{ maxHeight: 28 }} />
-          ) : null}
-          <strong>{marca.commercialName ?? 'VoxIA Control'}</strong>
-          <button type="button" className="primary-button" disabled>
-            Botón de ejemplo
-          </button>
+        <div className="brand-preview-heading"><span>Vista previa</span><small>Panel web</small></div>
+        <div className="brand-preview-window">
+          <div className="brand-preview-sidebar">
+            <span className="brand-preview-lockup">
+              {logoEnPantalla ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoEnPantalla} alt="" />
+              ) : (
+                <i aria-hidden="true">{(marca.commercialName ?? 'VoxIA').slice(0, 1)}</i>
+              )}
+              <strong>{marca.commercialName ?? 'VoxIA Control'}</strong>
+            </span>
+            <span className="brand-preview-nav active" /><span className="brand-preview-nav" />
+            <span className="brand-preview-nav short" />
+          </div>
+          <div className="brand-preview-content">
+            <small>Resumen</small>
+            <strong>Operación de hoy</strong>
+            <span>Información clara para tomar decisiones.</span>
+            <div className="brand-preview-metrics"><i /><i /><i /></div>
+            <button type="button" disabled>Acción principal</button>
+          </div>
         </div>
       </div>
 
-      {mensaje ? <p className={`mensaje-${mensaje.tono}`}>{mensaje.texto}</p> : null}
-
-      <button type="button" className="primary-button" disabled={enviando} onClick={guardar}>
-        {enviando ? 'Guardando…' : 'Guardar la marca'}
-      </button>
-    </div>
+      <footer className="brand-actions">
+        <span aria-live="polite">
+          {mensaje ? <span className={`mensaje-${mensaje.tono}`}>{mensaje.texto}</span> : 'Los cambios se aplican al volver a cargar.'}
+        </span>
+        <button type="button" className="primary-button" disabled={enviando} onClick={guardar}>
+          {enviando ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </footer>
+    </section>
   );
 }
