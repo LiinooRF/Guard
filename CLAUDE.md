@@ -101,6 +101,19 @@ tarea. No codifiques "supervisor = app" en el modelo de permisos.
 `SUPERVISOR` tiene una restricción extra al rol: está limitado a sus recintos asignados. Eso se
 verifica aparte, no alcanza con chequear el rol.
 
+## Dirección visual del producto
+
+El panel es una herramienta de uso diario y debe sentirse sobrio, directo y humano. La referencia es
+el minimalismo de las interfaces de Apple —no sus marcas ni activos—: tipografía del sistema,
+jerarquía por espacio y divisores finos, superficies planas, controles discretos y densidad cómoda.
+
+- Se conservan los colores del producto y del white-label de cada tenant.
+- Evita gradientes, sombras decorativas, tarjetas gigantes y adornos que parezcan una plantilla de IA.
+- En móvil, una cifra corta no justifica una tarjeta alta: prioriza franjas compactas y lectura rápida.
+- Cada pantalla debe explicar por sí sola qué se puede hacer; no puede requerir capacitación.
+- La interfaz del `GUARDIA` se evalúa aparte por sus condiciones de terreno y no se compacta por
+  accidente al retocar el panel administrativo.
+
 ---
 
 ## Reglas que no se negocian

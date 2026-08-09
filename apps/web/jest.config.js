@@ -23,7 +23,7 @@ module.exports = {
    */
   roots: ['<rootDir>/app'],
   transform: {
-    '^.+\\.ts$': [
+    '^.+\\.tsx?$': [
       'ts-jest',
       {
         diagnostics: false,
@@ -32,6 +32,7 @@ module.exports = {
           target: 'ES2022',
           esModuleInterop: true,
           isolatedModules: true,
+          jsx: 'react-jsx',
         },
       },
     ],

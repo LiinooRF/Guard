@@ -47,11 +47,13 @@ export function StatsChartsFilters({
   recintos,
   sucursales,
   hoy,
+  vista,
 }: {
   valores: ValoresFiltro;
   recintos: Array<{ id: string; nombre: string; sucursal: string }>;
   sucursales: string[];
   hoy: string;
+  vista?: string;
 }) {
   const router = useRouter();
   const [pendiente, iniciarTransicion] = useTransition();
@@ -98,13 +100,14 @@ export function StatsChartsFilters({
     }
 
     const parametros = new URLSearchParams();
+    if (vista) parametros.set('vista', vista);
     parametros.set('desde', borrador.desde);
     parametros.set('hasta', borrador.hasta);
     if (borrador.recinto) parametros.set('recinto', borrador.recinto);
     if (borrador.sucursal) parametros.set('sucursal', borrador.sucursal);
     parametros.set('agrupacion', borrador.agrupacion);
     setError(null);
-    iniciarTransicion(() => router.push(`?${parametros.toString()}#informes`, { scroll: false }));
+    iniciarTransicion(() => router.push(`?${parametros.toString()}`, { scroll: false }));
   }
 
   function restablecer() {
@@ -117,7 +120,7 @@ export function StatsChartsFilters({
     };
     setBorrador(inicial);
     setError(null);
-    iniciarTransicion(() => router.push('?', { scroll: false }));
+    iniciarTransicion(() => router.push(vista ? `?vista=${encodeURIComponent(vista)}` : '?', { scroll: false }));
   }
 
   return (
