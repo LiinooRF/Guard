@@ -34,8 +34,20 @@ export function useTrazaEnVivo({
   const cola = useRef<ColaDeTraza>(colaVacia());
   const enviando = useRef(false);
 
+  /*
+   * El puente entra por ref y el efecto depende de PRIMITIVAS. `useGuardBridge`
+   * devuelve un objeto nuevo en cada render: con `puente` en las dependencias,
+   * el efecto se reiniciaba en cada render — track.stop + track.start en
+   * rafaga— y el muestreador moria antes de su primer tick. Se vio en el
+   * telefono real: politica perfecta, cero puntos.
+   */
+  const puenteRef = useRef(puente);
+  puenteRef.current = puente;
+  const soportaTraza = puente.soportaTraza;
+
   useEffect(() => {
-    if (!activa || !puente.soportaTraza) return undefined;
+    if (!activa || !soportaTraza) return undefined;
+    const puenteEstable = puenteRef.current;
 
     let cancelado = false;
 
@@ -85,14 +97,14 @@ export function useTrazaEnVivo({
           sampling?: { intervalSeconds?: number };
         };
         if (!politica.tracksLocation || cancelado) return;
-        puente.iniciarTraza(politica.sampling?.intervalSeconds ?? 60);
+        puenteEstable.iniciarTraza(politica.sampling?.intervalSeconds ?? 60);
       } catch {
         // Sin politica no hay traza. La ronda sigue: la traza es contexto,
         // nunca condicion.
       }
     })();
 
-    const baja = puente.alPuntoDeTraza((punto) => {
+    const baja = puenteEstable.alPuntoDeTraza((punto) => {
       cola.current = acumular(cola.current, punto);
       void subir();
     });
@@ -100,7 +112,7 @@ export function useTrazaEnVivo({
     return () => {
       cancelado = true;
       baja();
-      puente.detenerTraza();
+      puenteEstable.detenerTraza();
     };
-  }, [activa, apiUrl, patrolId, puente]);
+  }, [activa, apiUrl, patrolId, soportaTraza]);
 }
