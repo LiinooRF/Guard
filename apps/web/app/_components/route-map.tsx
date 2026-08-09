@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CircleMarker, Map as LeafletMap, Polyline } from 'leaflet';
 import { resolverOrigenTiles } from './mapa-tiles';
+import { COLOR_SECUNDARIO_MARCA } from './mapa-colores';
 
 interface MapPoint { id: string; name: string; latitude: number | null; longitude: number | null }
 
@@ -57,7 +58,7 @@ export function RouteMap({ points, siteCenter, tileUrl, attribution }: {
         point.latitude !== null && point.longitude !== null);
       const coordinates = located.map((point) => [point.latitude, point.longitude] as [number, number]);
       if (coordinates.length > 1) layers.current.push(
-        leaflet.polyline(coordinates, { color: '#4263eb', weight: 4, opacity: .85 }).addTo(instance),
+        leaflet.polyline(coordinates, { color: COLOR_SECUNDARIO_MARCA, weight: 4, opacity: .85 }).addTo(instance),
       );
       located.forEach((point) => {
         const order = points.findIndex((candidate) => candidate.id === point.id) + 1;

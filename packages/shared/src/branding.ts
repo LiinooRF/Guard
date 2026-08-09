@@ -12,6 +12,7 @@ export const tenantBrandingSchema = z.object({
   commercialName: z.string().min(2).max(80).nullable().default(null),
   logoUri: z.string().max(2_000_000).nullable().default(null),
   primaryColor: hexColor.default('#1f3b73'),
+  primaryTextColor: hexColor.default('#ffffff'),
   secondaryColor: hexColor.default('#4263eb'),
   mailFromName: z.string().min(2).max(80).nullable().default(null),
   mailFooter: z.string().max(500).nullable().default(null),
@@ -84,11 +85,10 @@ export function checkContrast(color: string): ContrastCheck {
  * producto white-label, es el cliente viendo la marca de otro.
  */
 export function brandingCssVariables(branding: TenantBranding): Record<string, string> {
-  const primario = checkContrast(branding.primaryColor);
   const secundario = checkContrast(branding.secondaryColor);
   return {
     '--marca-primario': branding.primaryColor,
-    '--marca-primario-texto': primario.fillText,
+    '--marca-primario-texto': branding.primaryTextColor,
     '--marca-secundario': branding.secondaryColor,
     '--marca-secundario-texto': secundario.fillText,
   };

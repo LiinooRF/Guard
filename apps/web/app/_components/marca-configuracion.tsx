@@ -19,9 +19,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { checkContrast, MIN_CONTRAST_AA, type TenantBranding } from '@voxia/shared';
+import { checkContrast, contrastRatio, MIN_CONTRAST_AA, type TenantBranding } from '@voxia/shared';
 
-import { COLORES_DE_MARCA } from './marca-colores';
+import { COLORES_DE_MARCA, COLORES_DE_TEXTO } from './marca-colores';
 import { aplicarColoresGuardados } from './marca-aplicacion';
 import { logoParaEnviar, validarLogo } from './marca-logo';
 
@@ -31,6 +31,7 @@ const VACIA: TenantBranding = {
   commercialName: null,
   logoUri: null,
   primaryColor: '#1f3b73',
+  primaryTextColor: '#ffffff',
   secondaryColor: '#4263eb',
   mailFromName: null,
   mailFooter: null,
@@ -125,6 +126,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
 
   const contrastePrimario = checkContrast(marca.primaryColor);
   const contrasteSecundario = checkContrast(marca.secondaryColor);
+  const contrasteTexto = Math.round(contrastRatio(marca.primaryColor, marca.primaryTextColor) * 100) / 100;
   const logoEnPantalla = quitarLogo ? null : (logoNuevo ?? marca.logoUri);
 
   if (cargando) {
@@ -235,6 +237,32 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
                 </div>
               </div>
             ))}
+            <div className="brand-color-row brand-text-row">
+              <div className="brand-color-summary">
+                <span><strong>Texto lateral</strong><code>{marca.primaryTextColor}</code></span>
+                <small className="brand-contrast-ok">Legible · {contrasteTexto}:1</small>
+              </div>
+              <div className="brand-text-options" role="group" aria-label="Color del texto lateral">
+                {COLORES_DE_TEXTO.map((color) => (
+                  <button
+                    type="button"
+                    className="brand-text-swatch"
+                    key={color.valor}
+                    aria-label={`${color.nombre}, ${color.valor}`}
+                    aria-pressed={marca.primaryTextColor.toLowerCase() === color.valor}
+                    title={`${color.nombre} · ${color.valor}`}
+                    style={{ backgroundColor: marca.primaryColor, color: color.valor }}
+                    onClick={() => {
+                      setMensaje(null);
+                      setMarca({ ...marca, primaryTextColor: color.valor });
+                    }}
+                  >
+                    <span aria-hidden="true">Aa</span>
+                    <small>{color.nombre}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
@@ -277,7 +305,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
         className="brand-preview-panel"
         style={{
           ['--marca-primario' as string]: marca.primaryColor,
-          ['--marca-primario-texto' as string]: contrastePrimario.fillText,
+          ['--marca-primario-texto' as string]: marca.primaryTextColor,
           ['--marca-secundario' as string]: marca.secondaryColor,
           ['--marca-secundario-texto' as string]: contrasteSecundario.fillText,
         }}

@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   brandingCssVariables,
   checkContrast,
+  contrastRatio,
+  MIN_CONTRAST_AA,
   tenantBrandingSchema,
   type TenantBranding,
 } from '@voxia/shared';
@@ -12,6 +14,7 @@ interface BrandingRow {
   commercial_name: string | null;
   logo_uri: string | null;
   primary_color: string;
+  primary_text_color: string;
   secondary_color: string;
   mail_from_name: string | null;
   mail_footer: string | null;
@@ -24,7 +27,7 @@ export class BrandingService {
   /** La marca del tenant actual; sin fila, los defaults del producto. */
   async current(): Promise<TenantBranding> {
     const filas = await this.tenantContext.manager.query<BrandingRow[]>(
-      `SELECT commercial_name, logo_uri, primary_color, secondary_color,
+      `SELECT commercial_name, logo_uri, primary_color, primary_text_color, secondary_color,
               mail_from_name, mail_footer
        FROM tenant_branding
        WHERE tenant_id = app_tenant_id()`,
@@ -35,6 +38,7 @@ export class BrandingService {
       commercialName: fila.commercial_name,
       logoUri: fila.logo_uri,
       primaryColor: fila.primary_color,
+      primaryTextColor: fila.primary_text_color,
       secondaryColor: fila.secondary_color,
       mailFromName: fila.mail_from_name,
       mailFooter: fila.mail_footer,
@@ -78,15 +82,25 @@ export class BrandingService {
       }
     }
 
+    const contrasteTexto = contrastRatio(marca.primaryColor, marca.primaryTextColor);
+    if (contrasteTexto < MIN_CONTRAST_AA) {
+      throw new BadRequestException(
+        `El texto (${marca.primaryTextColor}) tiene contraste ${contrasteTexto.toFixed(2)}:1 ` +
+          `sobre el color principal (${marca.primaryColor}) y se necesita 4.5:1. Elige una ` +
+          `sugerencia más clara.`,
+      );
+    }
+
     await this.tenantContext.manager.query(
       `INSERT INTO tenant_branding (
-        tenant_id, commercial_name, logo_uri, primary_color, secondary_color,
-        mail_from_name, mail_footer
-      ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6)
+        tenant_id, commercial_name, logo_uri, primary_color, primary_text_color,
+        secondary_color, mail_from_name, mail_footer
+      ) VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (tenant_id) DO UPDATE SET
         commercial_name = EXCLUDED.commercial_name,
         logo_uri = EXCLUDED.logo_uri,
         primary_color = EXCLUDED.primary_color,
+        primary_text_color = EXCLUDED.primary_text_color,
         secondary_color = EXCLUDED.secondary_color,
         mail_from_name = EXCLUDED.mail_from_name,
         mail_footer = EXCLUDED.mail_footer,
@@ -95,6 +109,7 @@ export class BrandingService {
         marca.commercialName,
         marca.logoUri,
         marca.primaryColor,
+        marca.primaryTextColor,
         marca.secondaryColor,
         marca.mailFromName,
         marca.mailFooter,

@@ -17,11 +17,14 @@
 
 import type { VarianteMarca, VarianteTraza } from './mapa-modelo';
 
+/** Acento del tenant; el fallback conserva la apariencia sin marca configurada. */
+export const COLOR_SECUNDARIO_MARCA = 'var(--marca-secundario, #4263eb)';
+
 /** Que se dibuja: una marca (circulo) o una traza (linea). */
 export type ClaveLeyenda = VarianteMarca | VarianteTraza;
 
 export const COLOR_MARCA: Record<VarianteMarca, string> = {
-  punto: '#4263eb',
+  punto: COLOR_SECUNDARIO_MARCA,
   recinto: '#111b32',
   inicio: '#18a66a',
   fin: '#8a55d7',
@@ -29,7 +32,7 @@ export const COLOR_MARCA: Record<VarianteMarca, string> = {
 };
 
 export const COLOR_TRAZA: Record<VarianteTraza, string> = {
-  recorrido: '#4263eb',
+  recorrido: COLOR_SECUNDARIO_MARCA,
   ruta: '#687086',
 };
 

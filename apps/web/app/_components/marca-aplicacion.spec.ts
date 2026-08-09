@@ -10,6 +10,7 @@ describe('aplicación inmediata de la marca guardada', () => {
         commercialName: 'Seguridad Andina',
         logoUri: null,
         primaryColor: '#bd2029',
+        primaryTextColor: '#fff7ed',
         secondaryColor: '#0b6b5f',
         mailFromName: null,
         mailFooter: null,
@@ -18,8 +19,7 @@ describe('aplicación inmediata de la marca guardada', () => {
 
     expect(setProperty).toHaveBeenCalledWith('--marca-primario', '#bd2029');
     expect(setProperty).toHaveBeenCalledWith('--marca-secundario', '#0b6b5f');
-    expect(setProperty).toHaveBeenCalledWith('--marca-primario-texto', '#ffffff');
+    expect(setProperty).toHaveBeenCalledWith('--marca-primario-texto', '#fff7ed');
     expect(setProperty).toHaveBeenCalledWith('--marca-secundario-texto', '#ffffff');
   });
 });
-

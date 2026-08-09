@@ -16,3 +16,11 @@ export const COLORES_DE_MARCA = [
   { nombre: 'Rojo marca', valor: '#bd2029' },
 ] as const;
 
+/** Matices claros pensados para texto sobre los fondos oscuros de la paleta. */
+export const COLORES_DE_TEXTO = [
+  { nombre: 'Blanco', valor: '#ffffff' },
+  { nombre: 'Nieve', valor: '#f8fafc' },
+  { nombre: 'Marfil', valor: '#fff7ed' },
+  { nombre: 'Menta', valor: '#f0fdfa' },
+  { nombre: 'Rosa suave', valor: '#fdf2f8' },
+] as const;

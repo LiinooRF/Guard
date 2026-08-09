@@ -98,4 +98,24 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     // La operación de terreno queda fuera de esta personalización del panel.
     expect(css).not.toContain('.dashboard-shell[data-role="GUARDIA"] .sidebar');
   });
+
+  it('convierte el color secundario en el acento de TODO panel autenticado', () => {
+    const css = readFileSync(join(__dirname, '..', 'globals.css'), 'utf8');
+    expect(css).toMatch(
+      /\.dashboard-shell \{[^}]*--blue: var\(--marca-secundario, #4263eb\)/,
+    );
+
+    // El shell es compartido por ADMIN, SUPERVISOR, GUARDIA y SUPERADMIN. La
+    // marca cae en cascada desde el mismo nodo, no desde una pantalla aislada.
+    const shell = componente('dashboard-shell.tsx');
+    expect(shell).toContain('style={marca?.cssVariables as CSSProperties}');
+  });
+
+  it('los mapas propios también leen el secundario del tenant', () => {
+    const colores = componente('mapa-colores.ts');
+    expect(colores).toContain("var(--marca-secundario, #4263eb)");
+    for (const nombre of ['coordinate-map.tsx', 'route-map.tsx', 'live-guard-map.tsx']) {
+      expect(componente(nombre)).toContain('COLOR_SECUNDARIO_MARCA');
+    }
+  });
 });

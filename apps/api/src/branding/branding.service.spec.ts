@@ -40,6 +40,7 @@ describe('BrandingService', () => {
         commercial_name: 'Seguridad Andina',
         logo_uri: null,
         primary_color: '#1f3b73',
+        primary_text_color: '#f8fafc',
         secondary_color: '#4263eb',
         mail_from_name: null,
         mail_footer: null,
@@ -47,8 +48,19 @@ describe('BrandingService', () => {
     ]);
     const tema = await new BrandingService(ctx(query)).theme();
     expect(tema.cssVariables['--marca-primario']).toBe('#1f3b73');
-    expect(tema.cssVariables['--marca-primario-texto']).toBe('#ffffff');
+    expect(tema.cssVariables['--marca-primario-texto']).toBe('#f8fafc');
     expect(tema.contrast.primary.passes).toBe(true);
+  });
+
+  it('RECHAZA un texto sin contraste contra el color principal', async () => {
+    const query = jest.fn();
+    await expect(
+      new BrandingService(ctx(query)).replace({
+        primaryColor: '#6040a8',
+        primaryTextColor: '#3048bc',
+      }),
+    ).rejects.toThrow(/texto .* contraste/i);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('RECHAZA guardar un color de bajo contraste, con el ratio y el porque', async () => {
@@ -79,7 +91,7 @@ describe('BrandingService', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{
         commercial_name: 'Andina', logo_uri: null,
-        primary_color: '#1f3b73', secondary_color: '#4263eb',
+        primary_color: '#1f3b73', primary_text_color: '#ffffff', secondary_color: '#4263eb',
         mail_from_name: null, mail_footer: 'Andina · Seguridad 24/7',
       }])
       .mockResolvedValueOnce([{ display_name: 'Andina Seguridad', legal_name: 'Andina Seguridad SpA' }]);

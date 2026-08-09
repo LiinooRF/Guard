@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CircleMarker, Map as LeafletMap } from 'leaflet';
 import { resolverOrigenTiles } from './mapa-tiles';
+import { COLOR_SECUNDARIO_MARCA } from './mapa-colores';
 
 const SANTIAGO: [number, number] = [-33.4489, -70.6693];
 
@@ -62,7 +63,7 @@ export function CoordinateMap({
           radius: 8,
           color: '#ffffff',
           weight: 3,
-          fillColor: '#4263eb',
+          fillColor: COLOR_SECUNDARIO_MARCA,
           fillOpacity: 1,
         }).addTo(instance);
       }
@@ -91,7 +92,7 @@ export function CoordinateMap({
         radius: 8,
         color: '#ffffff',
         weight: 3,
-        fillColor: '#4263eb',
+        fillColor: COLOR_SECUNDARIO_MARCA,
         fillOpacity: 1,
       }).addTo(instance);
       instance.setView([latitude, longitude], Math.max(instance.getZoom(), 17));
