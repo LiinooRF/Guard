@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
+import { leerCredenciales } from './login-form-data';
 
 export function LoginScreen() {
   const router = useRouter();
@@ -47,7 +48,9 @@ export function LoginScreen() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!identity.trim() || !password) {
+    const credenciales = leerCredenciales(new FormData(event.currentTarget));
+    if (!credenciales.identity || !credenciales.password) {
+      setErrorMessage('Completa el usuario y la contraseña para continuar.');
       setStatus('error');
       return;
     }
@@ -67,9 +70,9 @@ export function LoginScreen() {
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            identity,
-            password,
-            ...(tenantId ? { tenantId } : {}),
+            identity: credenciales.identity,
+            password: credenciales.password,
+            ...(credenciales.tenantId ? { tenantId: credenciales.tenantId } : {}),
           }),
         },
       );
@@ -255,6 +258,7 @@ export function LoginScreen() {
               <label>
                 Empresa
                 <select
+                  name="tenantId"
                   onChange={(event) => setTenantId(event.target.value)}
                   required
                   value={tenantId}
