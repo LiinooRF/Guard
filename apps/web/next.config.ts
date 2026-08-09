@@ -4,6 +4,9 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Desarrollo y build no pueden compartir artefactos: `next build` reemplaza
+  // manifests y vendor chunks mientras `next dev` todavía los tiene abiertos.
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   output: 'standalone',
   // Incluye el workspace compartido en el trazado de la imagen standalone.
   outputFileTracingRoot: path.join(process.cwd(), '../..'),

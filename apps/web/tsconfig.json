@@ -12,7 +12,7 @@
     "plugins": [{ "name": "next" }],
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next-dev/types/**/*.ts"],
   "_comment_exclude": "Los *.spec.ts corren con jest (apps/web/jest.config.js) y usan los globales de jest; quedan fuera del typecheck de Next, que no tiene @types/jest.",
   "exclude": ["node_modules", "**/*.spec.ts"]
 }

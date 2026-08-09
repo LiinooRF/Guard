@@ -4,7 +4,7 @@
   "private": true,
   "description": "Panel web de VoxIA Control (Next.js) — SUPERADMIN, ADMIN y SUPERVISOR",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "NEXT_DIST_DIR=.next-dev next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
