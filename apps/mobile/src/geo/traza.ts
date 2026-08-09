@@ -8,6 +8,13 @@ import type { IniciarTrazaPayload, PuntoDeTrazaPayload } from '../bridge/protoco
  * supervisor, reglas, el aviso legal que promete una posicion por minuto) y
  * nadie enviaba posiciones.
  *
+ * POR TIEMPO, no por movimiento — y eso se aprendio con el telefono en la mano:
+ * `watchPositionAsync` en Android empuja posiciones cuando el equipo SE MUEVE,
+ * asi que un guardia detenido en un acceso (o el telefono de prueba quieto en
+ * un escritorio) desaparecia del mapa. El aviso legal promete "una posicion
+ * cada N segundos", que es muestreo por reloj: temporizador +
+ * `getCurrentPositionAsync`, una posicion por tick, quieto o caminando.
+ *
  * Reglas de la casa que este archivo respeta a proposito:
  *
  * - **Solo muestrea mientras el PORTAL lo pide** (`track.start` con la ronda en
@@ -24,41 +31,57 @@ import type { IniciarTrazaPayload, PuntoDeTrazaPayload } from '../bridge/protoco
  *   con SU sesion. El shell no conoce al guardia.
  */
 
-let suscripcion: Location.LocationSubscription | undefined;
+let temporizador: ReturnType<typeof setInterval> | undefined;
+let midiendo = false;
+
+async function medir(emitir: (punto: PuntoDeTrazaPayload) => void): Promise<void> {
+  // Un tick que encuentra al anterior todavia midiendo se salta: dos fixes en
+  // vuelo no dan mejor traza, solo mas bateria.
+  if (midiendo) return;
+  midiendo = true;
+  try {
+    const posicion = await Location.getCurrentPositionAsync({
+      // Balanced y no High: la traza es contexto ("por donde va"), no
+      // evidencia. La evidencia es el escaneo, que si usa High en su instante.
+      accuracy: Location.Accuracy.Balanced,
+    });
+    emitir({
+      recordedAt: new Date(posicion.timestamp).toISOString(),
+      latitude: posicion.coords.latitude,
+      longitude: posicion.coords.longitude,
+      ...(posicion.coords.accuracy === null || posicion.coords.accuracy === undefined
+        ? {}
+        : { accuracyM: posicion.coords.accuracy }),
+    });
+  } catch {
+    // Sin fix en este tick (subterraneo, GPS frio): el hueco en la traza ES el
+    // dato — track-summary lo mide — y el proximo tick lo intenta de nuevo.
+  } finally {
+    midiendo = false;
+  }
+}
 
 export async function iniciarTraza(
   peticion: IniciarTrazaPayload,
   emitir: (punto: PuntoDeTrazaPayload) => void,
 ): Promise<void> {
-  // Idempotente: un start nuevo pisa al anterior en vez de duplicar watchers.
+  // Idempotente: un start nuevo pisa al anterior en vez de duplicar relojes.
   // El portal re-manda track.start en cada carga de la pantalla de ronda.
   detenerTraza();
 
   const permiso = await Location.getForegroundPermissionsAsync();
   if (permiso.status !== 'granted') return;
 
-  suscripcion = await Location.watchPositionAsync(
-    {
-      // Balanced y no High: la traza es contexto ("por donde va"), no
-      // evidencia. La evidencia es el escaneo, que si usa High en su instante.
-      accuracy: Location.Accuracy.Balanced,
-      timeInterval: Math.max(peticion.intervalSeconds, 15) * 1000,
-      distanceInterval: 0,
-    },
-    (posicion) => {
-      emitir({
-        recordedAt: new Date(posicion.timestamp).toISOString(),
-        latitude: posicion.coords.latitude,
-        longitude: posicion.coords.longitude,
-        ...(posicion.coords.accuracy === null || posicion.coords.accuracy === undefined
-          ? {}
-          : { accuracyM: posicion.coords.accuracy }),
-      });
-    },
-  );
+  const intervaloMs = Math.max(peticion.intervalSeconds, 15) * 1000;
+  // La primera posicion sale AHORA, no en un intervalo: el supervisor que abre
+  // el mapa cuando la ronda parte no debe esperar un minuto para ver algo.
+  void medir(emitir);
+  temporizador = setInterval(() => void medir(emitir), intervaloMs);
 }
 
 export function detenerTraza(): void {
-  suscripcion?.remove();
-  suscripcion = undefined;
+  if (temporizador !== undefined) {
+    clearInterval(temporizador);
+    temporizador = undefined;
+  }
 }
