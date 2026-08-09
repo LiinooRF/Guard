@@ -24,5 +24,8 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(marca).toContain('id="marca-correo"');
     expect(marca).toContain('className="brand-preview-window"');
     expect(marca).toContain('aria-live="polite"');
+    expect(marca).toContain('COLORES_DE_MARCA.map');
+    expect(marca).toContain('aria-pressed=');
+    expect(marca).not.toContain('type="color"');
   });
 });

@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react';
 
 import { checkContrast, MIN_CONTRAST_AA, type TenantBranding } from '@voxia/shared';
 
+import { COLORES_DE_MARCA } from './marca-colores';
 import { logoParaEnviar, validarLogo } from './marca-logo';
 
 type Tono = 'ok' | 'error';
@@ -184,7 +185,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
             <span className="brand-setting-index">02</span>
             <div>
               <h2 id="marca-colores">Colores</h2>
-              <p>Conserva el contraste para que todos puedan leer la interfaz.</p>
+              <p>Elige en la página. Todos los tonos sugeridos cumplen contraste AA.</p>
             </div>
           </header>
           <div className="brand-color-list">
@@ -194,22 +195,37 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
                 ['secondaryColor', 'Secundario', contrasteSecundario],
               ] as const
             ).map(([campo, etiqueta, contraste]) => (
-              <label className="brand-color-row" key={campo}>
-                <input
-                  aria-label={`Color ${etiqueta.toLowerCase()}`}
-                  type="color"
-                  value={marca[campo]}
-                  onChange={(e) => setMarca({ ...marca, [campo]: e.target.value })}
-                />
-                <span><strong>{etiqueta}</strong><code>{marca[campo]}</code></span>
-                {contraste.passes ? (
-                  <small className="brand-contrast-ok">Legible · {contraste.onSurface}:1</small>
-                ) : (
-                  <small className="marca-contraste-malo">
-                    Contraste {contraste.onSurface}:1; se necesita {MIN_CONTRAST_AA}:1.
-                  </small>
-                )}
-              </label>
+              <div className="brand-color-row" key={campo}>
+                <div className="brand-color-summary">
+                  <span><strong>{etiqueta}</strong><code>{marca[campo]}</code></span>
+                  {contraste.passes ? (
+                    <small className="brand-contrast-ok">Legible · {contraste.onSurface}:1</small>
+                  ) : (
+                    <small className="marca-contraste-malo">
+                      El color actual no alcanza {MIN_CONTRAST_AA}:1. Elige una sugerencia.
+                    </small>
+                  )}
+                </div>
+                <div className="brand-color-options" role="group" aria-label={`Color ${etiqueta.toLowerCase()}`}>
+                  {COLORES_DE_MARCA.map((color) => (
+                    <button
+                      type="button"
+                      className="brand-color-swatch"
+                      key={color.valor}
+                      aria-label={`${color.nombre}, ${color.valor}`}
+                      aria-pressed={marca[campo].toLowerCase() === color.valor}
+                      title={`${color.nombre} · ${color.valor}`}
+                      style={{ backgroundColor: color.valor }}
+                      onClick={() => {
+                        setMensaje(null);
+                        setMarca({ ...marca, [campo]: color.valor });
+                      }}
+                    >
+                      <span aria-hidden="true">✓</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>
