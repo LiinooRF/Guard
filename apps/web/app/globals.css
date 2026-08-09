@@ -84,10 +84,11 @@ a { color: inherit; text-decoration: none; }
 .login-panel footer { align-self: end; color: #a2a7b4; font-size: .68rem; }
 
 .dashboard-shell { display: grid; min-height: 100dvh; grid-template-columns: 1fr; background: var(--canvas); }
-.sidebar { position: static; display: flex; width: 100%; height: auto; align-items: center; padding: max(.8rem, env(safe-area-inset-top)) 1rem .8rem; color: white; background: var(--navy); }
+.sidebar { position: sticky; z-index: 20; top: 0; display: flex; width: 100%; min-width: 0; max-width: 100vw; height: auto; flex-wrap: wrap; align-items: center; gap: .65rem; padding: max(.8rem, env(safe-area-inset-top)) 1rem .8rem; color: white; background: var(--navy); }
 .sidebar .brand { margin: 0 auto 0 0; }
-.sidebar nav { display: none; gap: .3rem; }
+.sidebar nav { display: flex; width: 100%; min-width: 0; max-width: 100%; flex: 1 0 100%; gap: .3rem; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .15rem; scrollbar-width: thin; }
 .nav-item { display: flex; align-items: center; gap: .8rem; border-radius: .65rem; padding: .75rem .85rem; color: #94a0bc; font-size: .8rem; font-weight: 650; }
+.sidebar nav .nav-item { flex: 0 0 auto; }
 .nav-item span { width: 1rem; font-size: 1rem; text-align: center; }
 .nav-item:hover, .nav-item.active { color: white; background: rgba(255,255,255,.08); }
 .nav-item.active { box-shadow: inset 3px 0 var(--cyan); }
@@ -97,6 +98,7 @@ a { color: inherit; text-decoration: none; }
 .sidebar-footer strong { font-size: .7rem; }.sidebar-footer small { margin-top: .12rem; color: #7f8aa5; font-size: .58rem; }
 .guard-nav-note { display: none; border: 1px solid rgba(255,255,255,.09); border-radius: .75rem; padding: .9rem; color: #9ca8c8; font-size: .7rem; line-height: 1.55; }
 .dashboard-content { min-width: 0; padding: 1.1rem 1rem max(1.25rem, env(safe-area-inset-bottom)); }
+.dashboard-content :target { scroll-margin-top: 8.5rem; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; margin-bottom: 2rem; }
 .topbar h1 { margin: .35rem 0 .25rem; font-size: clamp(1.75rem, 3vw, 2.4rem); letter-spacing: -.045em; }
 .topbar p { margin: 0; color: var(--muted); font-size: .86rem; }
@@ -231,9 +233,9 @@ a { color: inherit; text-decoration: none; }
   .login-card { width: min(100%, 35rem); }
   .mobile-brand { display: none; }
   .dashboard-shell { grid-template-columns: 15.5rem 1fr; }
-  .sidebar { position: sticky; top: 0; height: 100vh; flex-direction: column; align-items: stretch; padding: 1.5rem 1.15rem; }
+  .sidebar { position: sticky; top: 0; max-width: none; height: 100vh; flex-flow: column nowrap; align-items: stretch; gap: 0; padding: 1.5rem 1.15rem; }
   .sidebar .brand { margin: 0 .6rem 2.5rem; }
-  .sidebar nav { display: grid; }
+  .sidebar nav { display: grid; width: auto; max-width: none; flex: initial; overflow: visible; padding-bottom: 0; }
   .guard-nav-note { display: block; }
   .sidebar-footer { display: grid; }
   .dashboard-content { padding: clamp(1.5rem, 3vw, 3rem); }

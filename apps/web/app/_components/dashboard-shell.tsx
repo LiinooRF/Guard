@@ -95,7 +95,7 @@ export function DashboardShell({
         {streamlined ? (
           <div className="guard-nav-note">Solo verás la tarea que debes realizar ahora.</div>
         ) : (
-          <nav aria-label="Navegación principal">
+          <nav aria-label="Navegación principal" className="panel-navigation">
             {(ROLE_NAVIGATION[role] ?? []).map((item, index) => (
               <a className={`nav-item${index === 0 ? ' active' : ''}`} href={item.href} key={item.href}>
                 <span aria-hidden="true">{item.icon}</span> {item.label}
