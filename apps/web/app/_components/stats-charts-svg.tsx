@@ -114,10 +114,7 @@ export function BarrasHorizontales({
         const dentro = posicionEtiqueta(parte) === 'dentro';
         return (
           <g key={item.clave}>
-            <title>
-              {item.titulo}: {item.etiquetaValor}
-              {item.subtitulo ? ` · ${item.subtitulo}` : ''}
-            </title>
+            <title>{`${item.titulo}: ${item.etiquetaValor}${item.subtitulo ? ` · ${item.subtitulo}` : ''}`}</title>
             <text className="stats-barra-titulo" x={0} y={y + 13}>
               {truncar(item.titulo, 48)}
               {item.subtitulo ? (
@@ -271,10 +268,7 @@ export function SerieCumplimiento({
         const dia = normalizarDia(punto.bucket);
         return (
           <g key={`punto-${punto.bucket}`}>
-            <title>
-              {etiquetaBucket(dia, granularidad)}: {formatearPorcentaje(punto.compliancePct)} ·{' '}
-              {formatearEntero(punto.patrols)} rondas
-            </title>
+            <title>{`${etiquetaBucket(dia, granularidad)}: ${formatearPorcentaje(punto.compliancePct)} · ${formatearEntero(punto.patrols)} rondas`}</title>
             {marca ? (
               <circle
                 className="stats-marca"
@@ -358,10 +352,7 @@ export function ColumnasRondas({
         const dia = normalizarDia(punto.bucket);
         return (
           <g key={`columna-${punto.bucket}`}>
-            <title>
-              {etiquetaBucket(dia, granularidad)}: {formatearEntero(punto.completed)} completadas de{' '}
-              {formatearEntero(punto.patrols)} programadas
-            </title>
+            <title>{`${etiquetaBucket(dia, granularidad)}: ${formatearEntero(punto.completed)} completadas de ${formatearEntero(punto.patrols)} programadas`}</title>
             <rect
               className="stats-columna-pista"
               x={`${x}%`}
