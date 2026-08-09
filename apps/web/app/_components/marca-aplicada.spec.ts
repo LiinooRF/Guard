@@ -66,6 +66,7 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     const fuente = componente('dashboard-shell.tsx');
     expect(fuente).toContain('MarcaDelShell');
     expect(fuente).toContain('cssVariables');
+    expect(fuente).toContain('data-role={role}');
     // Y la pasa a la esquina de la marca, no solo al estilo.
     expect(fuente).toMatch(/<Brand[^>]*logoUri=/);
   });
@@ -83,8 +84,41 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     expect(componente('panel-navigation.ts')).toContain("view: 'marca'");
   });
 
+  it('guardar reconcilia automáticamente el shell servido por Next', () => {
+    const fuente = componente('marca-configuracion.tsx');
+    expect(fuente).toContain('aplicarColoresGuardados(shell.style');
+    expect(fuente).toContain('router.refresh()');
+    expect(fuente).not.toContain('Los cambios se aplican al volver a cargar.');
+  });
+
   it('la hoja de estilos dibuja el logo del tenant con la misma caja que la marca propia', () => {
     const css = readFileSync(join(__dirname, '..', 'globals.css'), 'utf8');
     expect(css).toContain('.brand-logo');
+    expect(css).toContain('.dashboard-shell[data-role="ADMIN"] .sidebar');
+    // La operación de terreno puede compactar su cabecera, pero no convierte
+    // todo el lateral en el color principal: conserva el contraste de trabajo.
+    expect(css).not.toMatch(
+      /\.dashboard-shell\[data-role="GUARDIA"\] \.sidebar[^}]*background: var\(--marca-primario/,
+    );
+  });
+
+  it('convierte el color secundario en el acento de TODO panel autenticado', () => {
+    const css = readFileSync(join(__dirname, '..', 'globals.css'), 'utf8');
+    expect(css).toMatch(
+      /\.dashboard-shell \{[^}]*--blue: var\(--marca-secundario, #4263eb\)/,
+    );
+
+    // El shell es compartido por ADMIN, SUPERVISOR, GUARDIA y SUPERADMIN. La
+    // marca cae en cascada desde el mismo nodo, no desde una pantalla aislada.
+    const shell = componente('dashboard-shell.tsx');
+    expect(shell).toContain('style={marca?.cssVariables as CSSProperties}');
+  });
+
+  it('los mapas propios también leen el secundario del tenant', () => {
+    const colores = componente('mapa-colores.ts');
+    expect(colores).toContain("var(--marca-secundario, #4263eb)");
+    for (const nombre of ['coordinate-map.tsx', 'route-map.tsx', 'live-guard-map.tsx']) {
+      expect(componente(nombre)).toContain('COLOR_SECUNDARIO_MARCA');
+    }
   });
 });

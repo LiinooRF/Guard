@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { LayerGroup, Map as LeafletMap } from 'leaflet';
 import { resolverOrigenTiles } from './mapa-tiles';
+import { COLOR_SECUNDARIO_MARCA } from './mapa-colores';
 
 export interface LivePosition {
   patrolId: string;
@@ -90,7 +91,8 @@ function renderPositions(
     const point = L.latLng(position.latitude, position.longitude);
     bounds.extend(point);
     L.circleMarker(point, {
-      radius: 8, color: '#173b8f', fillColor: '#4263eb', fillOpacity: 0.9, weight: 2,
+      radius: 8, color: COLOR_SECUNDARIO_MARCA, fillColor: COLOR_SECUNDARIO_MARCA,
+      fillOpacity: 0.9, weight: 2,
     }).bindPopup(
       `<strong>${escapeHtml(position.guardName)}</strong><br>${escapeHtml(position.siteName)}<br>` +
       `Actualizado ${new Date(position.recordedAt).toLocaleTimeString('es-CL')}`,

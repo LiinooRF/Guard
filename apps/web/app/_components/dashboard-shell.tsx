@@ -35,7 +35,7 @@ export function DashboardShell({
   activeView?: string;
 }) {
   return (
-    <main className="dashboard-shell" style={marca?.cssVariables as CSSProperties}>
+    <main className="dashboard-shell" data-role={role} style={marca?.cssVariables as CSSProperties}>
       {/* Renueva el token antes de que venza. Va en el shell y no en cada panel
           porque el problema es de TODOS los roles: quien deja la pantalla
           abierta sin enviar nada se queda sin sesion a los 15 minutos. */}

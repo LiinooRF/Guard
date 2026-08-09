@@ -228,11 +228,11 @@ function EnlaceDeRecinto({
         display: 'inline-flex',
         alignItems: 'center',
         minHeight: '2.2rem',
-        border: `1px solid ${activo ? '#4263eb' : '#e6e9f0'}`,
+        border: `1px solid ${activo ? 'var(--marca-secundario, #4263eb)' : '#e6e9f0'}`,
         borderRadius: '99px',
         padding: '.35rem .75rem',
         color: activo ? '#ffffff' : '#4d566b',
-        background: activo ? '#4263eb' : '#ffffff',
+        background: activo ? 'var(--marca-secundario, #4263eb)' : '#ffffff',
         fontSize: '.7rem',
         fontWeight: 700,
       }}
