@@ -79,8 +79,15 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # EXPO_PUBLIC_* se hornea al EMPAQUETAR el JS, y el bundle corre DENTRO
+      # de gradle — no en el prebuild. Solo en el prebuild, la app salia
+      # apuntando al default HTTP del emulador y su guardia de arranque la
+      # mataba con "debe usar HTTPS". Descubierto en el primer uso real del
+      # workflow: nunca habia podido correrse (workflow_dispatch exige main).
       - name: Construir el APK
         working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_WEB_URL: ${{ inputs.portal || 'https://test-sentrycore.voxtilabs.cl' }}
         run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
       - name: Publicar el APK
