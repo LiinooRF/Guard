@@ -85,6 +85,7 @@ a { color: inherit; text-decoration: none; }
 
 .dashboard-shell { display: grid; min-height: 100dvh; grid-template-columns: 1fr; align-content: start; background: var(--canvas); }
 .sidebar { position: sticky; z-index: 20; top: 0; display: flex; width: 100%; min-width: 0; max-width: 100vw; height: auto; flex-wrap: wrap; align-items: center; gap: .65rem; padding: max(.8rem, env(safe-area-inset-top)) 1rem .8rem; color: white; background: var(--navy); }
+.dashboard-shell[data-role="ADMIN"] .sidebar, .dashboard-shell[data-role="SUPERVISOR"] .sidebar { color: var(--marca-primario-texto, #fff); background: var(--marca-primario, var(--navy)); }
 .sidebar .brand { margin: 0 auto 0 0; }
 .sidebar nav { display: flex; width: 100%; min-width: 0; max-width: 100%; flex: 1 0 100%; gap: .3rem; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .15rem; scrollbar-width: thin; }
 .nav-group { display: contents; }

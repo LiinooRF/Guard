@@ -17,10 +17,12 @@
  *   (`--marca-*`): lo que se ve aqui es lo que veran todos manana.
  */
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { checkContrast, MIN_CONTRAST_AA, type TenantBranding } from '@voxia/shared';
 
 import { COLORES_DE_MARCA } from './marca-colores';
+import { aplicarColoresGuardados } from './marca-aplicacion';
 import { logoParaEnviar, validarLogo } from './marca-logo';
 
 type Tono = 'ok' | 'error';
@@ -35,6 +37,7 @@ const VACIA: TenantBranding = {
 };
 
 export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
+  const router = useRouter();
   const [marca, setMarca] = useState<TenantBranding>(VACIA);
   const [logoNuevo, setLogoNuevo] = useState<string | null>(null);
   const [quitarLogo, setQuitarLogo] = useState(false);
@@ -98,16 +101,21 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
         });
         return;
       }
-      setMensaje({
-        tono: 'ok',
-        texto: 'Marca guardada. Se aplica en la próxima carga de cada pantalla, sin despliegue.',
-      });
       const cuerpo = (await respuesta.json()) as { branding?: TenantBranding };
       if (cuerpo.branding) {
         setMarca(cuerpo.branding);
         setLogoNuevo(null);
         setQuitarLogo(false);
+        const shell = document.querySelector<HTMLElement>('.dashboard-shell');
+        if (shell) aplicarColoresGuardados(shell.style, cuerpo.branding);
+        // Reconcilia nombre y logo resueltos por el Server Component. Mantiene
+        // esta pantalla y su estado: no es una recarga completa del navegador.
+        router.refresh();
       }
+      setMensaje({
+        tono: 'ok',
+        texto: 'Marca guardada y aplicada en el panel.',
+      });
     } catch {
       setMensaje({ tono: 'error', texto: 'Sin conexión con el servidor. Revisa la red.' });
     } finally {
@@ -301,7 +309,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
 
       <footer className="brand-actions">
         <span aria-live="polite">
-          {mensaje ? <span className={`mensaje-${mensaje.tono}`}>{mensaje.texto}</span> : 'Los cambios se aplican al volver a cargar.'}
+          {mensaje ? <span className={`mensaje-${mensaje.tono}`}>{mensaje.texto}</span> : 'La vista previa cambia mientras eliges.'}
         </span>
         <button type="button" className="primary-button" disabled={enviando} onClick={guardar}>
           {enviando ? 'Guardando…' : 'Guardar cambios'}

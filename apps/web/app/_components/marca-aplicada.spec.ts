@@ -66,6 +66,7 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     const fuente = componente('dashboard-shell.tsx');
     expect(fuente).toContain('MarcaDelShell');
     expect(fuente).toContain('cssVariables');
+    expect(fuente).toContain('data-role={role}');
     // Y la pasa a la esquina de la marca, no solo al estilo.
     expect(fuente).toMatch(/<Brand[^>]*logoUri=/);
   });
@@ -83,8 +84,18 @@ describe('el cableado: que esta vez SI lo pinte alguien', () => {
     expect(componente('panel-navigation.ts')).toContain("view: 'marca'");
   });
 
+  it('guardar reconcilia automáticamente el shell servido por Next', () => {
+    const fuente = componente('marca-configuracion.tsx');
+    expect(fuente).toContain('aplicarColoresGuardados(shell.style');
+    expect(fuente).toContain('router.refresh()');
+    expect(fuente).not.toContain('Los cambios se aplican al volver a cargar.');
+  });
+
   it('la hoja de estilos dibuja el logo del tenant con la misma caja que la marca propia', () => {
     const css = readFileSync(join(__dirname, '..', 'globals.css'), 'utf8');
     expect(css).toContain('.brand-logo');
+    expect(css).toContain('.dashboard-shell[data-role="ADMIN"] .sidebar');
+    // La operación de terreno queda fuera de esta personalización del panel.
+    expect(css).not.toContain('.dashboard-shell[data-role="GUARDIA"] .sidebar');
   });
 });
