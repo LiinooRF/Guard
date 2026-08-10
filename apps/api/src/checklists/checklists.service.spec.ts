@@ -49,6 +49,17 @@ const ITEM_CON_FOTO: ChecklistItemView = {
   requiresPhoto: false,
 };
 
+const ITEM_CON_FOTO_SIEMPRE: ChecklistItemView = {
+  id: 'item-foto-siempre',
+  position: 3,
+  label: 'Fotografiar el estado del acceso',
+  responseType: 'ok_falla',
+  requiresPhotoOnFail: false,
+  checkpointId: null,
+  dueLocalTime: null,
+  requiresPhoto: true,
+};
+
 /** La tarea del requisito: a las 11, en ESE punto, y con foto del refrigerador. */
 const TAREA_DEL_PUNTO: ChecklistItemView = {
   id: 'item-3',
@@ -230,6 +241,72 @@ describe('ChecklistsService — respuestas y aviso de falla (#129)', () => {
     });
     expect(query).toHaveBeenCalledTimes(2);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each(['ok', 'falla'] as const)(
+    'el item requiresPhoto se rechaza sin foto aunque la respuesta sea %s (#299)',
+    async (value) => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce([RONDA])
+        .mockResolvedValueOnce([{ ...PLANTILLA, items: [ITEM_CON_FOTO_SIEMPRE] }]);
+      const { service, enqueue } = servicio(query);
+
+      const resultado = await service.saveResponses('patrol-1', 'guard-1', {
+        responses: [{ itemId: ITEM_CON_FOTO_SIEMPRE.id, value }],
+      });
+
+      expect(resultado.results).toEqual([{
+        itemId: ITEM_CON_FOTO_SIEMPRE.id,
+        status: 'rechazado',
+        reason: 'Este item exige foto',
+      }]);
+      // Ronda + plantilla: no escribe ni busca evidencia que no vino.
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it('el item requiresPhoto acepta una foto que pertenece a la misma ronda (#299)', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([RONDA])
+      .mockResolvedValueOnce([{ ...PLANTILLA, items: [ITEM_CON_FOTO_SIEMPRE] }])
+      .mockResolvedValueOnce([{ id: 'foto-ronda' }])
+      .mockResolvedValueOnce([{ id: 'resp-1' }]);
+    const { service } = servicio(query);
+
+    const resultado = await service.saveResponses('patrol-1', 'guard-1', {
+      responses: [{
+        itemId: ITEM_CON_FOTO_SIEMPRE.id,
+        value: 'ok',
+        photoId: 'foto-ronda',
+      }],
+    });
+
+    expect(resultado.results).toEqual([{
+      itemId: ITEM_CON_FOTO_SIEMPRE.id,
+      status: 'aplicado',
+      responseId: 'resp-1',
+    }]);
+    expect(query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('FROM scan_photos'),
+      ['foto-ronda', 'patrol-1'],
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      4,
+      expect.stringContaining('INSERT INTO checklist_responses'),
+      [
+        'patrol-1',
+        ITEM_CON_FOTO_SIEMPRE.id,
+        'ok',
+        null,
+        false,
+        'foto-ronda',
+        null,
+      ],
+    );
   });
 
   it('una foto de otra ronda no sirve como evidencia', async () => {
