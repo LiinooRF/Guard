@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
-import { GuardBottomNav } from './guard-bottom-nav';
 import {
   motivoQrInvalido,
   opcionesDeEscaneo,
@@ -866,6 +865,12 @@ function Ronda({
         </p>
       </section>
 
+      <nav className="guardia-vistas-ronda" aria-label="Acciones del turno">
+        <button aria-current={vista === 'ronda' ? 'page' : undefined} className={vista === 'ronda' ? 'activo' : ''} onClick={() => cambiarVista('ronda')} type="button">Ronda</button>
+        <button aria-current={vista === 'novedad' ? 'page' : undefined} className={vista === 'novedad' ? 'activo' : ''} onClick={() => cambiarVista('novedad')} type="button">Novedad</button>
+        <button aria-current={vista === 'resumen' ? 'page' : undefined} className={vista === 'resumen' ? 'activo' : ''} disabled={!estado.cierre} onClick={() => cambiarVista('resumen')} type="button">Resumen</button>
+      </nav>
+
       {vista === 'ronda' && fotoDePunto ? (
         <GuardScanPhoto
           esperando={guardandoFotoPunto}
@@ -981,12 +986,6 @@ function Ronda({
         />
       ) : null}
 
-      <GuardBottomNav items={[
-        { id: 'ronda', label: 'Ronda', icon: 'turno', active: vista === 'ronda', onSelect: () => cambiarVista('ronda') },
-        { id: 'novedad', label: 'Novedad', icon: 'novedad', active: vista === 'novedad', onSelect: () => cambiarVista('novedad') },
-        { id: 'resumen', label: 'Resumen', icon: 'resumen', active: vista === 'resumen', disabled: !estado.cierre, onSelect: () => cambiarVista('resumen') },
-        { id: 'sesiones', label: 'Sesiones', icon: 'sesiones', active: false, href: '#sesiones' },
-      ]} />
     </>
   );
 }

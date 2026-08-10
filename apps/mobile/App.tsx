@@ -93,6 +93,13 @@ function configuredPortal(): URL {
 export default function App() {
   const portal = useMemo(configuredPortal, []);
   const webView = useRef<WebView>(null);
+  /**
+   * Next cambia de vista con navegación SPA. Android anuncia ese cambio como
+   * `onLoadStart`, pero no siempre emite un `onLoadEnd` de documento porque el
+   * documento nunca se reemplazó. La pantalla de arranque solo corresponde a
+   * la primera carga real del portal.
+   */
+  const portalCargado = useRef(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [rutaOffline, setRutaOffline] = useState<RutaOfflineGuardada>();
@@ -208,6 +215,7 @@ export default function App() {
     setMotivoFallo(undefined);
     setFailed(false);
     setRutaOffline(undefined);
+    portalCargado.current = false;
     setLoading(true);
     webView.current?.reload();
   };
@@ -230,10 +238,15 @@ export default function App() {
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}
         onLoadStart={() => {
-          setLoading(true);
-          setFailed(false);
+          if (!portalCargado.current) {
+            setLoading(true);
+            setFailed(false);
+          }
         }}
-        onLoadEnd={() => setLoading(false)}
+        onLoadEnd={() => {
+          portalCargado.current = true;
+          setLoading(false);
+        }}
         onError={({ nativeEvent }) => {
           setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
           mostrarFallo();

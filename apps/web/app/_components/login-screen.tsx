@@ -76,6 +76,15 @@ export function LoginScreen() {
           }),
         },
       );
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        setErrorMessage(
+          'El servicio de acceso no está disponible en este momento. Inténtalo nuevamente.',
+        );
+        setStatus('error');
+        return;
+      }
+
       const result = (await response.json()) as {
         requiresTenantSelection?: boolean;
         tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
@@ -115,6 +124,9 @@ export function LoginScreen() {
       router.push(`/app/${result.user.role.toLowerCase()}`);
       router.refresh();
     } catch {
+      setErrorMessage(
+        'No pudimos conectar con el servicio de acceso. Comprueba tu conexión e inténtalo nuevamente.',
+      );
       setStatus(navigator.onLine ? 'error' : 'offline');
     }
   }

@@ -1,3 +1,6 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 type ItemGuardia =
@@ -7,6 +10,7 @@ type ItemGuardia =
 type IconoGuardia = 'turno' | 'puntos' | 'novedad' | 'resumen' | 'sesiones';
 
 export function GuardBottomNav({ items }: { items: readonly ItemGuardia[] }) {
+  const router = useRouter();
   return (
     <nav className="guardia-nav-inferior" aria-label="Navegación del turno">
       <div className="guardia-nav-superficie">
@@ -14,14 +18,18 @@ export function GuardBottomNav({ items }: { items: readonly ItemGuardia[] }) {
           const contenido = <Contenido icon={item.icon} label={item.label} />;
           if ('href' in item) {
             return (
-              <a
+              <button
                 aria-current={item.active ? 'page' : undefined}
                 className={item.active ? 'guardia-nav-item activo' : 'guardia-nav-item'}
-                href={item.href}
                 key={item.id}
+                onClick={() => {
+                  router.push(item.href, { scroll: true });
+                  window.scrollTo({ top: 0, behavior: 'instant' });
+                }}
+                type="button"
               >
                 {contenido}
-              </a>
+              </button>
             );
           }
           return (
@@ -53,7 +61,7 @@ function Contenido({ icon, label }: { icon: IconoGuardia; label: string }): Reac
 
 function Icono({ name }: { name: IconoGuardia }) {
   if (name === 'turno') {
-    return <svg viewBox="0 0 24 24"><path d="M4.5 11.5 12 5l7.5 6.5v7a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1Z" /><path d="M9.5 19.5v-6h5v6" /></svg>;
+    return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>;
   }
   if (name === 'puntos') {
     return <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><path d="M7.5 7.5c3 2.5 6 1.5 7.5 4s-.5 4-1.5 4.5" /></svg>;

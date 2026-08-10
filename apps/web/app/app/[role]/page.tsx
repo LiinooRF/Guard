@@ -10,6 +10,8 @@ import { EnviosPanel } from '../../_components/envios-panel';
 import { MarcaConfiguracion } from '../../_components/marca-configuracion';
 import { marcaDelTenant } from '../../_lib/marca-del-tenant';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
+import { GuardBottomNav } from '../../_components/guard-bottom-nav';
+import { GuardPoints } from '../../_components/guard-points';
 import { GuardShift } from '../../_components/guard-shift';
 import { InformesPanel } from '../../_components/informes-panel';
 import { LivePatrolBoard } from '../../_components/live-patrol-board';
@@ -95,19 +97,29 @@ export default async function RoleDashboard({
   };
 
   if (role === 'guardia') {
-    const [data, sessions] = await Promise.all([loadGuardHome(), loadSessions()]);
+    const guardView = resolveGuardView(firstParameter(query.vista));
+    const [data, sessions] = await Promise.all([
+      loadGuardHome(),
+      guardView === 'sesiones' ? loadSessions() : Promise.resolve([]),
+    ]);
     const subtitle = data.hasAssignment && data.patrol
       ? `Tu turno en ${data.patrol.siteName}.`
       : 'Aquí verás tu próxima tarea cuando sea asignada.';
+    const copy = guardView === 'puntos'
+      ? { title: 'Puntos de control', subtitle: 'Consulta el orden del recorrido antes de comenzar.' }
+      : guardView === 'sesiones'
+        ? { title: 'Sesiones', subtitle: 'Revisa qué dispositivos tienen acceso a tu cuenta.' }
+        : { title: 'Mi turno', subtitle };
 
     return (
-      <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined marca={marca}>
+      <DashboardShell role={content.role} title={copy.title} subtitle={copy.subtitle} streamlined marca={marca}>
         {/* El aviso de geolocalizacion ENVUELVE el contenido del turno (#78):
             mientras la persona no lo haya leido, la puerta no renderiza nada
             mas. Registrar la ubicacion de un trabajador exige informarselo
             antes, y un aviso que se pasa de largo con la rueda del mouse no es
             aviso previo. */}
-        <ConsentimientoTrabajador apiUrl={publicApiUrl()}>
+        {guardView === 'turno' ? (
+          <ConsentimientoTrabajador apiUrl={publicApiUrl()}>
           {/* Dos pantallas, una sola montada a la vez. GuardHome es la antesala:
               resumen del turno y el boton de iniciar. GuardShift es la ronda en
               terreno — escaneo NFC, fotos, novedades, panico, sincronizacion.
@@ -123,8 +135,17 @@ export default async function RoleDashboard({
           ) : (
             <GuardHome data={data} apiUrl={publicApiUrl()} />
           )}
+          </ConsentimientoTrabajador>
+        ) : guardView === 'puntos' ? (
+          <GuardPoints data={data} />
+        ) : (
           <SessionManagement sessions={sessions} apiUrl={publicApiUrl()} />
-        </ConsentimientoTrabajador>
+        )}
+        <GuardBottomNav items={[
+            { id: 'turno', label: 'Turno', icon: 'turno', active: guardView === 'turno', href: '?vista=turno' },
+            { id: 'puntos', label: 'Puntos', icon: 'puntos', active: guardView === 'puntos', href: '?vista=puntos' },
+            { id: 'sesiones', label: 'Sesiones', icon: 'sesiones', active: guardView === 'sesiones', href: '?vista=sesiones' },
+        ]} />
       </DashboardShell>
     );
   }
@@ -330,6 +351,10 @@ export default async function RoleDashboard({
       )}
     </DashboardShell>
   );
+}
+
+function resolveGuardView(value: string | undefined): 'turno' | 'puntos' | 'sesiones' {
+  return value === 'puntos' || value === 'sesiones' ? value : 'turno';
 }
 
 function firstParameter(value: string | string[] | undefined): string | undefined {

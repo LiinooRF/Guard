@@ -9,6 +9,7 @@ describe('sistema visual de uso diario (#292)', () => {
   const navegacionGuardia = readFileSync(join(AQUI, 'guard-bottom-nav.tsx'), 'utf8');
   const inicioGuardia = readFileSync(join(AQUI, 'guard-home.tsx'), 'utf8');
   const rondaGuardia = readFileSync(join(AQUI, 'guard-shift.tsx'), 'utf8');
+  const paginaPorRol = readFileSync(join(AQUI, '..', 'app', '[role]', 'page.tsx'), 'utf8');
 
   it('prioriza la tipografía del sistema y superficies administrativas planas', () => {
     expect(css).toContain('font-family: -apple-system, BlinkMacSystemFont');
@@ -47,9 +48,13 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.guardia-nav-inferior \{ animation: none; \}/);
   });
 
-  it('mantiene las sesiones reales localizables durante todo el turno', () => {
-    expect(inicioGuardia).toContain("href: '#sesiones'");
-    expect(rondaGuardia).toContain("href: '#sesiones'");
+  it('separa turno, puntos y sesiones en vistas reales y marca la vigente', () => {
+    expect(paginaPorRol).toContain("href: '?vista=turno'");
+    expect(paginaPorRol).toContain("href: '?vista=puntos'");
+    expect(paginaPorRol).toContain("href: '?vista=sesiones'");
+    expect(paginaPorRol).toContain("active: guardView === 'sesiones'");
+    expect(inicioGuardia).not.toContain("href: '#sesiones'");
+    expect(rondaGuardia).not.toContain("href: '#sesiones'");
     expect(navegacionGuardia).toContain("name === 'sesiones'");
     expect(css).toMatch(/\.dashboard-shell\[data-role="GUARDIA"\] #sesiones \.secondary-button \{[^}]*min-height: var\(--guardia-toque\)/);
   });

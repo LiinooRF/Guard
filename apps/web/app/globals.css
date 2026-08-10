@@ -153,6 +153,13 @@ a { color: inherit; text-decoration: none; }
 .guard-checkpoints { display: grid; gap: .65rem; margin: 0 0 1.5rem; padding: 0; list-style: none; }
 .guard-checkpoints li { display: flex; align-items: center; gap: .8rem; border-bottom: 1px solid #eff1f5; padding: .65rem 0; font-size: .82rem; }
 .guard-checkpoints li > span { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; color: var(--blue); background: #edf0ff; font-size: .7rem; font-weight: 800; }
+.guard-points-page { width: min(100%, 52rem); border: 1px solid var(--line); border-radius: 1rem; padding: clamp(1.15rem, 3vw, 1.75rem); background: white; }
+.guard-points-page header { padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.guard-points-page h2 { margin: .35rem 0 .2rem; font-size: clamp(1.5rem, 5vw, 2.1rem); letter-spacing: -.04em; }
+.guard-points-page header p { margin: 0; color: var(--muted); font-size: .8rem; }
+.guard-points-page .guard-checkpoints { margin: .65rem 0 0; }
+.guard-points-page .guard-checkpoints li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; min-height: 3.6rem; }
+.guard-points-page .guard-checkpoints small { color: var(--danger); font-size: .62rem; font-weight: 750; }
 .guard-primary-action { width: 100%; min-height: 3.5rem; margin-top: 1.25rem; border: 0; border-radius: .8rem; color: var(--marca-secundario-texto, white); background: var(--marca-secundario, var(--blue)); font-size: 1rem; font-weight: 750; cursor: pointer; }
 .guard-primary-action:disabled { cursor: wait; opacity: .7; }
 .guard-action-error { margin: .8rem 0 0; color: var(--danger); font-size: .75rem; text-align: center; }
@@ -160,6 +167,12 @@ a { color: inherit; text-decoration: none; }
 .connection-status.compact { margin: 0; }.connection-status span:first-child { color: var(--success); }.connection-status i { display: inline-block; width: .45rem; height: .45rem; margin-right: .25rem; border-radius: 50%; background: currentColor; }
 .empty-assignment { text-align: center; }.empty-icon { display: grid; width: 3.5rem; height: 3.5rem; margin: 0 auto 1rem; place-items: center; border-radius: 50%; color: var(--success); background: #eaf9f2; font-size: 1.4rem; font-weight: 850; }
 .empty-assignment h2 { margin: 0; font-size: 1.5rem; }.empty-assignment p { color: var(--muted); }
+
+.guardia-vistas-ronda { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; width: min(100%, 52rem); margin: 0 0 .8rem; border: 1px solid var(--line); border-radius: .8rem; padding: .25rem; background: white; }
+.guardia-vistas-ronda button { min-height: 2.75rem; border: 0; border-radius: .6rem; color: var(--muted); background: transparent; font-size: .72rem; font-weight: 750; cursor: pointer; }
+.guardia-vistas-ronda button.activo { color: var(--marca-secundario-texto, white); background: var(--guardia-azul); }
+.guardia-vistas-ronda button:disabled { cursor: not-allowed; opacity: .4; }
+.guardia-vistas-ronda button:focus-visible { outline: 3px solid #ffbf47; outline-offset: 1px; }
 
 .guardia-nav-inferior { position: fixed; z-index: 60; right: .65rem; bottom: max(.65rem, env(safe-area-inset-bottom)); left: .65rem; display: flex; justify-content: center; pointer-events: none; animation: guardia-nav-entrada .38s cubic-bezier(.22, 1, .36, 1) both; }
 .guardia-nav-superficie { display: grid; width: min(100%, 32rem); min-height: 4.35rem; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: .15rem; border: 1px solid rgba(255,255,255,.72); border-radius: 1.35rem; padding: .38rem; background: rgba(250,250,252,.9); box-shadow: 0 10px 32px rgba(15,23,42,.16), inset 0 0 0 1px rgba(15,23,42,.05); backdrop-filter: blur(20px) saturate(1.35); -webkit-backdrop-filter: blur(20px) saturate(1.35); pointer-events: auto; }
