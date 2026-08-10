@@ -36,8 +36,10 @@ Puedes probar todo lo que existe en el ambiente de pruebas:
 - **https://test-sentrycore.voxtilabs.cl/correo** — bandeja de correo de pruebas (usuario `voxia`)
 - Requiere estar en el **tailnet** del equipo. El VPS no está abierto a internet a propósito.
 
-**Cuentas demo** (clave para todas: la que el equipo comparte por el grupo, `DemoGuardia2026!` en
-staging):
+**Cuentas demo:** la clave se entrega por el gestor de secretos o el canal
+operacional acordado; no se publica en el repositorio ni en el artefacto web.
+Si una clave que estuvo documentada aquí sigue activa, hay que rotarla antes de
+volver a usar el entorno.
 
 | Cuenta | Rol |
 |---|---|

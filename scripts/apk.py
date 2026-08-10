@@ -137,7 +137,7 @@ def esperar(minutos=45):
             print('  puede rehacer: sin el no se puede volver a actualizar la app')
             print('  publicada, nunca.')
             print()
-            print('  Cuentas demo:  guardia@demo-andina.test / DemoGuardia2026!')
+            print('  Credenciales demo: obtenerlas del gestor de secretos del equipo.')
             return 0
         if estado in ('ERRORED', 'CANCELED'):
             print('\n  El build termino en %s. Detalle: %s' % (estado, build.get('buildUrl', '')))

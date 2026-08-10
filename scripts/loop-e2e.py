@@ -20,9 +20,13 @@ from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = 'https://test-sentrycore.voxtilabs.cl'
+BASE = os.environ.get('VOXIA_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', '')
+if not BASE or not CLAVE:
+    raise SystemExit(
+        'define VOXIA_BASE y VOXIA_DEMO_PASSWORD por un canal seguro antes de ejecutar'
+    )
 API = BASE + '/api'
-CLAVE = 'DemoGuardia2026!'
 UA_APP = 'VoxIAAndroid/1.0 (puente 1.3)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 

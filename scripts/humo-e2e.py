@@ -2,11 +2,12 @@
 """
 Prueba end-to-end contra un despliegue REAL. No mockea nada.
 
-    python scripts/humo-e2e.py                       # contra staging
-    VOXIA_BASE=https://otro.dominio python scripts/humo-e2e.py
+    VOXIA_BASE=https://staging.example \
+      VOXIA_DEMO_PASSWORD='(desde el gestor de secretos)' \
+      python scripts/humo-e2e.py
 
-Variables: VOXIA_BASE (por defecto staging), VOXIA_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo) y VOXIA_HUMO_ESTRICTO
+Variables obligatorias: VOXIA_BASE y VOXIA_DEMO_PASSWORD (la misma
+DEMO_PASSWORD con que se sembraron las cuentas demo). VOXIA_HUMO_ESTRICTO
 (ver "lo que no se pudo probar").
 
 LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
@@ -64,9 +65,13 @@ import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('VOXIA_BASE', 'https://test-sentrycore.voxtilabs.cl')
+BASE = os.environ.get('VOXIA_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', '')
+if not BASE or not CLAVE:
+    raise SystemExit(
+        'define VOXIA_BASE y VOXIA_DEMO_PASSWORD por un canal seguro antes de ejecutar'
+    )
 API = BASE + '/api'
-CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
 
 # El recinto que la seccion 14 necesita NO asignado al supervisor. Nombre fijo y
 # no unico por corrida a proposito: la API no ofrece borrar recintos, asi que uno
