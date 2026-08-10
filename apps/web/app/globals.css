@@ -85,6 +85,7 @@ a { color: inherit; text-decoration: none; }
 
 .dashboard-shell { --blue: var(--marca-secundario, #4263eb); --blue-dark: var(--marca-secundario, #3048bc); display: grid; min-height: 100dvh; grid-template-columns: 1fr; align-content: start; background: var(--canvas); }
 .dashboard-shell[data-role="GUARDIA"] { --guardia-azul: var(--marca-secundario, #1d3ec8); background: #f2f2f7; }
+.dashboard-shell[data-role="GUARDIA"] .dashboard-content { padding-bottom: calc(7.5rem + env(safe-area-inset-bottom)); scroll-padding-bottom: calc(7.5rem + env(safe-area-inset-bottom)); }
 .sidebar { position: sticky; z-index: 20; top: 0; display: flex; width: 100%; min-width: 0; max-width: 100vw; height: auto; flex-wrap: wrap; align-items: center; gap: .65rem; padding: max(.8rem, env(safe-area-inset-top)) 1rem .8rem; color: white; background: var(--navy); }
 .dashboard-shell[data-role="ADMIN"] .sidebar, .dashboard-shell[data-role="SUPERVISOR"] .sidebar { color: var(--marca-primario-texto, #fff); background: var(--marca-primario, var(--navy)); }
 .dashboard-shell[data-role="ADMIN"] .sidebar .nav-item, .dashboard-shell[data-role="SUPERVISOR"] .sidebar .nav-item, .dashboard-shell[data-role="ADMIN"] .sidebar .nav-group-label, .dashboard-shell[data-role="SUPERVISOR"] .sidebar .nav-group-label, .dashboard-shell[data-role="ADMIN"] .sidebar-footer small, .dashboard-shell[data-role="SUPERVISOR"] .sidebar-footer small { color: var(--marca-primario-texto, #fff); }
@@ -159,6 +160,20 @@ a { color: inherit; text-decoration: none; }
 .connection-status.compact { margin: 0; }.connection-status span:first-child { color: var(--success); }.connection-status i { display: inline-block; width: .45rem; height: .45rem; margin-right: .25rem; border-radius: 50%; background: currentColor; }
 .empty-assignment { text-align: center; }.empty-icon { display: grid; width: 3.5rem; height: 3.5rem; margin: 0 auto 1rem; place-items: center; border-radius: 50%; color: var(--success); background: #eaf9f2; font-size: 1.4rem; font-weight: 850; }
 .empty-assignment h2 { margin: 0; font-size: 1.5rem; }.empty-assignment p { color: var(--muted); }
+
+.guardia-nav-inferior { position: fixed; z-index: 60; right: .65rem; bottom: max(.65rem, env(safe-area-inset-bottom)); left: .65rem; display: flex; justify-content: center; pointer-events: none; animation: guardia-nav-entrada .38s cubic-bezier(.22, 1, .36, 1) both; }
+.guardia-nav-superficie { display: grid; width: min(100%, 32rem); min-height: 4.35rem; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: .15rem; border: 1px solid rgba(255,255,255,.72); border-radius: 1.35rem; padding: .38rem; background: rgba(250,250,252,.9); box-shadow: 0 10px 32px rgba(15,23,42,.16), inset 0 0 0 1px rgba(15,23,42,.05); backdrop-filter: blur(20px) saturate(1.35); -webkit-backdrop-filter: blur(20px) saturate(1.35); pointer-events: auto; }
+.guardia-nav-item { position: relative; display: grid; min-width: 0; min-height: 3.55rem; place-items: center; align-content: center; gap: .18rem; border: 0; border-radius: 1rem; padding: .3rem .45rem; color: #646b7a; background: transparent; font-size: .65rem; font-weight: 650; letter-spacing: -.01em; cursor: pointer; transition: color .2s ease, background-color .2s ease, transform .16s ease; }
+.guardia-nav-item::after { position: absolute; bottom: .22rem; width: 1rem; height: .16rem; content: ""; border-radius: 99px; background: var(--guardia-azul); opacity: 0; transform: scaleX(.35); transition: opacity .2s ease, transform .28s cubic-bezier(.22, 1, .36, 1); }
+.guardia-nav-item.activo { color: var(--guardia-azul); background: color-mix(in srgb, var(--guardia-azul) 9%, transparent); }
+.guardia-nav-item.activo::after { opacity: 1; transform: scaleX(1); }
+.guardia-nav-item:active { transform: scale(.94); }
+.guardia-nav-item:focus-visible { outline: 3px solid #ffbf47; outline-offset: -2px; }
+.guardia-nav-item:disabled { color: #a8adb8; cursor: not-allowed; opacity: .62; }
+.guardia-nav-icono { display: grid; width: 1.45rem; height: 1.45rem; place-items: center; transition: transform .28s cubic-bezier(.22, 1, .36, 1); }
+.guardia-nav-item.activo .guardia-nav-icono { transform: translateY(-.1rem); }
+.guardia-nav-icono svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes guardia-nav-entrada { from { opacity: 0; transform: translateY(1.25rem) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .dashboard-empty { display: grid; gap: .35rem; margin-top: 1rem; border: 1px dashed #d9deea; border-radius: .8rem; padding: 1.25rem; text-align: center; }
 .dashboard-empty strong { font-size: .85rem; }.dashboard-empty span { color: var(--muted); font-size: .72rem; line-height: 1.5; }
 .management-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem; }
@@ -267,7 +282,7 @@ a { color: inherit; text-decoration: none; }
   .dashboard-shell[data-role="GUARDIA"] .sidebar .brand-mark { width: 2.25rem; height: 2.25rem; border-radius: .65rem; }
   .dashboard-shell[data-role="GUARDIA"] .sidebar .brand-mark svg { width: 1.4rem; }
   .dashboard-shell[data-role="GUARDIA"] .sidebar .brand > span:last-child { font-size: 1rem; }
-  .dashboard-shell[data-role="GUARDIA"] .dashboard-content { padding: .85rem .75rem max(1rem, env(safe-area-inset-bottom)); }
+  .dashboard-shell[data-role="GUARDIA"] .dashboard-content { padding: .85rem .75rem calc(7.5rem + env(safe-area-inset-bottom)); }
   .dashboard-shell[data-role="GUARDIA"] .topbar { gap: .55rem; margin-bottom: .85rem; }
   .dashboard-shell[data-role="GUARDIA"] .topbar h1 { margin: .2rem 0 .1rem; font-size: 1.45rem; }
   .dashboard-shell[data-role="GUARDIA"] .topbar p { font-size: .76rem; line-height: 1.4; }
@@ -290,6 +305,7 @@ a { color: inherit; text-decoration: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  .guardia-nav-inferior { animation: none; }
 }
 
 /* ==========================================================================

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GuardCheckpointList, type FaseEscaneo } from './guard-checkpoint-list';
+import { GuardBottomNav } from './guard-bottom-nav';
 import {
   motivoQrInvalido,
   opcionesDeEscaneo,
@@ -471,6 +472,11 @@ function Ronda({
   // Lo que diga el puente manda: "no hay app" o "el shell no respondió" explica
   // mejor que cualquier texto sobre métodos de marcado.
   const avisoPantalla = puente.aviso ?? opcionesEscaneo.aviso;
+
+  const cambiarVista = useCallback((siguienteVista: Vista) => {
+    setVista(siguienteVista);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   /**
    * Marca el punto que toca. El MÉTODO no es un detalle de implementación: viaja
@@ -942,24 +948,6 @@ function Ronda({
             {...(avisoPantalla ? { aviso: avisoPantalla } : {})}
             {...(errorEscaneo ? { error: errorEscaneo } : {})}
           />
-          <nav className="guardia-acciones" aria-label="Otras acciones">
-            <button
-              className="guardia-boton-secundario ancho"
-              onClick={() => setVista('novedad')}
-              type="button"
-            >
-              Reportar novedad
-            </button>
-            {estado.cierre ? (
-              <button
-                className="guardia-boton-secundario ancho"
-                onClick={() => setVista('resumen')}
-                type="button"
-              >
-                Ver resumen
-              </button>
-            ) : null}
-          </nav>
         </>
       ) : null}
 
@@ -976,7 +964,7 @@ function Ronda({
           />
           <button
             className="guardia-boton-secundario ancho"
-            onClick={() => setVista('ronda')}
+            onClick={() => cambiarVista('ronda')}
             type="button"
           >
             Volver a la ronda
@@ -988,10 +976,16 @@ function Ronda({
         <GuardShiftSummary
           apiUrl={apiUrl}
           estado={estado}
-          onVolver={() => setVista('ronda')}
+          onVolver={() => cambiarVista('ronda')}
           puntos={puntos}
         />
       ) : null}
+
+      <GuardBottomNav items={[
+        { id: 'ronda', label: 'Ronda', icon: 'turno', active: vista === 'ronda', onSelect: () => cambiarVista('ronda') },
+        { id: 'novedad', label: 'Novedad', icon: 'novedad', active: vista === 'novedad', onSelect: () => cambiarVista('novedad') },
+        { id: 'resumen', label: 'Resumen', icon: 'resumen', active: vista === 'resumen', disabled: !estado.cierre, onSelect: () => cambiarVista('resumen') },
+      ]} />
     </>
   );
 }

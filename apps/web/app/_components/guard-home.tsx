@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import type { CheckpointKind } from '@voxia/shared';
 
 import type { PoliticaFoto } from './guard-shift-state';
+import { GuardBottomNav } from './guard-bottom-nav';
 import { useGuardBridge } from './use-guard-bridge';
 
 export interface GuardHomeData {
@@ -151,7 +152,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           <span><small>Duración estimada</small><strong>{patrol.estimatedDurationMin} min</strong></span>
         </div>
 
-        <ol className="guard-checkpoints" aria-label="Puntos de la ronda">
+        <ol className="guard-checkpoints" id="puntos-ronda" aria-label="Puntos de la ronda">
           {patrol.checkpoints.map((checkpoint) => (
             <li key={checkpoint.id}>
               <span>{checkpoint.position}</span>
@@ -161,6 +162,10 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
         </ol>
 
       </section>
+      <GuardBottomNav items={[
+        { id: 'turno', label: 'Turno', icon: 'turno', active: true, href: '#operacion' },
+        { id: 'puntos', label: 'Puntos', icon: 'puntos', active: false, href: '#puntos-ronda' },
+      ]} />
     </>
   );
 }

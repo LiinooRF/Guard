@@ -6,6 +6,7 @@ const AQUI = __dirname;
 describe('sistema visual de uso diario (#292)', () => {
   const css = readFileSync(join(AQUI, '..', 'globals.css'), 'utf8');
   const marca = readFileSync(join(AQUI, 'marca-configuracion.tsx'), 'utf8');
+  const navegacionGuardia = readFileSync(join(AQUI, 'guard-bottom-nav.tsx'), 'utf8');
 
   it('prioriza la tipografía del sistema y superficies administrativas planas', () => {
     expect(css).toContain('font-family: -apple-system, BlinkMacSystemFont');
@@ -24,6 +25,24 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).toMatch(/\.guardia-boton-escanear \{[^}]*min-height: 4\.75rem/);
     expect(css).toMatch(/\.guard-shift-grid \{[^}]*grid-template-columns: repeat\(3/);
     expect(css).not.toMatch(/\.guard-focus-card, \.empty-assignment \{[^}]*box-shadow/);
+  });
+
+  it('reserva espacio real bajo la navegación fija del guardia', () => {
+    expect(css).toMatch(
+      /\.dashboard-shell\[data-role="GUARDIA"\] \.dashboard-content \{[^}]*padding-bottom: calc\(7\.5rem \+ env\(safe-area-inset-bottom\)\)/,
+    );
+    expect(css).toMatch(/\.guardia-nav-inferior \{[^}]*position: fixed/);
+    expect(css).toContain('bottom: max(.65rem, env(safe-area-inset-bottom))');
+    expect(css).toMatch(
+      /@media \(max-width: 600px\)[\s\S]*?\.dashboard-shell\[data-role="GUARDIA"\] \.dashboard-content \{ padding: \.85rem \.75rem calc\(7\.5rem \+ env\(safe-area-inset-bottom\)\); \}/,
+    );
+  });
+
+  it('la navegación inferior tiene estado activo, foco y movimiento reducible', () => {
+    expect(navegacionGuardia).toContain("aria-label=\"Navegación del turno\"");
+    expect(navegacionGuardia).toContain("aria-current={item.active ? 'page' : undefined}");
+    expect(css).toContain('.guardia-nav-item:focus-visible');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.guardia-nav-inferior \{ animation: none; \}/);
   });
 
   it('Marca tiene grupos comprensibles, vista previa real y mensajes accesibles', () => {
