@@ -165,6 +165,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
       <GuardBottomNav items={[
         { id: 'turno', label: 'Turno', icon: 'turno', active: true, href: '#operacion' },
         { id: 'puntos', label: 'Puntos', icon: 'puntos', active: false, href: '#puntos-ronda' },
+        { id: 'sesiones', label: 'Sesiones', icon: 'sesiones', active: false, href: '#sesiones' },
       ]} />
     </>
   );

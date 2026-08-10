@@ -985,6 +985,7 @@ function Ronda({
         { id: 'ronda', label: 'Ronda', icon: 'turno', active: vista === 'ronda', onSelect: () => cambiarVista('ronda') },
         { id: 'novedad', label: 'Novedad', icon: 'novedad', active: vista === 'novedad', onSelect: () => cambiarVista('novedad') },
         { id: 'resumen', label: 'Resumen', icon: 'resumen', active: vista === 'resumen', disabled: !estado.cierre, onSelect: () => cambiarVista('resumen') },
+        { id: 'sesiones', label: 'Sesiones', icon: 'sesiones', active: false, href: '#sesiones' },
       ]} />
     </>
   );

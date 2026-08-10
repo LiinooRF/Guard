@@ -7,6 +7,8 @@ describe('sistema visual de uso diario (#292)', () => {
   const css = readFileSync(join(AQUI, '..', 'globals.css'), 'utf8');
   const marca = readFileSync(join(AQUI, 'marca-configuracion.tsx'), 'utf8');
   const navegacionGuardia = readFileSync(join(AQUI, 'guard-bottom-nav.tsx'), 'utf8');
+  const inicioGuardia = readFileSync(join(AQUI, 'guard-home.tsx'), 'utf8');
+  const rondaGuardia = readFileSync(join(AQUI, 'guard-shift.tsx'), 'utf8');
 
   it('prioriza la tipografía del sistema y superficies administrativas planas', () => {
     expect(css).toContain('font-family: -apple-system, BlinkMacSystemFont');
@@ -45,6 +47,12 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.guardia-nav-inferior \{ animation: none; \}/);
   });
 
+  it('mantiene las sesiones reales localizables durante todo el turno', () => {
+    expect(inicioGuardia).toContain("href: '#sesiones'");
+    expect(rondaGuardia).toContain("href: '#sesiones'");
+    expect(navegacionGuardia).toContain("name === 'sesiones'");
+    expect(css).toMatch(/\.dashboard-shell\[data-role="GUARDIA"\] #sesiones \.secondary-button \{[^}]*min-height: var\(--guardia-toque\)/);
+  });
   it('Marca tiene grupos comprensibles, vista previa real y mensajes accesibles', () => {
     expect(marca).toContain('id="marca-identidad"');
     expect(marca).toContain('id="marca-colores"');
