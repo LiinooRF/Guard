@@ -59,6 +59,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Prohibir inputs de GitHub interpolados dentro de shell
+        run: node scripts/validar-workflow-inputs.mjs
+
       - name: Instalar dependencias
         run: npm ci
 

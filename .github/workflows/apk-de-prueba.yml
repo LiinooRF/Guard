@@ -50,6 +50,30 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Validar el origen del portal
+        env:
+          PORTAL_URL: ${{ inputs.portal }}
+        run: |
+          node --input-type=module <<'NODE'
+          const raw = process.env.PORTAL_URL ?? '';
+          let url;
+          try {
+            url = new URL(raw);
+          } catch {
+            throw new Error('El portal debe ser una URL valida');
+          }
+          const esOrigenExacto =
+            raw === url.origin || raw === `${url.origin}/`;
+          if (
+            url.protocol !== 'https:' ||
+            url.username ||
+            url.password ||
+            !esOrigenExacto
+          ) {
+            throw new Error('El portal debe ser un origen HTTPS sin credenciales, ruta, query ni fragmento');
+          }
+          NODE
+
       # android/ esta en .gitignore: el flujo es CNG y la fuente de verdad es
       # app.config.ts. Se regenera en cada corrida.
       #
@@ -83,12 +107,14 @@ jobs:
           if-no-files-found: error
 
       - name: Como instalarlo
+        env:
+          PORTAL_URL: ${{ inputs.portal }}
         run: |
           echo "### APK listo" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Descargalo del artefacto **voxia-control-apk** de esta corrida." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Apunta a: \`${{ inputs.portal }}\`" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Apunta a: `%s`\n' "$PORTAL_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Firmado con la clave de **depuracion**: se instala en emulador y" >> "$GITHUB_STEP_SUMMARY"
           echo "telefono, pero **no** sirve para Play Store. Para publicar se usa" >> "$GITHUB_STEP_SUMMARY"
