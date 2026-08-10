@@ -15,10 +15,15 @@ const EXTENSIONES_OPERATIVAS = new Set([
   '.txt',
 ]);
 const MARCADORES_DE_CREDENCIALES = [
-  /\bcredenciales?\b/i,
+  /\b(?:clave|credenciales?)\b/i,
   /\b(?:password|passwd|contrase(?:n|ñ)a)\b/i,
-  /\b(?:api[_-]?key|private[_-]?key|secret[oa]?)\b/i,
+  /\b(?:access[_-]?token|api[_-]?key|private[_-]?key|refresh[_-]?token|secret[oa]?)\b/i,
 ];
+
+function contieneMarcadorDeCredencial(contenido: Buffer): boolean {
+  const texto = contenido.toString('utf8').replaceAll('\0', '');
+  return MARCADORES_DE_CREDENCIALES.some((patron) => patron.test(texto));
+}
 
 function archivosPublicos(carpeta: string): string[] {
   return readdirSync(carpeta).flatMap((entrada) => {
@@ -39,15 +44,19 @@ describe('assets publicos', () => {
 
   it('no contiene marcadores habituales de credenciales', () => {
     const hallazgos = archivosPublicos(PUBLIC_DIR)
-      .filter((ruta) => {
-        const contenido = readFileSync(ruta);
-        if (contenido.includes(0)) return false;
-        const texto = contenido.toString('utf8');
-        return MARCADORES_DE_CREDENCIALES.some((patron) => patron.test(texto));
-      })
+      .filter((ruta) => contieneMarcadorDeCredencial(readFileSync(ruta)))
       .map((ruta) => relative(PUBLIC_DIR, ruta))
       .sort();
 
     expect(hallazgos).toEqual([]);
+  });
+
+  it.each([
+    'CREDENCIALES de prueba',
+    'clave=valor',
+    '{"accessToken":"valor"}',
+    'pass\0word=valor',
+  ])('detecta el marcador sensible incluso en otro formato: %s', (contenido) => {
+    expect(contieneMarcadorDeCredencial(Buffer.from(contenido))).toBe(true);
   });
 });

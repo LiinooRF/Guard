@@ -10,12 +10,12 @@ describe('datos reales del formulario de acceso', () => {
       leerCredenciales(
         formulario({
           identity: '  admin@demo-andina.test  ',
-          password: 'DemoGuardia2026!',
+          password: 'form-password',
         }),
       ),
     ).toEqual({
       identity: 'admin@demo-andina.test',
-      password: 'DemoGuardia2026!',
+      password: 'form-password',
       tenantId: '',
     });
   });
