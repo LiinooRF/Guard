@@ -308,7 +308,7 @@ describe('registrarCaidaDeApp', () => {
 });
 
 describe('resumen', () => {
-  it('agrupa por version, modelo y version de Android', async () => {
+  it('expone solamente etiquetas tecnicas y conteos', async () => {
     const { servicio, query } = crearEntorno();
     (query as jest.Mock).mockImplementation(async (sql: string) => {
       if (sql.trimStart().startsWith('SELECT app_version')) {
@@ -334,17 +334,75 @@ describe('resumen', () => {
 
     expect(resumen.retencionDias).toBe(RETENCION_CAIDAS_DIAS_DEFECTO);
     expect(resumen.grupos[0]).toEqual({
-      huella: '0123456789abcdef',
       appVersion: '1.4.2',
       deviceModel: 'Redmi 9A',
       androidVersion: '10',
       errorName: 'NfcBridgeError',
-      errorMessage: 'no se pudo leer la etiqueta',
       total: 13,
       fatales: 11,
-      primera: '2026-08-01T10:00:00.000Z',
-      ultima: '2026-08-03T22:15:00.000Z',
     });
+
+    const serializado = JSON.stringify(resumen);
+    expect(serializado).not.toContain('0123456789abcdef');
+    expect(serializado).not.toContain('no se pudo leer la etiqueta');
+    expect(serializado).not.toContain('2026-08-01T10:00:00.000Z');
+    expect(serializado).not.toContain('2026-08-03T22:15:00.000Z');
+
+    // Defensa en profundidad: esos datos tampoco salen de PostgreSQL hacia el
+    // servicio. La huella sigue agrupando causas sin formar parte del SELECT.
+    const sql = sqlDe(query, 'SELECT app_version');
+    const seleccion = sql.split(/\bFROM\b/i)[0] ?? '';
+    expect(seleccion).not.toContain('fingerprint');
+    expect(seleccion).not.toContain('error_message');
+    expect(seleccion).not.toContain('received_at');
+    expect(sql).toContain('GROUP BY app_version, device_model, android_version, fingerprint');
+    expect(sql).toContain('GROUP BY error_name, app_version, device_model, android_version');
+    expect(sql.indexOf('GROUP BY error_name')).toBeLessThan(sql.indexOf('LIMIT $10'));
+
+    // El limite se aplica DESPUES de la fusion segura. Si se aplicara en el
+    // subquery crudo, 50 etiquetas adversariales que caen al mismo fallback
+    // esconderian grupos validos y sus conteos.
+    const parametros = parametrosDe(query, 'SELECT');
+    expect(parametros[0]).toBe(RETENCION_CAIDAS_DIAS_DEFECTO);
+    expect(parametros.at(-1)).toBe(50);
+  });
+
+  it('fusiona las etiquetas crudas que colisionan al sanitizar', async () => {
+    const { servicio, query } = crearEntorno();
+    (query as jest.Mock).mockImplementation(async (sql: string) => {
+      if (!sql.trimStart().startsWith('SELECT app_version')) return [];
+      return [
+        {
+          app_version: '1.4.2',
+          device_model: 'Juan Perez',
+          android_version: 'Santiago -33.4489,-70.6693',
+          error_name: 'juan.perez@empresa.cl',
+          total: '3',
+          fatales: '1',
+        },
+        {
+          app_version: '1.4.2',
+          device_model: '/home/Juan/Pixel8',
+          android_version: '\u202e14',
+          error_name: '7c03656d-2c85-4a9c-8f5b-2af93431eca0',
+          total: '4',
+          fatales: '2',
+        },
+      ];
+    });
+
+    const resumen = await servicio.resumen();
+
+    expect(resumen.grupos).toEqual([{
+      errorName: 'Error no identificado',
+      appVersion: '1.4.2',
+      deviceModel: 'Modelo no identificado',
+      androidVersion: 'Versión no identificada',
+      total: 7,
+      fatales: 3,
+    }]);
+    expect(JSON.stringify(resumen)).not.toContain('Juan Perez');
+    expect(JSON.stringify(resumen)).not.toContain('juan.perez@empresa.cl');
   });
 
   it('no deja pedir mas alla de la retencion: mostraria menos sin explicar por que', async () => {

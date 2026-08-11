@@ -188,6 +188,24 @@ a { color: inherit; text-decoration: none; }
 .tenant-filters input, .tenant-filters select { min-width: 0; min-height: 2.7rem; border: 1px solid #d9deea; border-radius: .65rem; padding: 0 .7rem; color: var(--ink); background: #fbfcfe; }
 .limit-warning { display: inline-flex; margin-top: .45rem; border-radius: 99px; padding: .3rem .5rem; color: #916217; background: #fff6df; font-size: .6rem; font-weight: 800; }
 .section-explanation { margin: .7rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.55; }
+.crash-summary { display: grid; min-width: 0; gap: .9rem; }
+.crash-summary > h2, .crash-summary > p { margin: 0; }
+.crash-summary .card-heading { flex-wrap: wrap; }
+.crash-summary .card-heading > div { min-width: 0; }
+.crash-summary .status-pill { color: #3048bc; white-space: nowrap; }
+.crash-summary .dashboard-empty a { color: #3048bc; font-weight: 700; text-decoration: underline; text-underline-offset: .14em; }
+.crash-summary .dashboard-empty a:focus-visible, .crash-retry:focus-visible, .crash-table-wrap:focus-visible { outline: 3px solid #0b57d0; outline-offset: 3px; }
+.crash-retry { width: fit-content; cursor: pointer; }
+.crash-totals { color: var(--muted); font-size: .72rem; }
+.crash-totals strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.crash-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid var(--line); border-radius: .7rem; }
+.crash-table { width: 100%; min-width: 44rem; border-collapse: collapse; background: white; font-size: .72rem; }
+.crash-table caption { padding: .7rem; color: var(--muted); font-weight: 700; text-align: left; }
+.crash-table th, .crash-table td { border-top: 1px solid var(--line); padding: .65rem .7rem; text-align: left; }
+.crash-table tbody th { max-width: 14rem; overflow-wrap: anywhere; }
+.crash-table tbody code { color: var(--ink); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .68rem; white-space: normal; }
+.crash-table thead th { color: var(--muted); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; }
+.crash-table .numerica { text-align: right; font-variant-numeric: tabular-nums; }
 .billing-units { color: var(--blue); font-size: .7rem; font-weight: 800; }
 .billing-amount { justify-self: end; font-size: .8rem; }
 .danger-button { color: #a93744; border-color: #f2cbd0; }
