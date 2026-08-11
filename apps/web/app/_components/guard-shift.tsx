@@ -842,6 +842,12 @@ function Ronda({
     <>
       <SyncEstado apiUrl={apiUrl} conexion={puente.conexion} />
 
+      {puente.avisoUbicacion ? (
+        <p className="guardia-anuncio guardia-anuncio-alerta" role="alert">
+          {puente.avisoUbicacion}
+        </p>
+      ) : null}
+
       {fotosPorSubir > 0 ? (
         <p className="guardia-anuncio" role="status" aria-live="polite">
           {fotosPorSubir === 1

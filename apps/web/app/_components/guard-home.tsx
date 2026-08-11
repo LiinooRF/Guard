@@ -123,6 +123,11 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
 
   return (
     <>
+      {puente.avisoUbicacion ? (
+        <p className="guardia-anuncio guardia-anuncio-alerta" role="alert">
+          {puente.avisoUbicacion}
+        </p>
+      ) : null}
       <section className="guard-focus-card" id="operacion">
         <div className="guard-status-row">
           <span className={`status-pill ${pending ? 'pending' : 'active'}`}>

@@ -142,3 +142,32 @@ describe('el cableado: que esta vez SI lo llame alguien', () => {
     expect(EVENTO_CONSENTIMIENTO_ACEPTADO).toMatch(/^voxia:/);
   });
 });
+
+describe('pedir el permiso EN EL INGRESO (bug 10-ago: la app no lo pedia)', () => {
+  const fuente = readFileSync(join(__dirname, 'use-guard-bridge.ts'), 'utf8');
+
+  it('al conectar, si no esta concedido y hay consentimiento activo, PIDE el permiso', () => {
+    // Antes el `pedirPermiso` (dialogo del sistema) solo se disparaba al ACEPTAR
+    // el aviso; un guardia que volvia a entrar con el consentimiento ya vigente
+    // no veia ese dialogo nunca y tenia que ir a Ajustes.
+    expect(fuente).toContain('consentimientoActivo');
+    expect(fuente).toMatch(/pedirPermiso\('ubicacion',\s*true\)/);
+  });
+
+  it('el consentimiento activo se verifica contra el servidor (la divulgacion que Play exige)', () => {
+    // `consent.granted` en /geo/policy = fila de consentimiento no revocada.
+    expect(fuente).toContain("fetch(`${apiUrl}/geo/policy`");
+    expect(fuente).toContain('consent?.granted === true');
+  });
+
+  it('con el permiso negado EN FIRME muestra el aviso de Ajustes, no un dialogo que no aparece', () => {
+    expect(fuente).toContain('avisoUbicacion');
+    expect(fuente).toMatch(/puedeVolverAPedir/);
+  });
+
+  it('la pantalla del guardia surfacea el aviso de ubicacion', () => {
+    for (const pantalla of ['guard-shift.tsx', 'guard-home.tsx']) {
+      expect(readFileSync(join(__dirname, pantalla), 'utf8')).toContain('puente.avisoUbicacion');
+    }
+  });
+});
