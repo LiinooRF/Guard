@@ -12,6 +12,11 @@ import { QueryFailedError } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { overridesComoObjeto, sanitizeOverrides } from './rule-overrides';
+import {
+  RulesLayersCache,
+  type RulesCacheGeneration,
+  type RulesCacheKey,
+} from './rules-layers.cache';
 
 /** Contexto de la consulta: el punto y/o el recinto donde se esta operando. */
 export interface RuleContext {
@@ -59,6 +64,7 @@ export class RulesService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly audit: AuditService,
+    private readonly cache: RulesLayersCache = new RulesLayersCache(),
   ) {}
 
   /**
@@ -71,7 +77,7 @@ export class RulesService {
    * puede caerse por configuracion.
    */
   async effective(context: RuleContext = {}): Promise<PatrolRules> {
-    return resolveRules(this.sanitizeLayers(await this.readLayers(context)));
+    return resolveRules(this.sanitizeLayers(await this.readLayers(context, true)));
   }
 
   /**
@@ -80,7 +86,7 @@ export class RulesService {
    * efectiva, para que la app no reimplemente la cascada.
    */
   async effectiveWithSource(context: RuleContext = {}) {
-    const raw = await this.readLayers(context);
+    const raw = await this.readLayers(context, true);
     const layers = this.sanitizeLayers(raw);
     const { rules, sources } = resolveRulesWithSource(layers);
     return {
@@ -127,7 +133,10 @@ export class RulesService {
       [JSON.stringify(overrides)],
     );
     await this.recordChange(actorId, 'tenant', undefined, overrides);
-    return this.adminView();
+    this.invalidateCurrentTenantCacheAfterCommit();
+    // La transaccion HTTP se confirma despues de que el servicio retorna. No
+    // se cachea esta lectura para no publicar un valor aun no confirmado.
+    return this.scopeView('tenant', undefined, false);
   }
 
   /** Idem para un recinto. Configurar uno no toca a los demas del tenant. */
@@ -142,7 +151,8 @@ export class RulesService {
       'El recinto no existe',
     );
     await this.recordChange(actorId, 'site', siteId, overrides);
-    return this.siteView(siteId);
+    this.invalidateCurrentTenantCacheAfterCommit();
+    return this.scopeView('site', siteId, false);
   }
 
   /** Idem para un punto de control. */
@@ -161,7 +171,8 @@ export class RulesService {
       'El punto de control no existe',
     );
     await this.recordChange(actorId, 'checkpoint', checkpointId, overrides);
-    return this.checkpointView(checkpointId);
+    this.invalidateCurrentTenantCacheAfterCommit();
+    return this.scopeView('checkpoint', checkpointId, false);
   }
 
   /**
@@ -169,7 +180,7 @@ export class RulesService {
    * de lo que ahi se puede editar. Con eso el panel (#83) pinta el formulario
    * sin saber de antemano ni un nombre de campo.
    */
-  private async scopeView(scope: RuleScope, targetId?: string) {
+  private async scopeView(scope: RuleScope, targetId?: string, useCache = true) {
     const context: RuleContext =
       scope === 'site'
         ? { siteId: targetId }
@@ -177,7 +188,7 @@ export class RulesService {
           ? { checkpointId: targetId }
           : {};
 
-    const raw = await this.readLayers(context);
+    const raw = await this.readLayers(context, useCache);
     const layers = this.sanitizeLayers(raw);
     const { rules, sources } = resolveRulesWithSource(layers);
 
@@ -193,7 +204,21 @@ export class RulesService {
     };
   }
 
-  private async readLayers(context: RuleContext): Promise<RawLayers> {
+  private async readLayers(context: RuleContext, useCache: boolean): Promise<RawLayers> {
+    const cacheKey = useCache ? this.cacheKey(context) : null;
+    let generation: RulesCacheGeneration | undefined;
+    if (cacheKey) {
+      try {
+        // Se captura ANTES del SELECT: una invalidacion post-commit cambia la
+        // generacion y setIfCurrent rechaza su resultado aunque termine despues.
+        generation = this.cache.captureGeneration(cacheKey.tenantId);
+        const cached = this.cache.get(cacheKey);
+        if (cached !== undefined) return cached;
+      } catch {
+        this.logCacheFailure('get');
+      }
+    }
+
     const rows = await this.tenantContext.manager.query<LayerRow[]>(CASCADE_SQL, [
       context.siteId ?? null,
       context.checkpointId ?? null,
@@ -204,7 +229,63 @@ export class RulesService {
       if (!row?.scope) continue;
       layers[row.scope] = overridesComoObjeto(row.overrides, row.scope, this.logger);
     }
+
+    if (cacheKey && generation) {
+      try {
+        this.cache.setIfCurrent(cacheKey, layers, generation);
+      } catch {
+        // La base respondio correctamente: una cache auxiliar nunca convierte
+        // esa lectura en 500 ni sustituye el resultado por defaults.
+        this.logCacheFailure('set');
+      }
+    }
     return layers;
+  }
+
+  /**
+   * Solo se cachea cuando el tenant viene del contexto autenticado del servidor
+   * y esta enlazado al mismo QueryRunner que aplica RLS. Requests normales y el
+   * barrido de vencidas lo establecen desde sus fronteras confiables; soporte y
+   * cualquier ejecucion sin identidad explicita consultan PostgreSQL.
+   */
+  private cacheKey(context: RuleContext): RulesCacheKey | null {
+    const tenantId = this.tenantContext.tenantId;
+    if (!tenantId) return null;
+    return {
+      tenantId,
+      siteId: context.siteId ?? null,
+      checkpointId: context.checkpointId ?? null,
+    };
+  }
+
+  private invalidateCurrentTenantCacheAfterCommit(): void {
+    const tenantId = this.tenantContext.tenantId;
+    if (!tenantId) return;
+    try {
+      const registered = this.tenantContext.afterCommit(() => {
+        try {
+          this.cache.invalidateTenant(tenantId);
+        } catch {
+          // PostgreSQL ya confirmo. La replica converge por TTL aunque falle
+          // esta optimizacion y el cliente no recibe un falso error.
+          this.logCacheFailure('invalidate_tenant');
+        }
+      });
+      if (!registered) this.logCacheFailure('schedule_invalidate_tenant');
+    } catch {
+      this.logCacheFailure('schedule_invalidate_tenant');
+    }
+  }
+
+  private logCacheFailure(
+    operation:
+      | 'get'
+      | 'set'
+      | 'invalidate_tenant'
+      | 'schedule_invalidate_tenant',
+  ): void {
+    // Sin clave, tenant ni valores: solo la operacion tecnica que fallo.
+    this.logger.warn(JSON.stringify({ event: 'rules_cache_failure', operation }));
   }
 
   private sanitizeLayers(raw: RawLayers): RuleOverridesByScope {
