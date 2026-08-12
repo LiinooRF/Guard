@@ -39,6 +39,15 @@ describe('catalogo de modulos', () => {
     // alguien la reintroduce como modulo vendible, este test lo frena.
     expect(Object.keys(FEATURE_CATALOG)).not.toContain('routeOptimization');
   });
+
+  it('no incluye incidents ni gpsTracking: eran modulos MUERTOS (#286)', () => {
+    // Novedades/panico lo gobierna el permiso `incidents:create`; el recorrido,
+    // la regla `gpsTrackingEnabled`. Como flags de plan nadie los leia y el
+    // admin los movia sin efecto. Si alguien los reintroduce como toggle
+    // decorativo, este test lo frena hasta que se cableen a su gate real.
+    expect(Object.keys(FEATURE_CATALOG)).not.toContain('incidents');
+    expect(Object.keys(FEATURE_CATALOG)).not.toContain('gpsTracking');
+  });
 });
 
 describe('resolveFeatureFlags', () => {
@@ -110,18 +119,18 @@ describe('resolveFeatureFlags', () => {
   });
 
   it('bajar el plan apaga el modulo sin tener que limpiar lo que el admin escribio', () => {
-    const antes = resolveFeatureFlags({ plan: { incidents: true }, admin: { incidents: true } });
-    const despues = resolveFeatureFlags({ plan: { incidents: false }, admin: { incidents: true } });
+    const antes = resolveFeatureFlags({ plan: { photoAppendix: true }, admin: { photoAppendix: true } });
+    const despues = resolveFeatureFlags({ plan: { photoAppendix: false }, admin: { photoAppendix: true } });
 
-    expect(antes.enabled.incidents).toBe(true);
-    expect(despues.enabled.incidents).toBe(false);
+    expect(antes.enabled.photoAppendix).toBe(true);
+    expect(despues.enabled.photoAppendix).toBe(false);
   });
 });
 
 describe('modulesOutsideLicense', () => {
   it('nombra los modulos que se intentan prender sin tenerlos', () => {
     const { entitlements } = resolveFeatureFlags({ plan: { map: false } });
-    const fuera = modulesOutsideLicense({ map: true, incidents: true }, entitlements);
+    const fuera = modulesOutsideLicense({ map: true, photoAppendix: true }, entitlements);
 
     expect(fuera.map((modulo) => modulo.key)).toEqual(['map']);
     // El mensaje que ve el jefe de operaciones usa el nombre del modulo.
@@ -139,7 +148,7 @@ describe('sanitizeFeatureFlags', () => {
 
   it('descarta lo desconocido y lo que no es booleano, sin romper el resto', () => {
     const limpio = sanitizeFeatureFlags(
-      { map: true, incidents: 'si', moduloInventado: true },
+      { map: true, photoAppendix: 'si', moduloInventado: true },
       'plan',
       logger(),
     );

@@ -82,23 +82,9 @@ export const FEATURE_CATALOG: FeatureCatalog = {
       'El informe sale sin el anexo de fotos y el anexo desaparece del menu. Las fotos se siguen guardando: no se borra evidencia.',
     default: DEFAULT_FEATURE_FLAGS.photoAppendix,
   },
-  incidents: {
-    key: 'incidents',
-    label: 'Novedades e incidentes',
-    description:
-      'Libro de novedades y boton de panico desde la app del guardia, con foto y ubicacion.',
-    whenOff: 'La app deja de ofrecer registrar novedades y el panel esconde la bandeja.',
-    default: DEFAULT_FEATURE_FLAGS.incidents,
-  },
-  gpsTracking: {
-    key: 'gpsTracking',
-    label: 'Seguimiento del recorrido',
-    description:
-      'Guarda el recorrido completo del guardia durante el turno para poder revisarlo despues.',
-    whenOff:
-      'No se guarda el recorrido. Cada marca sigue registrando su ubicacion: lo que se pierde es el trazo entre punto y punto.',
-    default: DEFAULT_FEATURE_FLAGS.gpsTracking,
-  },
+  // `incidents` y `gpsTracking` se retiraron del catalogo (#286): eran modulos
+  // MUERTOS. Novedades/panico lo gobierna el permiso RBAC `incidents:create`, y
+  // el recorrido, la regla `gpsTrackingEnabled` — no estos flags, que nadie leia.
   crashReporting: {
     key: 'crashReporting',
     label: 'Reporte de fallas de la app',
