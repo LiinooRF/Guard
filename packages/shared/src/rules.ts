@@ -323,8 +323,14 @@ export const featureFlagsSchema = z.object({
   map: z.boolean().default(true),
   chartsBySite: z.boolean().default(true),
   photoAppendix: z.boolean().default(true),
-  incidents: z.boolean().default(true),
-  gpsTracking: z.boolean().default(true),
+  // RETIRADOS (#286): eran módulos MUERTOS — el admin los prendía/apagaba y no
+  // pasaba nada, porque su control real vive en otro lado.
+  //   - `incidents`: lo que decide quién registra novedades es el PERMISO
+  //     `incidents:create` (RBAC), no un flag de plan.
+  //   - `gpsTracking`: era un DUPLICADO de la regla `gpsTrackingEnabled` (más
+  //     arriba), que es la que geo/geo.service.ts hace cumplir de verdad.
+  // Si el modelo de licencias (#106) los quiere como módulos vendibles, se
+  // vuelven a agregar cableados a su gate real, no como toggle decorativo.
   /** Crash reporting. Opcional, fuera del corte de 1 mes. */
   crashReporting: z.boolean().default(false),
 });
