@@ -305,8 +305,6 @@ export const patrolRulesSchema = z.object({
    * hasta que la app vuelva a confirmar. 720 = un turno.
    */
   gpsPermissionReportMaxAgeMin: z.number().int().min(15).max(10_080).default(720),
-
-  maxLoginAttempts: z.number().int().min(3).max(20).default(5),
 });
 
 export type PatrolRules = z.infer<typeof patrolRulesSchema>;
@@ -1058,20 +1056,12 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     scopes: SOLO_EMPRESA,
     group: 'ubicacion',
   },
-  maxLoginAttempts: {
-    key: 'maxLoginAttempts',
-    label: 'Intentos de ingreso permitidos',
-    description:
-      'Intentos fallidos de contrasena antes de bloquear temporalmente la cuenta.',
-    type: 'integer',
-    unit: 'attempts',
-    min: 3,
-    max: 20,
-    default: DEFAULT_PATROL_RULES.maxLoginAttempts,
-    // El ingreso es de la cuenta, no del recinto ni del punto.
-    scopes: SOLO_EMPRESA,
-    group: 'seguridad',
-  },
+  // NOTA (#286): NO agregar `maxLoginAttempts` aca. El bloqueo de cuenta por
+  // intentos fallidos NO se controla desde la cascada de reglas, sino desde la
+  // tabla `tenant_auth_policies` (columnas max_failed_attempts, window_seconds,
+  // base/max_lock_seconds), que el ADMIN edita en `PATCH /admin/security/policy`
+  // y que `auth.service.ts` es el unico que lee. Tener aca una regla homonima
+  // era un control MUERTO: el admin la movia y no pasaba nada.
 };
 
 /** El catalogo como lista, en el orden en que se declaro. */
