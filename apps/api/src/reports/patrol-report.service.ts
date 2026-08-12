@@ -6,6 +6,7 @@ import type { ComplianceResult } from '@voxia/shared';
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { FeatureFlagsService } from '../rules/feature-flags.service';
 import { RulesService } from '../rules/rules.service';
 import {
   construirInformeRonda,
@@ -139,6 +140,7 @@ export class PatrolReportService {
     private readonly tenantContext: TenantContextService,
     private readonly rules: RulesService,
     private readonly branding: BrandingService,
+    private readonly features: FeatureFlagsService,
     config: ConfigService,
   ) {
     this.raizEvidencia = config.getOrThrow<string>('EVIDENCE_PATH');
@@ -152,7 +154,13 @@ export class PatrolReportService {
    * metadatos, y el contenido se abre archivo por archivo al dibujar.
    */
   async buildModel(patrolId: string, opciones: OpcionesInforme = {}): Promise<InformeRonda> {
-    const { requester = null, incluirAnexo = true } = opciones;
+    const { requester = null } = opciones;
+    // El anexo fotografico es un MODULO de plan (#286). Cuando el llamador no
+    // opina —el PDF que se descarga desde el panel— manda el flag `photoAppendix`
+    // de la empresa: antes se incluia SIEMPRE y prender/apagar el modulo no hacia
+    // nada. El envio por correo sigue pasando `false` explicito (el anexo no viaja
+    // en el adjunto, se baja del panel) y eso gana sobre el flag.
+    const incluirAnexo = opciones.incluirAnexo ?? (await this.features.isEnabled('photoAppendix'));
 
     const encabezados = await this.tenantContext.manager.query<EncabezadoRondaRow[]>(
       `

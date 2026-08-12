@@ -262,11 +262,11 @@ describe('módulos dentro de la licencia', () => {
     whenOff: 'Desaparece el mapa del panel.',
     default: true,
   });
-  const NOVEDADES = modulo({
-    key: 'incidents',
-    label: 'Novedades e incidentes',
-    description: 'Libro de novedades y botón de pánico.',
-    whenOff: 'La app deja de ofrecer registrar novedades.',
+  const GRAFICAS = modulo({
+    key: 'chartsBySite',
+    label: 'Gráficas por sucursal',
+    description: 'Compara en gráficos el cumplimiento de cada recinto.',
+    whenOff: 'Desaparecen los gráficos comparativos.',
     default: true,
   });
   const FALLAS = modulo({
@@ -280,40 +280,40 @@ describe('módulos dentro de la licencia', () => {
   function vistaDeModulos(parcial: Partial<VistaModulos> = {}): VistaModulos {
     return {
       plan: { key: 'base', name: 'Base' },
-      enabled: { map: true, incidents: false },
-      sources: { map: 'plan', incidents: 'admin' },
+      enabled: { map: true, chartsBySite: false },
+      sources: { map: 'plan', chartsBySite: 'admin' },
       sourceLabels: { plan: 'Plan contratado', admin: 'Decisión del administrador' },
-      entitlements: { map: true, incidents: true, crashReporting: false },
-      entitlementSources: { map: 'plan', incidents: 'plan', crashReporting: 'producto' },
-      stored: { incidents: false },
-      editable: [MAPA, NOVEDADES],
-      modules: [MAPA, NOVEDADES, FALLAS],
+      entitlements: { map: true, chartsBySite: true, crashReporting: false },
+      entitlementSources: { map: 'plan', chartsBySite: 'plan', crashReporting: 'producto' },
+      stored: { chartsBySite: false },
+      editable: [MAPA, GRAFICAS],
+      modules: [MAPA, GRAFICAS, FALLAS],
       ...parcial,
     } as unknown as VistaModulos;
   }
 
   it('solo ofrece los módulos que la licencia incluye', () => {
     const estado = estadoInicialModulos(vistaDeModulos());
-    expect(Object.keys(estado).sort()).toEqual(['incidents', 'map']);
+    expect(Object.keys(estado).sort()).toEqual(['chartsBySite', 'map']);
     // El que no viene en el plan no aparece: no queda visible y bloqueado.
     expect(estado.crashReporting).toBeUndefined();
   });
 
   it('distingue lo escrito por el admin del valor de fábrica', () => {
     const estado = estadoInicialModulos(vistaDeModulos());
-    expect(estado.incidents?.escrito).toBe(true);
-    expect(estado.incidents?.origen).toBe('Decisión del administrador');
+    expect(estado.chartsBySite?.escrito).toBe(true);
+    expect(estado.chartsBySite?.origen).toBe('Decisión del administrador');
     expect(estado.map?.escrito).toBe(false);
     expect(estado.map?.origen).toBe('Plan contratado');
   });
 
   it('el PUT manda lo ya escrito y lo que se movió, y NO lo que nunca se decidió', () => {
     const base = estadoInicialModulos(vistaDeModulos());
-    const movido = { ...base, incidents: { ...base.incidents!, encendido: true } };
+    const movido = { ...base, chartsBySite: { ...base.chartsBySite!, encendido: true } };
 
     const cuerpo = cuerpoDelPutModulos(base, movido) as Record<string, unknown>;
-    // `incidents` viaja porque el admin ya lo tenia escrito (y ademas lo movio).
-    expect(cuerpo.incidents).toBe(true);
+    // `chartsBySite` viaja porque el admin ya lo tenia escrito (y ademas lo movio).
+    expect(cuerpo.chartsBySite).toBe(true);
     // `map` NO viaja: esta en su valor de fabrica y nadie lo movio. Mandarlo lo
     // congelaria como decision del admin y le sacaria la insignia "Valor de
     // fabrica" para siempre. Omitido, el servidor cae al default del producto,
@@ -328,14 +328,14 @@ describe('módulos dentro de la licencia', () => {
     const base = estadoInicialModulos(vistaDeModulos());
     const movido = { ...base, map: { ...base.map!, encendido: false } };
 
-    expect(cuerpoDelPutModulos(base, movido)).toEqual({ map: false, incidents: false });
+    expect(cuerpoDelPutModulos(base, movido)).toEqual({ map: false, chartsBySite: false });
   });
 
   it('conserva la preferencia escrita de un módulo que no se tocó', () => {
     const base = estadoInicialModulos(vistaDeModulos());
     // Sin mover nada: lo escrito tiene que viajar igual, porque el PUT reemplaza
     // el set completo y omitirlo lo devolveria a fabrica sin que nadie lo pida.
-    expect(cuerpoDelPutModulos(base, base)).toEqual({ incidents: false });
+    expect(cuerpoDelPutModulos(base, base)).toEqual({ chartsBySite: false });
   });
 
   it('resume solo lo que cambió', () => {
@@ -348,7 +348,7 @@ describe('módulos dentro de la licencia', () => {
 
   it('avisa de las preferencias que el próximo guardado va a borrar', () => {
     const vista = vistaDeModulos({
-      stored: { incidents: false, crashReporting: true, moduloQueYaNoExiste: true },
+      stored: { chartsBySite: false, crashReporting: true, moduloQueYaNoExiste: true },
     });
     const { conocidas, desconocidas } = preferenciasQueSeLimpian(vista);
     expect(conocidas.map((f) => f.key)).toEqual(['crashReporting']);
