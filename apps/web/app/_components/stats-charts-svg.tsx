@@ -113,8 +113,14 @@ export function BarrasHorizontales({
         const ancho = parte * 100;
         const dentro = posicionEtiqueta(parte) === 'dentro';
         return (
-          <g key={item.clave}>
-            <title>{`${item.titulo}: ${item.etiquetaValor}${item.subtitulo ? ` · ${item.subtitulo}` : ''}`}</title>
+          // El detalle por dato va en `aria-label`, NO en un `<title>` hijo:
+          // React 19 HOISTEA los `<title>` al `<head>` como metadata del
+          // documento, aunque estén dentro de un `<svg>`, y eso desincroniza el
+          // subárbol en la hidratación (#288, visto en Firefox). aria-label
+          // conserva el nombre accesible y cada dato sin el elemento que React
+          // reubica. El valor visible ya está en el `<text>` y en la tabla, así
+          // que no se pierde información.
+          <g key={item.clave} role="img" aria-label={`${item.titulo}: ${item.etiquetaValor}${item.subtitulo ? ` · ${item.subtitulo}` : ''}`}>
             <text className="stats-barra-titulo" x={0} y={y + 13}>
               {truncar(item.titulo, 48)}
               {item.subtitulo ? (
@@ -267,8 +273,9 @@ export function SerieCumplimiento({
         const posicion = posicionSerie(indice, total);
         const dia = normalizarDia(punto.bucket);
         return (
-          <g key={`punto-${punto.bucket}`}>
-            <title>{`${etiquetaBucket(dia, granularidad)}: ${formatearPorcentaje(punto.compliancePct)} · ${formatearEntero(punto.patrols)} rondas`}</title>
+          // aria-label en vez de <title>: React 19 hoistea los <title> SVG y
+          // rompe la hidratación (#288). Ver la gráfica de barras.
+          <g key={`punto-${punto.bucket}`} role="img" aria-label={`${etiquetaBucket(dia, granularidad)}: ${formatearPorcentaje(punto.compliancePct)} · ${formatearEntero(punto.patrols)} rondas`}>
             {marca ? (
               <circle
                 className="stats-marca"
@@ -351,8 +358,8 @@ export function ColumnasRondas({
         const x = Math.min(Math.max(centro - ancho / 2, 0), 100 - ancho);
         const dia = normalizarDia(punto.bucket);
         return (
-          <g key={`columna-${punto.bucket}`}>
-            <title>{`${etiquetaBucket(dia, granularidad)}: ${formatearEntero(punto.completed)} completadas de ${formatearEntero(punto.patrols)} programadas`}</title>
+          // aria-label en vez de <title> (#288, hoisting de React 19).
+          <g key={`columna-${punto.bucket}`} role="img" aria-label={`${etiquetaBucket(dia, granularidad)}: ${formatearEntero(punto.completed)} completadas de ${formatearEntero(punto.patrols)} programadas`}>
             <rect
               className="stats-columna-pista"
               x={`${x}%`}
