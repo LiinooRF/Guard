@@ -111,6 +111,35 @@ async function pedir<T>(ruta: string, parametros: URLSearchParams): Promise<Resu
   }
 }
 
+/**
+ * ¿La empresa tiene prendido el módulo "Gráficas por sucursal" (#286)?
+ *
+ * Antes los gráficos comparativos se dibujaban SIEMPRE: prender o apagar el
+ * módulo en el panel no hacía nada. Ahora se consulta el flag y, apagado, las
+ * cifras siguen en las tablas pero los gráficos desaparecen — que es justo lo
+ * que la ficha del módulo promete.
+ *
+ * Falla ABIERTO a propósito: si no se puede leer el módulo, se muestran los
+ * gráficos. Una empresa que paga por ellos y no los ve por un fallo de red es
+ * peor que una que los ve de más un instante.
+ */
+async function moduloGraficasEncendido(): Promise<boolean> {
+  const almacen = await cookies();
+  const acceso = almacen.get('voxia_access');
+  if (!acceso) return true;
+  try {
+    const respuesta = await fetch(
+      `${process.env.API_INTERNAL_URL ?? apiPublica()}/features`,
+      { headers: { cookie: `voxia_access=${acceso.value}` }, cache: 'no-store' },
+    );
+    if (!respuesta.ok) return true;
+    const cuerpo = (await respuesta.json()) as { enabled?: { chartsBySite?: boolean } };
+    return cuerpo.enabled?.chartsBySite !== false;
+  } catch {
+    return true;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Componente                                                          */
 /* ------------------------------------------------------------------ */
@@ -160,6 +189,8 @@ export async function StatsCharts({
   omitidosParams.set('limit', '12');
   const rankingParams = comunes();
   rankingParams.set('limit', '15');
+
+  const mostrarGraficos = await moduloGraficasEncendido();
 
   const [cumplimiento, evolucion, omitidos, ranking] = await Promise.all([
     dentroDeTope('cumplimiento')
@@ -257,15 +288,16 @@ export async function StatsCharts({
           periodo={periodo}
           umbral={umbral}
           role={role}
+          mostrarGraficos={mostrarGraficos}
         />
-        <TarjetaRecintos resultado={cumplimiento} periodo={periodo} umbral={umbral} role={role} />
+        <TarjetaRecintos resultado={cumplimiento} periodo={periodo} umbral={umbral} role={role} mostrarGraficos={mostrarGraficos} />
       </div>
 
-      <TarjetaEvolucion resultado={evolucion} periodo={periodo} role={role} />
+      <TarjetaEvolucion resultado={evolucion} periodo={periodo} role={role} mostrarGraficos={mostrarGraficos} />
 
       <div className="stats-grid">
-        <TarjetaOmitidos resultado={omitidos} periodo={periodo} role={role} />
-        <TarjetaRanking resultado={ranking} periodo={periodo} role={role} />
+        <TarjetaOmitidos resultado={omitidos} periodo={periodo} role={role} mostrarGraficos={mostrarGraficos} />
+        <TarjetaRanking resultado={ranking} periodo={periodo} role={role} mostrarGraficos={mostrarGraficos} />
       </div>
 
       {recintoPedido ? (
@@ -395,11 +427,13 @@ function TarjetaSucursales({
   periodo,
   umbral,
   role,
+  mostrarGraficos,
 }: {
   resultado: Resultado<CumplimientoPorRecinto>;
   periodo: string;
   umbral: number | null;
   role: 'ADMIN' | 'SUPERVISOR';
+  mostrarGraficos: boolean;
 }) {
   const sucursales = resultado.estado === 'ok' ? agruparPorSucursal(resultado.datos.sites) : [];
   const items: BarraItem[] = sucursales.map((sucursal) => ({
@@ -428,21 +462,23 @@ function TarjetaSucursales({
       {resultado.estado === 'ok' ? (
         sucursales.length ? (
           <>
-            <BarrasHorizontales
-              items={items}
-              escala={100}
-              referencia={
-                umbral === null
-                  ? undefined
-                  : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
-              }
-              ariaLabel={`Cumplimiento promedio por sucursal, ${periodo}. ${sucursales
-                .map(
-                  (sucursal) =>
-                    `${sucursal.sucursal}: ${formatearPorcentaje(sucursal.promedio)}`,
-                )
-                .join('. ')}.`}
-            />
+            {mostrarGraficos ? (
+              <BarrasHorizontales
+                items={items}
+                escala={100}
+                referencia={
+                  umbral === null
+                    ? undefined
+                    : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
+                }
+                ariaLabel={`Cumplimiento promedio por sucursal, ${periodo}. ${sucursales
+                  .map(
+                    (sucursal) =>
+                      `${sucursal.sucursal}: ${formatearPorcentaje(sucursal.promedio)}`,
+                  )
+                  .join('. ')}.`}
+              />
+            ) : null}
             <ChipsAlerta items={items} />
             <TablaDatos
               titulo={`Cumplimiento por sucursal, ${periodo}`}
@@ -489,11 +525,13 @@ function TarjetaRecintos({
   periodo,
   umbral,
   role,
+  mostrarGraficos,
 }: {
   resultado: Resultado<CumplimientoPorRecinto>;
   periodo: string;
   umbral: number | null;
   role: 'ADMIN' | 'SUPERVISOR';
+  mostrarGraficos: boolean;
 }) {
   const recintos = resultado.estado === 'ok' ? resultado.datos.sites : [];
   const items: BarraItem[] = recintos.map((recinto) => ({
@@ -528,23 +566,25 @@ function TarjetaRecintos({
       {resultado.estado === 'ok' ? (
         recintos.length ? (
           <>
-            <BarrasHorizontales
-              items={items}
-              escala={100}
-              referencia={
-                umbral === null
-                  ? undefined
-                  : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
-              }
-              ariaLabel={`Cumplimiento por recinto, ${periodo}. ${recintos
-                .map(
-                  (recinto) =>
-                    `${recinto.siteName}, sucursal ${recinto.branchName}: ${formatearPorcentaje(
-                      recinto.compliancePct,
-                    )}`,
-                )
-                .join('. ')}.`}
-            />
+            {mostrarGraficos ? (
+              <BarrasHorizontales
+                items={items}
+                escala={100}
+                referencia={
+                  umbral === null
+                    ? undefined
+                    : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
+                }
+                ariaLabel={`Cumplimiento por recinto, ${periodo}. ${recintos
+                  .map(
+                    (recinto) =>
+                      `${recinto.siteName}, sucursal ${recinto.branchName}: ${formatearPorcentaje(
+                        recinto.compliancePct,
+                      )}`,
+                  )
+                  .join('. ')}.`}
+              />
+            ) : null}
             <ChipsAlerta items={items} />
             <TablaDatos
               titulo={`Cumplimiento por recinto, ${periodo}`}
@@ -586,10 +626,12 @@ function TarjetaEvolucion({
   resultado,
   periodo,
   role,
+  mostrarGraficos,
 }: {
   resultado: Resultado<Evolucion>;
   periodo: string;
   role: 'ADMIN' | 'SUPERVISOR';
+  mostrarGraficos: boolean;
 }) {
   const datos = resultado.estado === 'ok' ? resultado.datos : null;
   const puntos = datos?.points ?? [];
@@ -609,49 +651,53 @@ function TarjetaEvolucion({
       {datos ? (
         puntos.length ? (
           <>
-            <h3 className="stats-subtitulo">Cumplimiento promedio</h3>
-            {conCumplimiento.length ? (
-              <SerieCumplimiento
-                puntos={puntos}
-                granularidad={agrupacion}
-                umbral={datos.threshold}
-                ariaLabel={`Evolución del cumplimiento ${periodo}, agrupada por ${agrupacion}. ${conCumplimiento
-                  .map(
-                    (punto) =>
-                      `${normalizarDia(punto.bucket)}: ${formatearPorcentaje(punto.compliancePct)}`,
-                  )
-                  .slice(-12)
-                  .join('. ')}. Umbral ${formatearPorcentaje(datos.threshold)}.`}
-              />
-            ) : (
-              <Vacio
-                titulo="Hay rondas, pero ninguna cerrada todavía"
-                detalle="El cumplimiento se calcula al cerrar la ronda. Mientras estén en curso o pendientes no hay porcentaje que graficar."
-              />
-            )}
+            {mostrarGraficos ? (
+              <>
+                <h3 className="stats-subtitulo">Cumplimiento promedio</h3>
+                {conCumplimiento.length ? (
+                  <SerieCumplimiento
+                    puntos={puntos}
+                    granularidad={agrupacion}
+                    umbral={datos.threshold}
+                    ariaLabel={`Evolución del cumplimiento ${periodo}, agrupada por ${agrupacion}. ${conCumplimiento
+                      .map(
+                        (punto) =>
+                          `${normalizarDia(punto.bucket)}: ${formatearPorcentaje(punto.compliancePct)}`,
+                      )
+                      .slice(-12)
+                      .join('. ')}. Umbral ${formatearPorcentaje(datos.threshold)}.`}
+                  />
+                ) : (
+                  <Vacio
+                    titulo="Hay rondas, pero ninguna cerrada todavía"
+                    detalle="El cumplimiento se calcula al cerrar la ronda. Mientras estén en curso o pendientes no hay porcentaje que graficar."
+                  />
+                )}
 
-            <h3 className="stats-subtitulo">Rondas programadas y completadas</h3>
-            <Leyenda
-              items={[
-                { clave: 'programadas', etiqueta: 'Programadas', tipo: 'pista' },
-                { clave: 'completadas', etiqueta: 'Completadas', tipo: 'relleno' },
-              ]}
-            />
-            <ColumnasRondas
-              puntos={puntos}
-              granularidad={agrupacion}
-              ariaLabel={`Rondas programadas y completadas ${periodo}. Máximo de la escala ${formatearEntero(
-                escalaRondas,
-              )} rondas. ${puntos
-                .map(
-                  (punto) =>
-                    `${normalizarDia(punto.bucket)}: ${formatearEntero(
-                      punto.completed,
-                    )} de ${formatearEntero(punto.patrols)}`,
-                )
-                .slice(-12)
-                .join('. ')}.`}
-            />
+                <h3 className="stats-subtitulo">Rondas programadas y completadas</h3>
+                <Leyenda
+                  items={[
+                    { clave: 'programadas', etiqueta: 'Programadas', tipo: 'pista' },
+                    { clave: 'completadas', etiqueta: 'Completadas', tipo: 'relleno' },
+                  ]}
+                />
+                <ColumnasRondas
+                  puntos={puntos}
+                  granularidad={agrupacion}
+                  ariaLabel={`Rondas programadas y completadas ${periodo}. Máximo de la escala ${formatearEntero(
+                    escalaRondas,
+                  )} rondas. ${puntos
+                    .map(
+                      (punto) =>
+                        `${normalizarDia(punto.bucket)}: ${formatearEntero(
+                          punto.completed,
+                        )} de ${formatearEntero(punto.patrols)}`,
+                    )
+                    .slice(-12)
+                    .join('. ')}.`}
+                />
+              </>
+            ) : null}
 
             <TablaDatos
               titulo={`Evolución ${periodo}`}
@@ -697,10 +743,12 @@ function TarjetaOmitidos({
   resultado,
   periodo,
   role,
+  mostrarGraficos,
 }: {
   resultado: Resultado<PuntosOmitidos>;
   periodo: string;
   role: 'ADMIN' | 'SUPERVISOR';
+  mostrarGraficos: boolean;
 }) {
   const puntos = resultado.estado === 'ok' ? resultado.datos.checkpoints : [];
   const escala = escalaAgradable(Math.max(...puntos.map((punto) => punto.missed), 1));
@@ -727,18 +775,20 @@ function TarjetaOmitidos({
       {resultado.estado === 'ok' ? (
         puntos.length ? (
           <>
-            <BarrasHorizontales
-              items={items}
-              escala={escala}
-              ariaLabel={`Puntos de control más omitidos, ${periodo}. ${puntos
-                .map(
-                  (punto) =>
-                    `${punto.checkpointName} en ${punto.siteName}: ${formatearEntero(
-                      punto.missed,
-                    )} omisiones de ${formatearEntero(punto.expected)} esperadas`,
-                )
-                .join('. ')}.`}
-            />
+            {mostrarGraficos ? (
+              <BarrasHorizontales
+                items={items}
+                escala={escala}
+                ariaLabel={`Puntos de control más omitidos, ${periodo}. ${puntos
+                  .map(
+                    (punto) =>
+                      `${punto.checkpointName} en ${punto.siteName}: ${formatearEntero(
+                        punto.missed,
+                      )} omisiones de ${formatearEntero(punto.expected)} esperadas`,
+                  )
+                  .join('. ')}.`}
+              />
+            ) : null}
             <TablaDatos
               titulo={`Puntos más omitidos, ${periodo}`}
               columnas={columnas}
@@ -784,10 +834,12 @@ function TarjetaRanking({
   resultado,
   periodo,
   role,
+  mostrarGraficos,
 }: {
   resultado: Resultado<RankingGuardias>;
   periodo: string;
   role: 'ADMIN' | 'SUPERVISOR';
+  mostrarGraficos: boolean;
 }) {
   const guardias = resultado.estado === 'ok' ? resultado.datos.guards : [];
   const umbral = resultado.estado === 'ok' ? resultado.datos.threshold : null;
@@ -816,23 +868,25 @@ function TarjetaRanking({
       {resultado.estado === 'ok' ? (
         guardias.length ? (
           <>
-            <BarrasHorizontales
-              items={items}
-              escala={100}
-              referencia={
-                umbral === null
-                  ? undefined
-                  : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
-              }
-              ariaLabel={`Cumplimiento por guardia, ${periodo}. ${guardias
-                .map(
-                  (guardia) =>
-                    `${guardia.guardName}: ${formatearPorcentaje(
-                      guardia.compliancePct,
-                    )} en ${formatearEntero(guardia.patrols)} rondas`,
-                )
-                .join('. ')}.`}
-            />
+            {mostrarGraficos ? (
+              <BarrasHorizontales
+                items={items}
+                escala={100}
+                referencia={
+                  umbral === null
+                    ? undefined
+                    : { valor: umbral, etiqueta: `Umbral ${formatearPorcentaje(umbral)}` }
+                }
+                ariaLabel={`Cumplimiento por guardia, ${periodo}. ${guardias
+                  .map(
+                    (guardia) =>
+                      `${guardia.guardName}: ${formatearPorcentaje(
+                        guardia.compliancePct,
+                      )} en ${formatearEntero(guardia.patrols)} rondas`,
+                  )
+                  .join('. ')}.`}
+              />
+            ) : null}
             <ChipsAlerta items={items} />
             <TablaDatos
               titulo={`Ranking de guardias, ${periodo}`}
