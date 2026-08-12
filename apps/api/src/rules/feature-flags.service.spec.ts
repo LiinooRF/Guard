@@ -51,7 +51,7 @@ describe('FeatureFlagsService.effective', () => {
     const modulos = await servicio(query).effective();
     expect(modulos.map).toBe(false);
     expect(modulos.chartsBySite).toBe(false);
-    expect(modulos.incidents).toBe(true);
+    expect(modulos.photoAppendix).toBe(true);
   });
 
   it('la concesion a la empresa le gana al plan', async () => {
@@ -71,7 +71,7 @@ describe('FeatureFlagsService.effective', () => {
 
     const modulos = await servicio(query).effective();
     expect(modulos.photoAppendix).toBe(false);
-    expect(modulos.incidents).toBe(true);
+    expect(modulos.chartsBySite).toBe(true);
   });
 
   it('un true guardado por el admin no levanta lo que el plan niega', async () => {
@@ -86,10 +86,10 @@ describe('FeatureFlagsService.effective', () => {
   it('una preferencia corrupta se descarta con warning y la operacion sigue', async () => {
     const query = niveles(
       { ...PLAN_BASE, flags: {} },
-      { nivel: 'admin', flags: { incidents: 'quizas', moduloViejo: true } },
+      { nivel: 'admin', flags: { photoAppendix: 'quizas', moduloViejo: true } },
     );
 
-    await expect(servicio(query).effective()).resolves.toMatchObject({ incidents: true });
+    await expect(servicio(query).effective()).resolves.toMatchObject({ photoAppendix: true });
     expect(Logger.prototype.warn).toHaveBeenCalledTimes(2);
   });
 });
