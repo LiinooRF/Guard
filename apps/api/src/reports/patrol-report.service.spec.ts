@@ -7,6 +7,7 @@ import { PassThrough, Writable } from 'node:stream';
 import type { ConfigService } from '@nestjs/config';
 import type { BrandingService } from '../branding/branding.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import type { FeatureFlagsService } from '../rules/feature-flags.service';
 import type { RulesService } from '../rules/rules.service';
 import { PatrolReportService } from './patrol-report.service';
 
@@ -116,7 +117,7 @@ const MARCA_TENANT: MarcaFake = {
 
 function armarServicio(
   fixture: Fixture,
-  extras: { raiz?: string; umbral?: number; marca?: MarcaFake } = {},
+  extras: { raiz?: string; umbral?: number; marca?: MarcaFake; photoAppendix?: boolean } = {},
 ) {
   const manager = fakeManager(fixture);
   const rules = {
@@ -131,6 +132,11 @@ function armarServicio(
   const branding = {
     forDocuments: jest.fn().mockResolvedValue(extras.marca ?? MARCA_TENANT),
   } as unknown as BrandingService;
+  // El anexo del PDF depende del flag `photoAppendix` (#286). Por defecto el
+  // modulo esta prendido, que es como venia antes de gatearlo.
+  const features = {
+    isEnabled: jest.fn().mockResolvedValue(extras.photoAppendix ?? true),
+  } as unknown as FeatureFlagsService;
   const config = {
     getOrThrow: jest.fn().mockReturnValue(extras.raiz ?? '/vol/evidencia'),
   } as unknown as ConfigService;
@@ -139,9 +145,10 @@ function armarServicio(
     { manager } as unknown as TenantContextService,
     rules,
     branding,
+    features,
     config,
   );
-  return { service, manager, rules, branding };
+  return { service, manager, rules, branding, features };
 }
 
 /** Recoge lo que el servicio escribe en el stream, como haria la respuesta HTTP. */
@@ -249,6 +256,27 @@ describe('PatrolReportService.buildModel', () => {
     expect(
       manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
     ).toBe(false);
+  });
+
+  it('con el modulo photoAppendix APAGADO el PDF sale sin anexo (#286)', async () => {
+    // El flag era un control muerto: el anexo se incluia siempre. Ahora, cuando
+    // el llamador no opina (el PDF que se descarga), manda el modulo del tenant.
+    const { service, manager } = armarServicio({}, { photoAppendix: false });
+
+    const modelo = await service.buildModel('patrol-id');
+
+    expect(modelo.incluyeAnexo).toBe(false);
+    expect(modelo.anexo).toEqual([]);
+    // Y no gasta la consulta de metadatos de fotos si no las va a mostrar.
+    expect(
+      manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
+    ).toBe(false);
+  });
+
+  it('un llamador que pide incluirAnexo:false gana sobre el flag (el correo)', async () => {
+    const { service } = armarServicio({}, { photoAppendix: true });
+    const modelo = await service.buildModel('patrol-id', { incluirAnexo: false });
+    expect(modelo.incluyeAnexo).toBe(false);
   });
 });
 
