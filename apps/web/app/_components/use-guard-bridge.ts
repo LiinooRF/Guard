@@ -40,6 +40,14 @@ const SIN_PUENTE =
 const NFC_APAGADO = 'El NFC está apagado. Actívalo en los ajustes del teléfono para escanear.';
 const SIN_RESPUESTA =
   'La app del teléfono no respondió. Ciérrala y vuelve a abrirla antes de seguir la ronda.';
+/**
+ * Solo cuando el permiso quedó negado EN FIRME (el sistema ya no vuelve a
+ * preguntar): la única salida es Ajustes. Para el resto de los casos el diálogo
+ * del sistema se abre solo en el ingreso y no hace falta decir nada.
+ */
+const AJUSTES_UBICACION =
+  'Tu ubicación está desactivada para esta app. Actívala en los ajustes del teléfono ' +
+  '(Aplicaciones → VoxIA Control → Permisos → Ubicación) para que tu recorrido se registre.';
 
 /**
  * POST /geo/permission con la sesión del guardia (#275). Lanza si no es 2xx
@@ -58,6 +66,25 @@ async function reportarPermisoAlServidor(
   });
   if (!respuesta.ok) {
     throw new Error(`HTTP ${respuesta.status}`);
+  }
+}
+
+/**
+ * ¿El guardia ya tiene un consentimiento ACTIVO? Es la divulgación destacada
+ * que Google Play exige ANTES de abrir el diálogo del sistema de ubicación.
+ * `consent.granted` en `/geo/policy` = hay una fila de consentimiento no
+ * revocada (`gps_consents.revoked_at IS NULL`).
+ *
+ * Falla cerrado: ante cualquier duda devuelve `false` y NO se pide el permiso.
+ */
+async function consentimientoActivo(apiUrl: string): Promise<boolean> {
+  try {
+    const respuesta = await fetch(`${apiUrl}/geo/policy`, { credentials: 'include' });
+    if (!respuesta.ok) return false;
+    const politica = (await respuesta.json()) as { consent?: { granted?: boolean } };
+    return politica.consent?.granted === true;
+  } catch {
+    return false;
   }
 }
 
@@ -88,6 +115,12 @@ export interface PuenteGuardia {
   sinAntenaNfc: boolean;
   /** Texto listo para mostrar. En 'incompatible' lo redacta el shell, no el portal. */
   aviso?: string;
+  /**
+   * Aviso de UBICACIÓN, solo cuando el permiso quedó negado en firme y hay que
+   * ir a Ajustes. Aparte de `aviso` (que es del escaneo NFC) porque son dos
+   * problemas distintos y el guardia puede tener los dos a la vez.
+   */
+  avisoUbicacion?: string;
   conexion: EstadoConexionPayload;
   escanear: (titulo: string) => Promise<ResultadoEscaneoPayload>;
   escanearQr: (titulo: string) => Promise<ResultadoEscaneoQrPayload>;
@@ -121,6 +154,7 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
   // ubicacion (#275) y su presencia le dice al efecto de abajo que el saludo
   // ya paso.
   const [infoEquipo, setInfoEquipo] = useState<string>();
+  const [avisoUbicacion, setAvisoUbicacion] = useState<string>();
   // Valor fijo en el primer render: leer `navigator` acá rompería la hidratación.
   const [conexion, setConexion] = useState<EstadoConexionPayload>({
     enLinea: true,
@@ -197,11 +231,42 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
         `android api ${dispositivo.nivelApiAndroid} · app ${estado.info.app.version}`;
       setInfoEquipo(marcaEquipo);
       if (apiUrl) {
-        void reportarPermisoUbicacion({
-          consultar: (permiso) => cliente.consultarPermiso(permiso),
-          reportar: (estadoApi, deviceInfo) => reportarPermisoAlServidor(apiUrl, estadoApi, deviceInfo),
-          deviceInfo: marcaEquipo,
-        });
+        void (async () => {
+          const reporte = await reportarPermisoUbicacion({
+            consultar: (permiso) => cliente.consultarPermiso(permiso),
+            reportar: (estadoApi, deviceInfo) =>
+              reportarPermisoAlServidor(apiUrl, estadoApi, deviceInfo),
+            deviceInfo: marcaEquipo,
+          });
+
+          /*
+           * PEDIR el permiso del sistema EN EL INGRESO (bug 10-ago: la app no lo
+           * pedía y el guardia tenía que ir a Ajustes).
+           *
+           * El `permission.request` de #275 solo se disparaba al ACEPTAR el
+           * aviso — y un guardia que volvía a entrar (consentimiento ya vigente)
+           * nunca veía esa pantalla, así que el diálogo del sistema no aparecía
+           * jamás. Acá, si el permiso NO está concedido pero el consentimiento
+           * SÍ está activo (la divulgación que Play exige ya se dio), se pide en
+           * el ingreso: un permiso nunca pedido abre el diálogo; uno negado en
+           * firme no molesta (el shell responde sin diálogo). El resultado se
+           * reporta, sea cual sea.
+           */
+          if (cancelado || !reporte.hecho || reporte.estado === 'concedido') return;
+          if (reporte.estado === 'no_disponible') return; // el equipo no tiene GPS
+          if (!(await consentimientoActivo(apiUrl)) || cancelado) return;
+
+          const pedido = await cliente.pedirPermiso('ubicacion', true).catch(() => undefined);
+          if (!pedido || cancelado) return;
+          if (!pedido.puedeVolverAPedir && pedido.estado !== 'concedido') {
+            setAvisoUbicacion(AJUSTES_UBICACION);
+          }
+          await reportarPermisoAlServidor(
+            apiUrl,
+            traducirEstadoPermiso(pedido.estado),
+            marcaEquipo,
+          ).catch(() => undefined);
+        })();
       }
       // Con la antena apagada se deja intentar igual: el shell responde
       // 'nfc-desactivado' y ese mensaje es más útil que un botón muerto. Sin
@@ -295,6 +360,7 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
     puedeEscanearQr,
     sinAntenaNfc,
     ...(aviso ? { aviso } : {}),
+    ...(avisoUbicacion ? { avisoUbicacion } : {}),
     conexion,
     escanear,
     escanearQr,
