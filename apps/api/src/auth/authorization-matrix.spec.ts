@@ -8,6 +8,7 @@ import {
 
 import { AdminController } from '../admin/admin.controller';
 import { HorarioHabilController } from '../admin/horario-habil.controller';
+import { PuntosSupervisorController } from '../admin/puntos-supervisor.controller';
 import { AuditController } from '../audit/audit.controller';
 import { BrandingController } from '../branding/branding.controller';
 import { ChecklistsController } from '../checklists/checklists.controller';
@@ -120,6 +121,26 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(AdminController, 'registerTag', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(AdminController, 'retireTag', ['tenant:sites:manage'], ['ADMIN'], true),
   secured(AdminController, 'resolveTag', ['tenant:sites:manage'], ['ADMIN'], true),
+
+  // Los puntos de control y sus etiquetas NFC, del lado del SUPERVISOR (#309),
+  // con `checkpoints:manage`. Que estas filas digan ['SUPERVISOR'] y las de
+  // arriba ['ADMIN'] es el diseño, no un descuido: los permisos se exigen con Y
+  // logico y el ADMIN no tiene `checkpoints:manage`, asi que un solo juego de
+  // rutas dejaria a uno de los dos fuera. El alcance por recinto no lo ve esta
+  // tabla —lo comprueba PuntosSupervisorService contra supervisor_sites— y por
+  // eso tiene sus propias pruebas.
+  //
+  // Lo que NO aparece aca tambien es diseño: no hay `setCheckpointPhoto` (el
+  // override de foto apagaria la evidencia de un acceso critico), ni
+  // `resolveTag` (es un mapa de los recintos ajenos), ni nada de recintos.
+  secured(PuntosSupervisorController, 'listCheckpoints', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'createCheckpoint', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'importCheckpoints', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'updateCheckpoint', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'setCheckpointActive', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'listTags', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'registerTag', ['checkpoints:manage'], ['SUPERVISOR'], true),
+  secured(PuntosSupervisorController, 'retireTag', ['checkpoints:manage'], ['SUPERVISOR'], true),
 
   secured(
     DashboardController,
@@ -364,6 +385,7 @@ const CONTROLLERS = [
   AuthController,
   AdminController,
   HorarioHabilController,
+  PuntosSupervisorController,
   DashboardController,
   GuardController,
   PlatformController,

@@ -35,6 +35,29 @@ export const PERMISSIONS = [
    * dado al supervisor la configuracion entera del tenant.
    */
   'checklists:manage',
+  /**
+   * Dar de alta PUNTOS de control y vincular sus etiquetas NFC (#309), en los
+   * recintos asignados. Quien instala la etiqueta en la pared es el supervisor:
+   * hasta ahora tenia que pedirle al ADMIN que la registrara mientras el estaba
+   * parado frente al punto.
+   *
+   * Separado de `tenant:sites:manage` a proposito: ese permiso es del ADMIN y
+   * ademas de puntos gobierna los RECINTOS enteros (alta, baja, horario habil,
+   * feriados) sobre el tenant completo. Reutilizarlo le habria dado al
+   * supervisor la infraestructura de toda la empresa, y los permisos se exigen
+   * con Y logico, asi que una ruta no puede pedir "uno u otro": las dos puertas
+   * existen por separado.
+   *
+   * Va con dos segmentos y sin prefijo de alcance, como sus hermanos del
+   * SUPERVISOR (`routes:manage`, `shifts:manage`, `checklists:manage`): el
+   * prefijo `tenant:` significa "sobre la empresa entera", y esto no lo es. El
+   * rol NO basta — se filtra por `supervisor_sites` en cada metodo.
+   *
+   * Cubre las etiquetas sin nombrarlas por lo mismo que `routes:manage` cubre
+   * `route_checkpoints`: una etiqueta no tiene vida propia (FK a `checkpoints`
+   * con ON DELETE CASCADE).
+   */
+  'checkpoints:manage',
   'patrols:monitor',
   'patrols:execute',
   'reports:read',
@@ -70,6 +93,9 @@ export const ROLE_PERMISSIONS = {
     'shifts:manage',
     // Las tareas del turno las arma quien conoce el terreno (#265).
     'checklists:manage',
+    // Los puntos y sus etiquetas NFC los da de alta quien los instala (#309).
+    // NO se le agrega `tenant:sites:manage`: los recintos siguen siendo del ADMIN.
+    'checkpoints:manage',
     'patrols:monitor',
     'reports:read',
     'incidents:create',

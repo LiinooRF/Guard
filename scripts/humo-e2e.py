@@ -1366,6 +1366,109 @@ check('el ADMIN tampoco: sus recintos no son "asignados"', s == 403, 'HTTP %s' %
 
 print()
 print('=' * 72)
+print('14b. EL SUPERVISOR DA DE ALTA PUNTOS Y VINCULA ETIQUETAS NFC (#309)')
+print('=' * 72)
+# El permiso nuevo `checkpoints:manage` abre la puerta; el alcance por recinto lo
+# decide `supervisor_sites`, y eso ningun mock lo ve. Se prueban las dos mitades
+# con el mismo par de recintos que la seccion 14 ya dejo armado: el ASIGNADO
+# (2xx) y el DESCARTABLE sin asignar (403).
+PUNTOS_SUP = '/checkpoints/supervisor'
+mio = next((r.get('id') for r in asignados), None)
+
+if not mio:
+    omitido(['el supervisor lista los puntos de un recinto suyo',
+             'el supervisor crea un punto en un recinto suyo',
+             'el supervisor vincula una etiqueta NFC al punto que creo',
+             'el supervisor lista las etiquetas de ese punto',
+             'el supervisor da de baja el punto que creo'],
+            'el supervisor no tiene ningun recinto asignado', POR_EL_DESPLIEGUE)
+    punto_nuevo = None
+else:
+    s, puntos_mios = supervisor.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el supervisor lista los puntos de un recinto suyo',
+          s == 200 and isinstance(puntos_mios, list), 'HTTP %s %s' % (s, str(puntos_mios)[:120]))
+
+    # Nombre unico por corrida: un punto es dato de operacion y la API no ofrece
+    # borrarlo, asi que se crea, se comprueba y se deja DESACTIVADO al final —
+    # igual que el recinto descartable de la seccion 14.
+    nombre_punto = 'Punto e2e %s' % uuid.uuid4().hex[:8]
+    uid_nfc = '04' + uuid.uuid4().hex[:6].upper()
+    s, creado = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio), {
+        'name': nombre_punto,
+        'description': 'Creado por la prueba de humo; se deja desactivado',
+        'suggestedOrder': 999,
+    })
+    punto_nuevo = cuerpo_dict(creado).get('id') if s in (200, 201) else None
+    check('el supervisor crea un punto en un recinto suyo',
+          s in (200, 201) and punto_nuevo, 'HTTP %s %s' % (s, str(creado)[:140]))
+
+if punto_nuevo:
+    try:
+        s, etiqueta = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo),
+                                       {'uid': uid_nfc, 'tech': 'nfc'})
+        check('el supervisor vincula una etiqueta NFC al punto que creo',
+              s in (200, 201) and cuerpo_dict(etiqueta).get('id'),
+              'HTTP %s %s' % (s, str(etiqueta)[:140]))
+
+        s, sus_tags = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo))
+        check('el supervisor lista las etiquetas de ese punto',
+              s == 200 and any(t.get('uid', '').upper() == uid_nfc for t in
+                               (sus_tags if isinstance(sus_tags, list) else [])),
+              'HTTP %s %s' % (s, str(sus_tags)[:160]))
+
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_nuevo),
+                                {'name': nombre_punto + ' (editado)'})
+        check('el supervisor edita el punto que creo', s == 200, 'HTTP %s' % s)
+
+        # Los dos campos que gobiernan isPhotoRequired() no estan en su DTO, y
+        # `forbidNonWhitelisted` los convierte en 400. Que el formulario no los
+        # muestre NO es lo que los cierra: esto lo es.
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_nuevo),
+                                {'kind': 'normal'})
+        check('  pero no puede degradar la criticidad: apagaria la foto obligatoria',
+              s == 400, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio),
+                                {'name': 'Punto con foto forzada', 'requiresPhoto': False})
+        check('  ni crear un punto apagando la exigencia de foto', s == 400, 'HTTP %s' % s)
+    finally:
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s/active' % (PUNTOS_SUP, punto_nuevo),
+                                {'isActive': False})
+        check('el supervisor da de baja el punto que creo (y la prueba no deja basura activa)',
+              s == 200, 'HTTP %s' % s)
+
+# La otra mitad: el recinto que NO tiene asignado. El 403 lo pone
+# supervisor_sites, no el rol — el rol ya paso el guard.
+if not ajeno:
+    omitido(['el supervisor no lista los puntos de un recinto ajeno',
+             'ni crea un punto ahi',
+             'ni importa una tanda por CSV ahi'],
+            'no se pudo disponer de un recinto sin asignar', POR_LA_PRUEBA)
+else:
+    s, _ = supervisor.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, ajeno))
+    check('el supervisor no lista los puntos de un recinto ajeno', s == 403, 'HTTP %s' % s)
+    s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, ajeno),
+                            {'name': 'Punto que no deberia existir'})
+    check('  ni crea un punto ahi', s == 403, 'HTTP %s' % s)
+    s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints/import' % (PUNTOS_SUP, ajeno),
+                            {'checkpoints': [{'name': 'Fila que no deberia entrar'}]})
+    check('  ni importa una tanda por CSV ahi', s == 403, 'HTTP %s' % s)
+
+# El permiso es del SUPERVISOR y de nadie mas: el ADMIN entra por /admin/... y el
+# GUARDIA no entra. Y el supervisor sigue SIN poder asignarse recintos, que es la
+# puerta que convertiria este permiso en acceso a la empresa entera.
+if mio:
+    s, _ = admin.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el ADMIN no entra por la puerta del supervisor: la suya es /admin/...', s == 403,
+          'HTTP %s' % s)
+    s, _ = guardia.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el GUARDIA tampoco entra a administrar puntos', s == 403, 'HTTP %s' % s)
+if ajeno:
+    s, _ = supervisor.pedir('PATCH', '/admin/users/%s/sites/%s' % (uuid.uuid4(), ajeno),
+                            {'assigned': True})
+    check('el supervisor NO puede asignarse un recinto a si mismo', s == 403, 'HTTP %s' % s)
+
+print()
+print('=' * 72)
 print('15a. CIERRE POR ROL — el GUARDIA no entra a nada de administracion')
 print('=' * 72)
 # QUE PRUEBA ESTA LISTA Y QUE NO.

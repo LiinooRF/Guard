@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -9,6 +10,7 @@ import { argon2id, hash } from 'argon2';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
 
+import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { createAuthActionToken } from '../auth/auth-action-token';
 import { MailService } from '../auth/mail.service';
@@ -73,12 +75,72 @@ interface TagRow {
   replaced_at: string | null;
 }
 
+/** Un punto con el nombre de su recinto: lo que necesita el resumen de auditoria. */
+export interface PuntoUbicado {
+  id: string;
+  name: string;
+  site_id: string;
+  site_name: string;
+}
+
+/**
+ * Quien pide una escritura de terreno, y con que alcance (#309).
+ *
+ * `actorId` sale SIEMPRE de `request.user.sub` —el token—, nunca del cuerpo ni
+ * de la URL, y es lo que queda en `audit_log`.
+ *
+ * `supervisorId` es opcional y solo lo manda el camino del SUPERVISOR: ata la
+ * sentencia de escritura a `supervisor_sites`. El camino del ADMIN no lo manda
+ * y opera sobre el tenant entero, que es lo que corresponde a ese rol.
+ */
+export interface ContextoEscritura {
+  readonly actorId: string;
+  readonly supervisorId?: string;
+}
+
+/**
+ * El guardia de alcance, PEGADO a la sentencia que escribe (#309).
+ *
+ * No reemplaza al pre-chequeo (`ensureAssignedSite`): ese existe para elegir el
+ * codigo HTTP —404 si el punto no existe, 403 si existe y no es suyo— y este
+ * existe para que entre comprobar y escribir no quede una ventana, y para que
+ * un llamador futuro que se saltee el pre-chequeo falle CERRADO en vez de
+ * escribir. Si alguien "simplifica" quitando uno de los dos, quita justo el que
+ * no era decorativo.
+ *
+ * `columnaSitio` es un literal del propio codigo (`checkpoints.site_id`), nunca
+ * entrada del usuario: los valores siempre van como parametro ligado.
+ */
+function alcanceDelSupervisor(
+  supervisorId: string | undefined,
+  columnaSitio: string,
+  indice: number,
+): { sql: string; params: string[] } {
+  if (!supervisorId) return { sql: '', params: [] };
+  return {
+    sql: ` AND EXISTS (SELECT 1 FROM supervisor_sites ss
+            WHERE ss.site_id = ${columnaSitio} AND ss.supervisor_id = $${indice})`,
+    params: [supervisorId],
+  };
+}
+
+/**
+ * Cero filas despues de una escritura acotada: si el alcance estaba puesto es
+ * 403 (existia cuando se comprobo y dejo de ser suyo), si no es 404.
+ */
+function faltaLaFila(contexto: ContextoEscritura | undefined, queNoEsta: string): Error {
+  return contexto?.supervisorId
+    ? new ForbiddenException('No tienes este recinto asignado')
+    : new NotFoundException(queNoEsta);
+}
+
 @Injectable()
 export class AdminService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly auth: AuthService,
     private readonly mail: MailService,
+    private readonly audit: AuditService,
   ) {}
 
   async listUsers() {
@@ -546,12 +608,15 @@ export class AdminService {
     return { supervisorId, siteId, assigned };
   }
 
-  private async ensureSite(siteId: string) {
-    const site = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `SELECT id FROM sites WHERE id = $1`,
+  /** Devuelve el nombre porque el resumen de auditoria lo necesita. */
+  private async ensureSite(siteId: string): Promise<{ id: string; name: string }> {
+    const site = await this.tenantContext.manager.query<Array<{ id: string; name: string }>>(
+      `SELECT id, name FROM sites WHERE id = $1`,
       [siteId],
     );
-    if (!site.length) throw new NotFoundException('Recinto no encontrado');
+    const encontrado = site[0];
+    if (!encontrado) throw new NotFoundException('Recinto no encontrado');
+    return encontrado;
   }
 
   async listCheckpoints(siteId: string) {
@@ -579,8 +644,12 @@ export class AdminService {
     }));
   }
 
-  async createCheckpoint(siteId: string, input: CreateCheckpointDto) {
-    await this.ensureSite(siteId);
+  async createCheckpoint(
+    siteId: string,
+    input: CreateCheckpointDto,
+    contexto?: ContextoEscritura,
+  ) {
+    const recinto = await this.ensureSite(siteId);
     const checkpointId = randomUUID();
     await this.tenantContext.manager.query(
       `INSERT INTO checkpoints (
@@ -616,11 +685,23 @@ export class AdminService {
         throw error;
       }
     }
+    await this.registrar(
+      contexto,
+      'punto.creado',
+      'checkpoint',
+      `Punto "${input.name}" creado en ${recinto.name}` +
+        (tagId ? ' con etiqueta NFC vinculada en el alta' : ' sin etiqueta'),
+      checkpointId,
+    );
     return { id: checkpointId, tagId };
   }
 
-  async importCheckpoints(siteId: string, checkpoints: ImportCheckpointRowDto[]) {
-    await this.ensureSite(siteId);
+  async importCheckpoints(
+    siteId: string,
+    checkpoints: ImportCheckpointRowDto[],
+    contexto?: ContextoEscritura,
+  ) {
+    const recinto = await this.ensureSite(siteId);
     const tagUids = checkpoints
       .map((checkpoint) => checkpoint.tagUid?.trim().toLowerCase())
       .filter((uid): uid is string => Boolean(uid));
@@ -669,10 +750,23 @@ export class AdminService {
       }
       imported.push({ id, tagId });
     }
+    // Una sola linea por importacion y no 500: la accion que se audita es la
+    // carga masiva, y quinientas filas por CSV ahogarian el registro del tenant.
+    await this.registrar(
+      contexto,
+      'punto.creado',
+      'checkpoint',
+      `${imported.length} puntos importados por CSV en ${recinto.name}` +
+        ` (${imported.filter((p) => p.tagId).length} con etiqueta)`,
+    );
     return { imported: imported.length, checkpoints: imported };
   }
 
-  async updateCheckpoint(checkpointId: string, input: UpdateCheckpointDto) {
+  async updateCheckpoint(
+    checkpointId: string,
+    input: UpdateCheckpointDto,
+    contexto?: ContextoEscritura,
+  ) {
     const campos: Array<[columna: string, valor: unknown]> = [];
     if (input.name !== undefined) campos.push(['name', input.name]);
     if (input.description !== undefined) campos.push(['description', input.description]);
@@ -684,17 +778,39 @@ export class AdminService {
     if (!campos.length) throw new BadRequestException('Nada que actualizar');
 
     const sets = campos.map(([columna], i) => `${columna} = $${i + 2}`).join(', ');
+    const alcance = alcanceDelSupervisor(
+      contexto?.supervisorId,
+      'checkpoints.site_id',
+      campos.length + 2,
+    );
     const result = filasDe<{ id: string }>(
       await this.tenantContext.manager.query(
-        `UPDATE checkpoints SET ${sets} WHERE id = $1 RETURNING id`,
-        [checkpointId, ...campos.map(([, valor]) => valor)],
+        `UPDATE checkpoints SET ${sets} WHERE id = $1${alcance.sql} RETURNING id`,
+        [checkpointId, ...campos.map(([, valor]) => valor), ...alcance.params],
       ),
     );
-    if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    if (!result.length) throw faltaLaFila(contexto, 'Punto de control no encontrado');
+    // Mover un punto es mover la vara del anti-fraude: si el guardia marcaba
+    // anomalia por distancia, cambiar la coordenada la apaga. Por eso el resumen
+    // nombra las coordenadas en vez de decir "se modifico el punto".
+    await this.registrar(
+      contexto,
+      'punto.modificado',
+      'checkpoint',
+      `Punto modificado: ${campos.map(([columna]) => columna).join(', ')}` +
+        (campos.some(([columna]) => columna === 'latitude' || columna === 'longitude')
+          ? ' — incluye COORDENADAS'
+          : ''),
+      checkpointId,
+    );
     return { id: checkpointId };
   }
 
-  async setCheckpointPhoto(checkpointId: string, requiresPhoto: boolean | null) {
+  async setCheckpointPhoto(
+    checkpointId: string,
+    requiresPhoto: boolean | null,
+    contexto?: ContextoEscritura,
+  ) {
     const result = filasDe<{ id: string }>(
       await this.tenantContext.manager.query(
         `UPDATE checkpoints SET requires_photo = $2 WHERE id = $1 RETURNING id`,
@@ -702,26 +818,116 @@ export class AdminService {
       ),
     );
     if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    await this.registrar(
+      contexto,
+      'punto.modificado',
+      'checkpoint',
+      `Regla de FOTO del punto: ${
+        requiresPhoto === null ? 'vuelve a heredar las reglas' : requiresPhoto ? 'siempre' : 'nunca'
+      }`,
+      checkpointId,
+    );
     return { id: checkpointId, requiresPhoto };
   }
 
-  async setCheckpointActive(checkpointId: string, isActive: boolean) {
+  async setCheckpointActive(
+    checkpointId: string,
+    isActive: boolean,
+    contexto?: ContextoEscritura,
+  ) {
+    const alcance = alcanceDelSupervisor(contexto?.supervisorId, 'checkpoints.site_id', 3);
     const result = filasDe<{ id: string }>(
       await this.tenantContext.manager.query(
-        `UPDATE checkpoints SET is_active = $2 WHERE id = $1 RETURNING id`,
-        [checkpointId, isActive],
+        `UPDATE checkpoints SET is_active = $2 WHERE id = $1${alcance.sql} RETURNING id`,
+        [checkpointId, isActive, ...alcance.params],
       ),
     );
-    if (!result.length) throw new NotFoundException('Punto de control no encontrado');
+    if (!result.length) throw faltaLaFila(contexto, 'Punto de control no encontrado');
+    // Desactivar puntos achica el denominador de computeCompliance(): es una
+    // operacion legitima y por eso queda escrita con todas sus letras.
+    await this.registrar(
+      contexto,
+      'punto.modificado',
+      'checkpoint',
+      isActive
+        ? 'Punto REACTIVADO: vuelve a contar para el cumplimiento'
+        : 'Punto DADO DE BAJA: deja de contar para el cumplimiento',
+      checkpointId,
+    );
     return { id: checkpointId, isActive };
   }
 
-  private async ensureCheckpoint(checkpointId: string) {
-    const checkpoint = await this.tenantContext.manager.query<Array<{ id: string }>>(
-      `SELECT id FROM checkpoints WHERE id = $1`,
+  /**
+   * Publico porque el camino del SUPERVISOR (#309) resuelve con esto el recinto
+   * de un punto ANTES de comprobar el alcance: el 404 de "no existe" —que RLS ya
+   * produjo si el punto es de otra empresa— tiene que salir antes que el 403 de
+   * "existe pero no es tuyo", o el 403 confirmaria que el id existe.
+   */
+  async ensureCheckpoint(checkpointId: string): Promise<PuntoUbicado> {
+    const checkpoint = await this.tenantContext.manager.query<PuntoUbicado[]>(
+      `SELECT c.id, c.name, c.site_id, s.name AS site_name
+       FROM checkpoints c JOIN sites s ON s.id = c.site_id
+       WHERE c.id = $1`,
       [checkpointId],
     );
-    if (!checkpoint.length) throw new NotFoundException('Punto de control no encontrado');
+    const encontrado = checkpoint[0];
+    if (!encontrado) throw new NotFoundException('Punto de control no encontrado');
+    return encontrado;
+  }
+
+  /** El recinto de una etiqueta, por su punto. Dos saltos: tag -> checkpoint -> site. */
+  async ensureTag(tagId: string): Promise<PuntoUbicado & { tag_id: string }> {
+    const filas = await this.tenantContext.manager.query<Array<PuntoUbicado & { tag_id: string }>>(
+      `SELECT t.id AS tag_id, c.id, c.name, c.site_id, s.name AS site_name
+       FROM tags t
+       JOIN checkpoints c ON c.id = t.checkpoint_id
+       JOIN sites s ON s.id = c.site_id
+       WHERE t.id = $1`,
+      [tagId],
+    );
+    const encontrada = filas[0];
+    if (!encontrada) throw new NotFoundException('Etiqueta activa no encontrada');
+    return encontrada;
+  }
+
+  /**
+   * El nombre con el que queda el actor en `audit_log`. Se guarda por id Y por
+   * texto a proposito: si el usuario se elimina despues, la fila debe seguir
+   * diciendo quien fue (ver 1724598000000-CreateAuditLog).
+   */
+  private async etiquetaDeActor(actorId: string): Promise<string> {
+    const filas = await this.tenantContext.manager.query<Array<{ label: string }>>(
+      `SELECT (given_name || ' ' || family_name) AS label FROM users WHERE id = $1`,
+      [actorId],
+    );
+    return filas[0]?.label ?? 'usuario desconocido';
+  }
+
+  /**
+   * Registra la accion como ULTIMA sentencia del metodo.
+   *
+   * `AuditService.record` se traga sus errores, pero eso NO desaborta la
+   * transaccion de PostgreSQL (CLAUDE.md, cuarta trampa): si el INSERT revienta,
+   * el commit del interceptor revienta despues y el punto recien creado se
+   * pierde con un 500 mudo. Por eso los nombres de columna de audit_log se
+   * verifican contra la migracion, no contra el mock.
+   */
+  private async registrar(
+    contexto: ContextoEscritura | undefined,
+    accion: 'punto.creado' | 'punto.modificado' | 'etiqueta.registrada' | 'etiqueta.retirada',
+    entityType: 'checkpoint' | 'tag',
+    resumen: string,
+    entityId?: string,
+  ): Promise<void> {
+    if (!contexto) return;
+    await this.audit.record({
+      actorId: contexto.actorId,
+      actorLabel: await this.etiquetaDeActor(contexto.actorId),
+      action: accion,
+      entityType,
+      ...(entityId === undefined ? {} : { entityId }),
+      summary: resumen,
+    });
   }
 
   async listTags(checkpointId: string) {
@@ -744,8 +950,8 @@ export class AdminService {
     }));
   }
 
-  async registerTag(checkpointId: string, input: RegisterTagDto) {
-    await this.ensureCheckpoint(checkpointId);
+  async registerTag(checkpointId: string, input: RegisterTagDto, contexto?: ContextoEscritura) {
+    const punto = await this.ensureCheckpoint(checkpointId);
     const tech = input.tech ?? 'nfc';
     // Se normaliza a la forma que produce la app al leer el chip. Ver uid-nfc.ts:
     // sin esto, un UID pegado como `04:AA:BB:CC` se guarda con los dos puntos y
@@ -764,12 +970,26 @@ export class AdminService {
     // Sin `filasDe`, `replaced[0]` era el ARREGLO de filas y `replaced[0].id`
     // undefined: `replacedTagId` salia null incluso cuando si hubo reemplazo, y
     // esa es justamente la trazabilidad de que etiqueta se retiro.
+    //
+    // El guardia de alcance va PEGADO a este UPDATE, que es la mitad
+    // destructiva: sin el, el camino del SUPERVISOR podria dejar sin etiqueta
+    // activa un punto ajeno aunque el alta siguiente fallara. Aca la tabla que
+    // se escribe no tiene `site_id`, asi que el EXISTS salta tags -> checkpoints
+    // -> supervisor_sites en vez de usar `alcanceDelSupervisor`.
+    const alcance = contexto?.supervisorId
+      ? {
+          sql: ` AND EXISTS (SELECT 1 FROM checkpoints c
+                   JOIN supervisor_sites ss ON ss.site_id = c.site_id
+                   WHERE c.id = tags.checkpoint_id AND ss.supervisor_id = $3)`,
+          params: [contexto.supervisorId],
+        }
+      : { sql: '', params: [] };
     const replaced = filasDe<{ id: string }>(
       await this.tenantContext.manager.query(
         `UPDATE tags SET is_active = false, replaced_at = now()
-         WHERE checkpoint_id = $1 AND tech = $2 AND is_active
+         WHERE checkpoint_id = $1 AND tech = $2 AND is_active${alcance.sql}
          RETURNING id`,
-        [checkpointId, tech],
+        [checkpointId, tech, ...alcance.params],
       ),
     );
 
@@ -788,19 +1008,52 @@ export class AdminService {
       }
       throw error;
     }
+    // El REEMPLAZO es la señal, no el alta: quien re-vincula una etiqueta puede
+    // simular presencia (pega una calcomanía nueva en la caseta y el punto lejano
+    // queda "visitado"). Por eso el resumen nombra la etiqueta que se retiro.
+    // El UID no es dato de una persona y ya es visible en GET .../tags para la
+    // misma audiencia; nombres o ubicaciones de guardias no van, nunca.
+    await this.registrar(
+      contexto,
+      'etiqueta.registrada',
+      'tag',
+      `Etiqueta ${tech.toUpperCase()} ${uid} vinculada a "${punto.name}" (${punto.site_name})` +
+        (replaced[0]?.id ? ` — REEMPLAZA a la etiqueta ${replaced[0].id}` : ''),
+      tagId,
+    );
     return { id: tagId, checkpointId, tech, uid, replacedTagId: replaced[0]?.id ?? null };
   }
 
-  async retireTag(tagId: string) {
+  async retireTag(tagId: string, contexto?: ContextoEscritura) {
+    // Solo el camino del SUPERVISOR necesita saber a que punto pertenece, para
+    // el resumen y para el 403; el del ADMIN opera sobre el tenant entero.
+    const punto = contexto ? await this.ensureTag(tagId) : null;
+    const alcance = contexto?.supervisorId
+      ? {
+          sql: ` AND EXISTS (SELECT 1 FROM checkpoints c
+                   JOIN supervisor_sites ss ON ss.site_id = c.site_id
+                   WHERE c.id = tags.checkpoint_id AND ss.supervisor_id = $2)`,
+          params: [contexto.supervisorId],
+        }
+      : { sql: '', params: [] };
     const result = filasDe<{ id: string }>(
       await this.tenantContext.manager.query(
         `UPDATE tags SET is_active = false, replaced_at = now()
-         WHERE id = $1 AND is_active
+         WHERE id = $1 AND is_active${alcance.sql}
          RETURNING id`,
-        [tagId],
+        [tagId, ...alcance.params],
       ),
     );
-    if (!result.length) throw new NotFoundException('Etiqueta activa no encontrada');
+    if (!result.length) throw faltaLaFila(contexto, 'Etiqueta activa no encontrada');
+    await this.registrar(
+      contexto,
+      'etiqueta.retirada',
+      'tag',
+      punto
+        ? `Etiqueta retirada de "${punto.name}" (${punto.site_name})`
+        : 'Etiqueta retirada',
+      tagId,
+    );
     return { id: tagId, active: false };
   }
 
