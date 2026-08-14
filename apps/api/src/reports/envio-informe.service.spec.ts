@@ -58,6 +58,7 @@ const MODELO: InformeRonda = {
     inicio: new Date('2026-07-30T22:05:00-04:00'),
     cierre: new Date('2026-07-31T05:40:00-04:00'),
   },
+  duracionMin: 455,
   estado: 'completada',
   compliance: {
     expected: 5,
@@ -74,6 +75,9 @@ const MODELO: InformeRonda = {
   // sin checklist es el caso normal y se envia igual.
   tareas: [],
   incidentes: [],
+  // El adjunto del correo va sin imagenes, pero la evidencia igual se consulta
+  // (#308): el interruptor esconde los bytes, no el hecho de que exista.
+  evidencias: [],
   anexo: [],
   incluyeAnexo: false,
 };

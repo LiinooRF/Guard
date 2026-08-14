@@ -100,8 +100,14 @@ export function redactarAtrasoDeTarea(minutos: number | null | undefined): strin
  * "10 min", "1 h 30 min", "3 h". En minutos sueltos, un desvio de 190 minutos
  * obliga a dividir mentalmente para entender que fueron tres horas — y quien
  * lee el informe suele ser quien tiene que decidir algo con ese numero.
+ *
+ * Se exporta para que la DURACION de la ronda en la portada (#308) se redacte
+ * exactamente igual que el desvio y el atraso. Un informe que diga "13 min" en
+ * la ficha y "190 minutos" tres lineas mas abajo obliga a quien lo lee a
+ * traducir dos formatos en la misma pagina, que es justo lo que este modulo
+ * existe para evitar.
  */
-function redactarDuracion(minutos: number): string {
+export function redactarDuracion(minutos: number): string {
   if (minutos < 60) return `${minutos} min`;
   const horas = Math.floor(minutos / 60);
   const resto = minutos % 60;

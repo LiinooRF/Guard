@@ -62,6 +62,8 @@ const escaneo = (checkpointId: string, hora: string, extra: Partial<ScanRow> = {
 
 const foto = (id: string, checkpointId: string, extra: Partial<FotoRow> = {}): FotoRow => ({
   id,
+  // scan_id es NOT NULL en scan_photos: no existe la foto huerfana de escaneo.
+  scan_id: `sc-${checkpointId}`,
   checkpoint_id: checkpointId,
   checkpoint_name: 'Portería',
   storage_path: `tenant/patrol/${id}.jpg`,
@@ -220,14 +222,43 @@ describe('construirInformeRonda · filas de puntos', () => {
 });
 
 describe('construirInformeRonda · anexo fotográfico', () => {
-  it('numera cada foto con el punto de la ronda al que pertenece', () => {
+  it('ordena la evidencia por punto de la ronda y le pone su correlativo', () => {
+    // El orden ya NO es el de `created_at` (#308): esa es la hora de SUBIDA y
+    // con la cola offline la misma ronda sincronizada mas tarde produciria otra
+    // numeracion para las mismas fotos.
     const informe = construirInformeRonda(
       entrada({ fotos: [foto('f1', 'cp-3'), foto('f2', 'cp-1')] }),
     );
 
-    expect(informe.anexo.map((f) => f.numeroPunto)).toEqual([3, 1]);
-    expect(informe.anexo[0]!.huella).toBe('a'.repeat(12));
-    expect(informe.anexo[0]!.sizeBytes).toBe(204800);
+    expect(informe.anexo.map((f) => f.numeroPunto)).toEqual([1, 3]);
+    expect(informe.anexo.map((f) => f.numero)).toEqual([1, 2]);
+    expect(informe.anexo[1]!.huella).toBe('a'.repeat(12));
+    expect(informe.anexo[1]!.sizeBytes).toBe(204800);
+  });
+
+  it('el número de foto no cambia aunque cambie la hora de subida', () => {
+    const enVivo = construirInformeRonda(
+      entrada({
+        fotos: [
+          foto('f1', 'cp-1', { created_at: new Date('2026-07-31T00:10:00-04:00') }),
+          foto('f2', 'cp-3', { created_at: new Date('2026-07-31T00:20:00-04:00') }),
+        ],
+      }),
+    );
+    // La misma ronda, resincronizada al reves desde un subterraneo.
+    const resincronizada = construirInformeRonda(
+      entrada({
+        fotos: [
+          foto('f2', 'cp-3', { created_at: new Date('2026-07-31T09:00:00-04:00') }),
+          foto('f1', 'cp-1', { created_at: new Date('2026-07-31T09:05:00-04:00') }),
+        ],
+      }),
+    );
+
+    const numeroDe = (informe: ReturnType<typeof construirInformeRonda>, id: string) =>
+      informe.anexo.find((f) => f.id === id)?.numero;
+    expect(numeroDe(enVivo, 'f1')).toBe(numeroDe(resincronizada, 'f1'));
+    expect(numeroDe(enVivo, 'f2')).toBe(numeroDe(resincronizada, 'f2'));
   });
 
   it('la foto de un punto fuera de la ronda igual entra al anexo, sin número', () => {
@@ -260,10 +291,54 @@ describe('construirInformeRonda · anexo fotográfico', () => {
     expect(informe.puntos).toHaveLength(3);
   });
 
+  it('sin anexo la evidencia igual queda registrada: se esconden los bytes, no el hecho', () => {
+    // Antes de #308, el informe que viaja adjunto al correo ni siquiera sabia
+    // que la ronda habia tenido fotos, asi que quien lo recibia no tenia como
+    // enterarse de que habia evidencia esperandolo en el panel.
+    const informe = construirInformeRonda(
+      entrada({ fotos: [foto('f1', 'cp-3'), foto('f2', 'cp-1')], incluirAnexo: false }),
+    );
+
+    expect(informe.anexo).toEqual([]);
+    expect(informe.evidencias).toHaveLength(2);
+    expect(informe.evidencias.map((f) => f.numero)).toEqual([1, 2]);
+  });
+
   it('una ronda sin fotos no rompe nada', () => {
     const informe = construirInformeRonda(entrada());
     expect(informe.anexo).toEqual([]);
+    expect(informe.evidencias).toEqual([]);
     expect(informe.incluyeAnexo).toBe(true);
+  });
+});
+
+describe('construirInformeRonda · duración e instrucciones', () => {
+  it('deriva la duración de inicio y cierre, que no existe como columna', () => {
+    // 22:05 -> 05:40 del dia siguiente = 7 h 35 min = 455 min.
+    expect(construirInformeRonda(entrada()).duracionMin).toBe(455);
+  });
+
+  it('una ronda sin cierre no inventa una duración', () => {
+    const informe = construirInformeRonda(
+      entrada({ ronda: { ...RONDA, closed_at: null } }),
+    );
+    expect(informe.duracionMin).toBeNull();
+  });
+
+  it('trae las instrucciones del punto, que la consulta no leía', () => {
+    const informe = construirInformeRonda(
+      entrada({
+        puntos: [
+          { ...PUNTOS[0]!, instructions: '  Revisar que el portón quede con candado  ' },
+          PUNTOS[1]!,
+        ],
+      }),
+    );
+
+    expect(informe.puntos[0]!.instrucciones).toBe('Revisar que el portón quede con candado');
+    // Sin instrucciones cargadas es null, no una cadena vacia que el informe
+    // imprimiria como una linea en blanco.
+    expect(informe.puntos[1]!.instrucciones).toBeNull();
   });
 });
 
@@ -485,9 +560,11 @@ describe('construirInformeRonda · tareas del turno', () => {
       }),
     );
 
-    expect(informe.anexo[0]!.tarea).toBe('Fotografiar el refrigerador');
+    const reclamada = informe.anexo.find((f) => f.id === 'f1');
+    expect(reclamada?.tarea).toBe('Fotografiar el refrigerador');
+    expect(reclamada?.tareaId).toBe('it-1');
     // La foto de un escaneo normal sigue sin rotulo de tarea.
-    expect(informe.anexo[1]!.tarea).toBeNull();
+    expect(informe.anexo.find((f) => f.id === 'f2')?.tarea).toBeNull();
   });
 });
 

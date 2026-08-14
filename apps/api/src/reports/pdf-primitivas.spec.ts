@@ -1,4 +1,11 @@
-import { celdaAnexo, formatearFechaHora, formatearHora, recortar } from './pdf-primitivas';
+import {
+  celdaAnexo,
+  formatearFechaHora,
+  formatearHora,
+  pasoDeEtiquetas,
+  posicionEnLinea,
+  recortar,
+} from './pdf-primitivas';
 
 /**
  * Aritmetica del anexo y formato de fechas. No se importa pdfkit: estas son
@@ -81,5 +88,63 @@ describe('recortar', () => {
   it('deja pasar lo que cabe y corta con elipsis lo que no', () => {
     expect(recortar('Portería', 20)).toBe('Portería');
     expect(recortar('Acceso principal del estacionamiento subterráneo', 12)).toBe('Acceso prin…');
+  });
+});
+
+/**
+ * Aritmetica de la linea de tiempo (#308). Misma razon que celdaAnexo: pdfkit
+ * dibuja sin quejarse una marca en NaN o fuera de la caja, y eso solo se ve
+ * abriendo el PDF.
+ */
+describe('posicionEnLinea', () => {
+  const ANCHO = 515;
+  const t0 = Date.UTC(2026, 6, 31, 2, 0, 0);
+  const t1 = Date.UTC(2026, 6, 31, 3, 0, 0);
+
+  it('reparte proporcionalmente entre los dos extremos', () => {
+    expect(posicionEnLinea(t0, t1, ANCHO, t0)).toBe(0);
+    expect(posicionEnLinea(t0, t1, ANCHO, t1)).toBe(ANCHO);
+    expect(posicionEnLinea(t0, t1, ANCHO, (t0 + t1) / 2)).toBeCloseTo(ANCHO / 2, 5);
+  });
+
+  it('una ventana de duración cero no divide por cero', () => {
+    // Sin este corte la marca saldria en NaN y pdfkit lo escribe en el archivo
+    // sin protestar: el visor abre un PDF con la linea de tiempo en blanco.
+    expect(posicionEnLinea(t0, t0, ANCHO, t0)).toBe(0);
+    expect(Number.isNaN(posicionEnLinea(t0, t0, ANCHO, t1))).toBe(false);
+  });
+
+  it('recorta lo que cae fuera del rango en vez de salirse de la caja', () => {
+    expect(posicionEnLinea(t0, t1, ANCHO, t0 - 3_600_000)).toBe(0);
+    expect(posicionEnLinea(t0, t1, ANCHO, t1 + 3_600_000)).toBe(ANCHO);
+  });
+});
+
+describe('pasoDeEtiquetas', () => {
+  const ANCHO = 515;
+
+  it('usa el paso de 5 minutos en una ronda corta', () => {
+    // La ronda del informe de referencia dura 13 minutos.
+    expect(pasoDeEtiquetas(13, ANCHO)).toBe(5);
+  });
+
+  it('sube a 2 horas en un turno de 8 horas para no amontonar etiquetas', () => {
+    expect(pasoDeEtiquetas(480, ANCHO)).toBe(120);
+  });
+
+  it('una duración imposible no propone ninguna etiqueta intermedia', () => {
+    expect(pasoDeEtiquetas(0, ANCHO)).toBeNull();
+    expect(pasoDeEtiquetas(Number.NaN, ANCHO)).toBeNull();
+    expect(pasoDeEtiquetas(60, 0)).toBeNull();
+  });
+
+  it('nunca deja más de 6 etiquetas intermedias', () => {
+    for (const duracion of [4, 13, 45, 90, 240, 480, 1440, 5000]) {
+      const paso = pasoDeEtiquetas(duracion, ANCHO);
+      if (paso === null) continue;
+      expect(Math.floor(duracion / paso)).toBeLessThanOrEqual(6);
+      // Y siempre queda espacio para que la etiqueta se lea.
+      expect((paso / duracion) * ANCHO).toBeGreaterThanOrEqual(34);
+    }
   });
 });

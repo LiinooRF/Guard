@@ -68,8 +68,25 @@ export function limiteInferior(doc: PDFKit.PDFDocument): number {
   return doc.page.height - doc.page.margins.bottom;
 }
 
+/**
+ * Alto reservado al pie. Desde #308 el pie se dibuja en TODAS las hojas, asi
+ * que cualquier bloque que llegue al fondo de la pagina tiene que descontarlo o
+ * se escribe encima de la linea legal del tenant.
+ */
+export const ALTO_PIE = 26;
+
+/** Ultima linea utilizable de la hoja, ya descontado el pie. */
+export function limiteConPie(doc: PDFKit.PDFDocument): number {
+  return limiteInferior(doc) - ALTO_PIE;
+}
+
 export function asegurarEspacio(doc: PDFKit.PDFDocument, alto: number): void {
   if (doc.y + alto > limiteInferior(doc)) doc.addPage();
+}
+
+/** Como asegurarEspacio, pero sin invadir el pie de la hoja. */
+export function asegurarEspacioConPie(doc: PDFKit.PDFDocument, alto: number): void {
+  if (doc.y + alto > limiteConPie(doc)) doc.addPage();
 }
 
 /**
@@ -199,7 +216,9 @@ export function dibujarTabla(
 
   cabecera();
   filas.forEach((fila, indice) => {
-    if (y + altoFila > limiteInferior(doc)) {
+    // Con pie en todas las hojas (#308) el limite ya no es el borde del margen:
+    // una fila mas y la tabla se escribiria sobre la linea legal del tenant.
+    if (y + altoFila > limiteConPie(doc)) {
       doc.addPage();
       y = doc.page.margins.top;
       cabecera();
@@ -252,11 +271,19 @@ export function dibujarBarra(
 /**
  * Pie del documento. Cierra con el `mailFooter` del tenant cuando existe: es su
  * linea legal, y un informe white-label sin ella es un informe a medio marcar.
+ *
+ * Lleva "Página N" a secas y NUNCA "N de M". El documento se genera con
+ * `bufferPages` en false a proposito (ver la nota de memoria del renderer): una
+ * ronda de 40 fotos son ~120 MB y retener las paginas ya cerradas para volver
+ * atras a estampar el total es exactamente el pico de memoria que ese diseño
+ * existe para evitar. Si alguien "arregla" esto prendiendo bufferPages, tumba
+ * el proceso de la API con tres descargas simultaneas.
  */
 export function dibujarPie(
   doc: PDFKit.PDFDocument,
   timezone: string,
   mailFooter?: string | null,
+  pagina?: number,
 ): void {
   const x = doc.page.margins.left;
   const ancho = anchoUtil(doc);
@@ -268,12 +295,358 @@ export function dibujarPie(
       yBase - 12,
       { width: ancho, lineBreak: false },
     );
-  if (mailFooter) {
-    doc.fontSize(7).text(recortar(mailFooter.replaceAll('\n', ' '), 150), x, yBase - 22, {
-      width: ancho,
-      lineBreak: false,
-    });
+  if (pagina !== undefined) {
+    doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris)
+      .text(`Página ${pagina}`, x, yBase - 12, {
+        width: ancho,
+        align: 'right',
+        lineBreak: false,
+      });
   }
+  if (mailFooter) {
+    doc.font('Helvetica').fontSize(7)
+      .text(recortar(mailFooter.replaceAll('\n', ' '), 150), x, yBase - 22, {
+        width: ancho,
+        lineBreak: false,
+      });
+  }
+}
+
+// --------------------------------------------------- bloque de indicadores
+
+export interface Indicador {
+  readonly rotulo: string;
+  readonly cifra: string;
+  /** Linea chica bajo la cifra; el veredicto va ESCRITO, no solo pintado. */
+  readonly detalle?: string;
+  readonly color?: string;
+}
+
+const ANCHO_INDICADOR = 96;
+const ALTO_INDICADOR = 46;
+const SEPARACION_INDICADOR = 12;
+
+/**
+ * Franja de cifras de la portada: cumplimiento, puntos, escaneados, omitidos.
+ *
+ * Superficies planas y recuadro fino, sin sombra ni degradado: es la direccion
+ * visual del producto y ademas lo unico que sobrevive a una impresora laser.
+ * Las que no caben en el ancho util bajan a una segunda fila.
+ */
+export function dibujarIndicadores(
+  doc: PDFKit.PDFDocument,
+  indicadores: readonly Indicador[],
+): void {
+  if (indicadores.length === 0) return;
+
+  const x0 = doc.page.margins.left;
+  const ancho = anchoUtil(doc);
+  const porFila = Math.max(1, Math.floor((ancho + SEPARACION_INDICADOR) / (ANCHO_INDICADOR + SEPARACION_INDICADOR)));
+  const filas = Math.ceil(indicadores.length / porFila);
+  asegurarEspacioConPie(doc, filas * (ALTO_INDICADOR + SEPARACION_INDICADOR));
+
+  const yInicio = doc.y;
+  indicadores.forEach((indicador, posicion) => {
+    const columna = posicion % porFila;
+    const fila = Math.floor(posicion / porFila);
+    const x = x0 + columna * (ANCHO_INDICADOR + SEPARACION_INDICADOR);
+    const y = yInicio + fila * (ALTO_INDICADOR + SEPARACION_INDICADOR);
+
+    doc.lineWidth(0.5);
+    doc.rect(x, y, ANCHO_INDICADOR, ALTO_INDICADOR).stroke(PALETA.linea);
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(PALETA.gris)
+      .text(indicador.rotulo.toUpperCase(), x + 6, y + 6, {
+        width: ANCHO_INDICADOR - 12,
+        lineBreak: false,
+      });
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(indicador.color ?? PALETA.tinta)
+      .text(indicador.cifra, x + 6, y + 16, { width: ANCHO_INDICADOR - 12, lineBreak: false });
+    if (indicador.detalle) {
+      doc.font('Helvetica').fontSize(6.5).fillColor(indicador.color ?? PALETA.gris)
+        .text(indicador.detalle, x + 6, y + ALTO_INDICADOR - 11, {
+          width: ANCHO_INDICADOR - 12,
+          lineBreak: false,
+        });
+    }
+  });
+
+  doc.x = x0;
+  doc.y = yInicio + filas * ALTO_INDICADOR + (filas - 1) * SEPARACION_INDICADOR + 12;
+}
+
+// ------------------------------------------------------- filas de la bitacora
+
+export interface LineaBitacora {
+  readonly texto: string;
+  readonly negrita?: boolean;
+  readonly color?: string;
+  readonly tamano?: number;
+}
+
+export interface FilaBitacora {
+  /** "HH:MM" en la zona del recinto; la fecha la da el separador de dia. */
+  readonly hora: string;
+  readonly evento: string;
+  readonly lineas: readonly LineaBitacora[];
+  /** Espacio a reservar bajo el texto para la evidencia incrustada. */
+  readonly altoExtra?: number;
+  /** Filete vertical de alerta a la izquierda del bloque. */
+  readonly destacado?: boolean;
+}
+
+/** Donde puede dibujar el llamador lo que no es texto (la foto). */
+export interface AreaDetalle {
+  readonly x: number;
+  readonly y: number;
+  readonly ancho: number;
+}
+
+const COL_HORA = 44;
+const COL_EVENTO = 96;
+const SANGRIA_DETALLE = 8;
+const PADDING_FILA = 6;
+
+/**
+ * Un bloque de la bitacora: Hora | Evento | Detalle, con el detalle de alto
+ * VARIABLE y texto que envuelve.
+ *
+ * Es lo que `dibujarTabla` no puede hacer: esa usa alto fijo de 17 y
+ * `lineBreak:false`, asi que un detalle largo se recorta con `recortar()` en vez
+ * de envolverse. Aca el texto de una novedad tiene que salir completo — el libro
+ * de novedades es append-only y termina en juicios laborales; un registro
+ * cortado a 78 caracteres no sirve como prueba.
+ *
+ * El bloque se mide ENTERO antes de dibujarse y salta de hoja completo: no se
+ * parte un escaneo de su foto ni una novedad a la mitad.
+ */
+export function dibujarFilaBitacora(doc: PDFKit.PDFDocument, fila: FilaBitacora): AreaDetalle {
+  const x0 = doc.page.margins.left;
+  const anchoDetalle = anchoUtil(doc) - COL_HORA - COL_EVENTO - SANGRIA_DETALLE;
+  const extra = fila.altoExtra ?? 0;
+
+  const altos = fila.lineas.map((linea) => {
+    doc.font(linea.negrita ? 'Helvetica-Bold' : 'Helvetica').fontSize(linea.tamano ?? 8.5);
+    return doc.heightOfString(linea.texto, { width: anchoDetalle }) + 1;
+  });
+  const altoTexto = altos.reduce((suma, alto) => suma + alto, 0);
+  const altoTotal = Math.max(altoTexto, 14) + extra + PADDING_FILA;
+
+  asegurarEspacioConPie(doc, altoTotal);
+  const y = doc.y;
+
+  if (fila.destacado) {
+    // El estado grafico se fija ANTES de construir el trazado: un operador de
+    // grosor en medio de un objeto de trazado es invalido segun la especificacion
+    // de PDF y hay visores que rechazan el archivo al abrirlo.
+    doc.lineWidth(2);
+    doc.moveTo(x0 - 4, y).lineTo(x0 - 4, y + altoTotal - PADDING_FILA).stroke(PALETA.alerta);
+  }
+
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(PALETA.tinta)
+    .text(fila.hora, x0, y, { width: COL_HORA - 4, lineBreak: false });
+  doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris)
+    .text(fila.evento, x0 + COL_HORA, y + 1, { width: COL_EVENTO - 6, lineBreak: false });
+
+  const xDetalle = x0 + COL_HORA + COL_EVENTO + SANGRIA_DETALLE;
+  let yLinea = y;
+  fila.lineas.forEach((linea, indice) => {
+    doc.font(linea.negrita ? 'Helvetica-Bold' : 'Helvetica').fontSize(linea.tamano ?? 8.5)
+      .fillColor(linea.color ?? PALETA.tinta)
+      .text(linea.texto, xDetalle, yLinea, { width: anchoDetalle });
+    yLinea += altos[indice] ?? 0;
+  });
+
+  doc.x = x0;
+  doc.y = y + altoTotal;
+  return { x: xDetalle, y: Math.max(yLinea, y), ancho: anchoDetalle };
+}
+
+/**
+ * Franja con la fecha, antes de la primera entrada y cada vez que cambia el dia.
+ *
+ * No es cosmetica: la ronda de referencia es un control nocturno de las 06 hrs y
+ * una ronda de noche cruza la medianoche. Sin esta franja, las horas de la
+ * bitacora vuelven a empezar sin que nada lo diga.
+ */
+export function dibujarSeparadorDia(doc: PDFKit.PDFDocument, texto: string): void {
+  asegurarEspacioConPie(doc, 24);
+  const x = doc.page.margins.left;
+  const ancho = anchoUtil(doc);
+  const y = doc.y + 2;
+  doc.rect(x, y, ancho, 15).fill(PALETA.zebra);
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(PALETA.gris)
+    .text(texto.toUpperCase(), x + 6, y + 4, { width: ancho - 12, lineBreak: false });
+  doc.x = x;
+  doc.y = y + 21;
+}
+
+// --------------------------------------------------------- linea de tiempo
+
+export type FormaHito = 'escaneo' | 'escaneo_marcado' | 'tarea' | 'incidente' | 'incidente_grave';
+
+export interface HitoLinea {
+  readonly instante: Date;
+  readonly forma: FormaHito;
+}
+
+export interface DatosLineaTiempo {
+  readonly ventana: { readonly desde: Date; readonly hasta: Date };
+  readonly ejecucion: { readonly inicio: Date | null; readonly cierre: Date | null };
+  readonly hitos: readonly HitoLinea[];
+  readonly colorMarca: string;
+  readonly timezone: string;
+  /** Linea chica bajo el eje; por ejemplo los omitidos, que no tienen hora. */
+  readonly nota?: string | null;
+}
+
+const ALTO_LINEA_TIEMPO = 44;
+const PASOS_ESCALA = [5, 10, 15, 30, 60, 120, 240] as const;
+
+/**
+ * Instante -> coordenada, recortada al rango.
+ *
+ * Pura y afuera del dibujo por la misma razon que `celdaAnexo`: pdfkit dibuja
+ * sin quejarse una geometria de ancho negativo o una marca fuera de la caja, y
+ * eso solo se ve abriendo el PDF.
+ */
+export function posicionEnLinea(t0: number, t1: number, ancho: number, t: number): number {
+  // Duracion cero: sin esto la division seria por cero y la marca saldria en NaN,
+  // que pdfkit escribe en el archivo sin protestar.
+  const duracion = t1 - t0;
+  if (!Number.isFinite(duracion) || duracion <= 0) return 0;
+  const proporcion = (t - t0) / duracion;
+  return Math.max(0, Math.min(1, proporcion)) * ancho;
+}
+
+/**
+ * Cada cuantos minutos poner una etiqueta de hora: el primer paso de la escala
+ * que deje 6 etiquetas o menos y al menos 34pt entre ellas. null = ninguna
+ * intermedia, y quedan solo las dos de los extremos.
+ */
+export function pasoDeEtiquetas(duracionMin: number, ancho: number): number | null {
+  if (!Number.isFinite(duracionMin) || duracionMin <= 0 || ancho <= 0) return null;
+  for (const paso of PASOS_ESCALA) {
+    const marcas = Math.floor(duracionMin / paso);
+    if (marcas < 1 || marcas > 6) continue;
+    if ((paso / duracionMin) * ancho < 34) continue;
+    return paso;
+  }
+  return null;
+}
+
+/**
+ * Cuando ocurrio la ronda contra la ventana en que estaba prometida.
+ *
+ * Muestra ademas el hueco: donde se concentraron los escaneos y donde hay 40
+ * minutos sin nada. Todo con rect, moveTo/lineTo, circle y polygon: ninguna
+ * libreria de graficos.
+ *
+ * En blanco y negro el rojo y el verde son el mismo gris, asi que el escaneo con
+ * marcas se distingue por FORMA —circulo hueco en la punta— y no solo por color.
+ */
+export function dibujarLineaDeTiempo(doc: PDFKit.PDFDocument, datos: DatosLineaTiempo): void {
+  asegurarEspacioConPie(doc, ALTO_LINEA_TIEMPO + 16);
+  const x0 = doc.page.margins.left;
+  const ancho = anchoUtil(doc);
+  const yTope = doc.y;
+  const yBase = yTope + 26;
+
+  const instantes = datos.hitos
+    .map((hito) => new Date(hito.instante).getTime())
+    .filter((t) => !Number.isNaN(t));
+  const bordes = [
+    datos.ventana.desde,
+    datos.ventana.hasta,
+    datos.ejecucion.inicio,
+    datos.ejecucion.cierre,
+  ]
+    .filter((f): f is Date => f !== null)
+    .map((f) => new Date(f).getTime())
+    .filter((t) => !Number.isNaN(t));
+
+  const todos = [...instantes, ...bordes];
+  const t0 = Math.min(...todos);
+  // Ventana de duracion cero: se fuerza un minuto para que la division tenga
+  // sentido en vez de repartir todo sobre el mismo pixel.
+  const t1 = Math.max(Math.max(...todos), t0 + 60_000);
+  const x = (t: number) => x0 + posicionEnLinea(t0, t1, ancho, t);
+
+  // 1. Banda de la ventana programada.
+  const xVentanaA = x(new Date(datos.ventana.desde).getTime());
+  const xVentanaB = x(new Date(datos.ventana.hasta).getTime());
+  doc.rect(xVentanaA, yBase - 5, Math.max(1, xVentanaB - xVentanaA), 10).fill(PALETA.fondoBarra);
+
+  // 2. Banda de ejecucion, en el color de marca del tenant.
+  const inicio = datos.ejecucion.inicio;
+  if (inicio !== null) {
+    const finReal = datos.ejecucion.cierre ?? (instantes.length ? new Date(Math.max(...instantes)) : inicio);
+    const xa = x(new Date(inicio).getTime());
+    const xb = x(new Date(finReal).getTime());
+    doc.rect(xa, yBase - 5, Math.max(1, xb - xa), 10).fill(datos.colorMarca);
+  }
+
+  // 3. El eje.
+  doc.lineWidth(0.5);
+  doc.moveTo(x0, yBase).lineTo(x0 + ancho, yBase).stroke(PALETA.linea);
+
+  // 4-6. Los hitos.
+  for (const hito of datos.hitos) {
+    const t = new Date(hito.instante).getTime();
+    if (Number.isNaN(t)) continue;
+    const xh = x(t);
+    if (hito.forma === 'escaneo' || hito.forma === 'escaneo_marcado') {
+      const marcado = hito.forma === 'escaneo_marcado';
+      doc.lineWidth(marcado ? 1.6 : 0.8);
+      doc.moveTo(xh, yBase).lineTo(xh, yBase - 8).stroke(marcado ? PALETA.alerta : PALETA.tinta);
+      if (marcado) {
+        doc.lineWidth(0.8);
+        doc.circle(xh, yBase - 10, 2.5).stroke(PALETA.alerta);
+      }
+    } else if (hito.forma === 'tarea') {
+      doc.lineWidth(0.7);
+      doc.rect(xh - 2, yBase - 14, 4, 4).stroke(PALETA.tinta);
+    } else {
+      const grave = hito.forma === 'incidente_grave';
+      doc.lineWidth(0.7);
+      doc.polygon([xh, yBase + 3], [xh - 3, yBase + 9], [xh + 3, yBase + 9]);
+      if (grave) doc.fill(PALETA.alerta);
+      else doc.stroke(PALETA.gris);
+    }
+  }
+
+  // Etiquetas de hora: los extremos siempre, las intermedias segun la escala.
+  doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris);
+  doc.text(formatearHora(new Date(t0), datos.timezone), x0, yTope, { width: 60, lineBreak: false });
+  doc.text(formatearHora(new Date(t1), datos.timezone), x0 + ancho - 60, yTope, {
+    width: 60,
+    align: 'right',
+    lineBreak: false,
+  });
+  const paso = pasoDeEtiquetas((t1 - t0) / 60_000, ancho);
+  if (paso !== null) {
+    for (let t = t0 + paso * 60_000; t < t1; t += paso * 60_000) {
+      const xe = x(t);
+      doc.lineWidth(0.4);
+      doc.moveTo(xe, yBase + 0).lineTo(xe, yBase + 3).stroke(PALETA.linea);
+      doc.font('Helvetica').fontSize(6.5).fillColor(PALETA.gris)
+        .text(formatearHora(new Date(t), datos.timezone), xe - 15, yTope + 9, {
+          width: 30,
+          align: 'center',
+          lineBreak: false,
+        });
+    }
+  }
+
+  if (datos.ejecucion.inicio === null) {
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(PALETA.gris)
+      .text('No iniciada', x0, yBase + 10, { width: ancho, align: 'center', lineBreak: false });
+  } else if (datos.nota) {
+    doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris)
+      .text(datos.nota, x0, yBase + 12, { width: ancho, lineBreak: false });
+  }
+
+  doc.x = x0;
+  doc.y = yTope + ALTO_LINEA_TIEMPO + 8;
 }
 
 // ------------------------------------------------------- cuadricula del anexo
