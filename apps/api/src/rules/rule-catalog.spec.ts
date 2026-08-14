@@ -130,8 +130,10 @@ describe('catalogo de parametros de ronda (#81)', () => {
     expect(isRuleAllowedAtScope('reportRecipients', 'tenant')).toBe(true);
   });
 
-  it('mantiene la retencion y el bloqueo de cuenta como politica de la empresa', () => {
-    for (const key of ['photoRetentionDays', 'gpsTrackRetentionDays', 'maxLoginAttempts'] as Array<
+  it('mantiene la retencion como politica de la empresa', () => {
+    // maxLoginAttempts se saco del catalogo (#286): el bloqueo de cuenta vive en
+    // tenant_auth_policies, no en la cascada de reglas.
+    for (const key of ['photoRetentionDays', 'gpsTrackRetentionDays'] as Array<
       keyof PatrolRules
     >) {
       expect(isRuleAllowedAtScope(key, 'site')).toBe(false);
