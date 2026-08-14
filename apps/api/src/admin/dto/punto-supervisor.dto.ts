@@ -89,6 +89,30 @@ export class CrearPuntoSupervisorDto {
   tagUid?: string;
 }
 
+/**
+ * Vincular una etiqueta desde la puerta del SUPERVISOR.
+ *
+ * Es un DTO propio y NO `RegisterTagDto` por una sola razon, que es de
+ * seguridad: aquel acepta `tech: 'nfc' | 'qr'`, y el QR de respaldo existe con
+ * un UID de 16 bytes ALEATORIOS justamente para que nadie pueda imprimir el
+ * codigo de un punto sin ir al recinto. Si el llamador puede elegir el UID de un
+ * QR, un supervisor se emite el codigo, lo pega en la garita, y sus guardias
+ * marcan la ronda entera sin caminar — que es exactamente el fraude que el
+ * producto existe para impedir.
+ *
+ * Aca solo viaja el UID. La tecnologia la fija el servidor en 'nfc' y no se
+ * acepta como entrada. El alta de QR sigue siendo del ADMIN, que ademas pasa por
+ * la regla `allowQrFallback` del tenant.
+ */
+export class VincularEtiquetaSupervisorDto {
+  /** Se recorta antes de validar, por lo mismo que `RegisterTagDto.uid`. */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MinLength(4)
+  @MaxLength(64)
+  uid!: string;
+}
+
 export class EditarPuntoSupervisorDto {
   @IsOptional()
   @IsString()

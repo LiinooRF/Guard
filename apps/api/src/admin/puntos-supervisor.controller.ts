@@ -6,12 +6,12 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { PuntosSupervisorService } from './puntos-supervisor.service';
-import { RegisterTagDto } from './dto/register-tag.dto';
 import { UpdateActiveDto } from './dto/update-active.dto';
 import {
   CrearPuntoSupervisorDto,
   EditarPuntoSupervisorDto,
   ImportarPuntosSupervisorDto,
+  VincularEtiquetaSupervisorDto,
 } from './dto/punto-supervisor.dto';
 
 class SiteParam {
@@ -122,7 +122,7 @@ export class PuntosSupervisorController {
   @Permissions('checkpoints:manage')
   registerTag(
     @Param() params: CheckpointParam,
-    @Body() input: RegisterTagDto,
+    @Body() input: VincularEtiquetaSupervisorDto,
     @Req() request: Autenticado,
   ) {
     return this.puntos.registerTag(params.checkpointId, request.user.sub, input);

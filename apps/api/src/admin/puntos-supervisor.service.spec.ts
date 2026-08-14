@@ -7,6 +7,7 @@ import type { MailService } from '../auth/mail.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { SupervisorService } from '../supervisor/supervisor.service';
 import { AdminService } from './admin.service';
+import type { VincularEtiquetaSupervisorDto } from './dto/punto-supervisor.dto';
 import { PuntosSupervisorService } from './puntos-supervisor.service';
 
 /**
@@ -382,6 +383,40 @@ describe('PuntosSupervisorService — auditoria de terreno (#309)', () => {
     expect(entrada.summary).toContain('04AABBCC');
     expect(entrada.summary).toContain('REEMPLAZA');
     expect(entrada.summary).toContain('Bodega');
+  });
+
+  /**
+   * El antifraude entero cuelga de esta linea.
+   *
+   * El QR de respaldo lleva un UID de 16 bytes ALEATORIOS justamente para que
+   * nadie pueda imprimir el codigo de un punto sin ir al recinto. Si el llamador
+   * pudiera elegir la tecnologia, un supervisor se emite un QR con el UID que
+   * quiera, lo pega en la garita, y sus guardias marcan la ronda entera sin
+   * caminar — el fraude que el producto existe para impedir.
+   *
+   * El DTO de la ruta ya no acepta `tech`, pero esta prueba mira el otro cerrojo:
+   * que el servicio lo fije aunque le llegue igual. Quitar el `tech: 'nfc'` de
+   * `registerTag` deja esta prueba en rojo.
+   */
+  it('fuerza NFC aunque le pasen tech: qr — el supervisor no emite codigos QR', async () => {
+    const { service, query } = armar({
+      respuestas: [
+        [SQL_PUNTO, puntoEn(RECINTO_PROPIO)],
+        ['UPDATE tags', comoDriver([])],
+        [SQL_ACTOR, [{ label: 'Ana Pérez' }]],
+      ],
+    });
+
+    await service.registerTag('cp-1', SUPERVISOR, {
+      uid: '04AABBCC',
+      tech: 'qr',
+    } as unknown as VincularEtiquetaSupervisorDto);
+
+    const insert = query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO tags'));
+    expect(insert).toBeDefined();
+    const parametros = (insert?.[1] ?? []) as unknown[];
+    expect(parametros).toContain('nfc');
+    expect(parametros).not.toContain('qr');
   });
 
   it('mover las coordenadas de un punto queda dicho con todas sus letras', async () => {

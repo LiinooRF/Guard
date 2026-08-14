@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { SupervisorService } from '../supervisor/supervisor.service';
 import { AdminService, type ContextoEscritura } from './admin.service';
-import type { RegisterTagDto } from './dto/register-tag.dto';
 import type {
   CrearPuntoSupervisorDto,
   EditarPuntoSupervisorDto,
   ImportarPuntoSupervisorRowDto,
+  VincularEtiquetaSupervisorDto,
 } from './dto/punto-supervisor.dto';
 
 /**
@@ -110,9 +110,31 @@ export class PuntosSupervisorService {
     return this.admin.listTags(checkpointId);
   }
 
-  async registerTag(checkpointId: string, supervisorId: string, input: RegisterTagDto) {
+  /**
+   * El supervisor vincula etiquetas **NFC y solo NFC**.
+   *
+   * La tecnologia se fija aca y no se toma de la entrada, aunque el DTO de la
+   * ruta ya no la acepte: son dos cerraduras a proposito, porque lo que hay
+   * detras es el antifraude entero. El QR de respaldo lleva un UID de 16 bytes
+   * ALEATORIOS justamente para que nadie pueda imprimir el codigo de un punto
+   * sin ir al recinto; si el llamador eligiera el UID de un QR, un supervisor se
+   * emite el codigo, lo pega en la garita, y sus guardias marcan la ronda entera
+   * sin caminar.
+   *
+   * El alta de QR sigue siendo del ADMIN, que ademas pasa por la regla
+   * `allowQrFallback` del tenant.
+   */
+  async registerTag(
+    checkpointId: string,
+    supervisorId: string,
+    input: VincularEtiquetaSupervisorDto,
+  ) {
     await this.asegurarPuntoDelSupervisor(checkpointId, supervisorId);
-    return this.admin.registerTag(checkpointId, input, this.contexto(supervisorId));
+    return this.admin.registerTag(
+      checkpointId,
+      { uid: input.uid, tech: 'nfc' },
+      this.contexto(supervisorId),
+    );
   }
 
   /** Dos saltos para resolver el recinto: etiqueta -> punto -> recinto. */
