@@ -651,11 +651,20 @@ export class AdminService {
   ) {
     const recinto = await this.ensureSite(siteId);
     const checkpointId = randomUUID();
-    await this.tenantContext.manager.query(
+    // El alcance va PEGADO a la escritura, no solo en el pre-chequeo: por eso el
+    // INSERT es `... SELECT ... WHERE`, que es la unica forma de que un llamador
+    // futuro que se saltee `ensureAssignedSite` falle CERRADO en vez de crear el
+    // punto en un recinto ajeno. Para el ADMIN el fragmento es vacio y la
+    // sentencia se comporta igual que antes.
+    const alcance = alcanceDelSupervisor(contexto?.supervisorId, '$2', 11);
+    const creado = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `INSERT INTO checkpoints (
         id, tenant_id, site_id, name, description, suggested_order, kind,
         latitude, longitude, requires_photo, instructions
-      ) VALUES ($1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      )
+      SELECT $1, app_tenant_id(), $2, $3, $4, $5, $6, $7, $8, $9, $10
+      WHERE EXISTS (SELECT 1 FROM sites s WHERE s.id = $2)${alcance.sql}
+      RETURNING id`,
       [
         checkpointId,
         siteId,
@@ -667,8 +676,12 @@ export class AdminService {
         input.longitude ?? null,
         input.requiresPhoto ?? null,
         input.instructions ?? null,
+        ...alcance.params,
       ],
     );
+    if (!creado.length) {
+      throw new ForbiddenException('No tienes este recinto asignado');
+    }
     let tagId: string | null = null;
     if (input.tagUid?.trim()) {
       tagId = randomUUID();

@@ -97,7 +97,12 @@ describe('PuntosSupervisorService — el supervisor solo llega a sus recintos (#
 
   it('con el recinto asignado, el punto se crea', async () => {
     const { service, ensureAssignedSite } = armar({
-      respuestas: [['SELECT id, name FROM sites', [{ id: RECINTO_PROPIO, name: 'Planta Sur' }]]],
+      respuestas: [
+        ['SELECT id, name FROM sites', [{ id: RECINTO_PROPIO, name: 'Planta Sur' }]],
+        // El INSERT ahora es `... SELECT ... WHERE`, asi que devuelve la fila
+        // creada: sin fila, el servicio entiende que el recinto no era suyo.
+        ['INSERT INTO checkpoints', [{ id: 'cp-nuevo' }]],
+      ],
     });
 
     const creado = await service.createCheckpoint(RECINTO_PROPIO, SUPERVISOR, { name: 'Bodega' });
@@ -345,6 +350,7 @@ describe('PuntosSupervisorService — auditoria de terreno (#309)', () => {
     const { service, record } = armar({
       respuestas: [
         ['SELECT id, name FROM sites', [{ id: RECINTO_PROPIO, name: 'Planta Sur' }]],
+        ['INSERT INTO checkpoints', [{ id: 'cp-nuevo' }]],
         [SQL_ACTOR, [{ label: 'Ana Pérez' }]],
       ],
     });
