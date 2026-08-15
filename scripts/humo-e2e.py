@@ -58,6 +58,11 @@ ALCANCE REAL DE LO QUE ESCRIBE, dicho sin adornos:
   - La seccion 14 necesita un recinto que el supervisor no tenga asignado. Se lo
     fabrica ella misma con un nombre fijo (RECINTO_DESCARTABLE) y lo deja
     desactivado: se reusa entre corridas, asi que no se acumula uno por corrida.
+  - La seccion 14b necesita ademas un PUNTO y una ETIQUETA dentro de ese recinto
+    ajeno, para probar las rutas que no llevan el recinto en la URL. Los crea el
+    ADMIN con nombre y UID fijos (PUNTO_DESCARTABLE, UID_DESCARTABLE), el punto
+    queda desactivado y la etiqueta se conserva para reusarla en la corrida
+    siguiente. Ninguno de los dos es dato de operacion.
 """
 import os
 import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
@@ -73,6 +78,14 @@ CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
 # nuevo por corrida iria dejando un cadaver cada vez. Con nombre fijo existe a lo
 # sumo uno, se reusa y queda desactivado.
 RECINTO_DESCARTABLE = 'Recinto descartable de la prueba e2e (no operativo)'
+
+# Un punto y una etiqueta DENTRO de ese recinto ajeno, para poder probar las
+# rutas que no llevan el recinto en la URL (#309). Mismo criterio de nombre fijo
+# y reuso: no hay endpoint para borrar un punto, asi que uno por corrida seria un
+# cadaver por corrida. Los crea el ADMIN, nunca el supervisor: el supervisor no
+# tiene que poder tocarlos, que es justo lo que se comprueba.
+PUNTO_DESCARTABLE = 'Punto descartable de la prueba e2e (recinto no asignado)'
+UID_DESCARTABLE = '04E2EDEADBEEF0'
 
 # Con todo sembrado y todos los modulos encendidos —staging— no hay ninguna
 # razon legitima para saltarse una comprobacion, y ahi conviene que hasta lo
@@ -1380,6 +1393,9 @@ if not mio:
              'el supervisor crea un punto en un recinto suyo',
              'el supervisor vincula una etiqueta NFC al punto que creo',
              'el supervisor lista las etiquetas de ese punto',
+             'el supervisor edita el punto que creo',
+             'el supervisor retira la etiqueta que vinculo',
+             'la etiqueta retirada deja de estar activa en el punto',
              'el supervisor da de baja el punto que creo'],
             'el supervisor no tiene ningun recinto asignado', POR_EL_DESPLIEGUE)
     punto_nuevo = None
@@ -1406,8 +1422,9 @@ if punto_nuevo:
     try:
         s, etiqueta = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo),
                                        {'uid': uid_nfc, 'tech': 'nfc'})
+        tag_propia = cuerpo_dict(etiqueta).get('id') if s in (200, 201) else None
         check('el supervisor vincula una etiqueta NFC al punto que creo',
-              s in (200, 201) and cuerpo_dict(etiqueta).get('id'),
+              s in (200, 201) and tag_propia,
               'HTTP %s %s' % (s, str(etiqueta)[:140]))
 
         s, sus_tags = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo))
@@ -1430,6 +1447,24 @@ if punto_nuevo:
         s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio),
                                 {'name': 'Punto con foto forzada', 'requiresPhoto': False})
         check('  ni crear un punto apagando la exigencia de foto', s == 400, 'HTTP %s' % s)
+
+        # El DELETE de etiqueta no se llamaba NUNCA contra la base: una etiqueta
+        # que se despega de la pared y se reemplaza es la operacion mas comun de
+        # este modulo, y estaba verificada solo con mocks.
+        if tag_propia:
+            s, _ = supervisor.pedir('DELETE', '%s/tags/%s' % (PUNTOS_SUP, tag_propia))
+            check('el supervisor retira la etiqueta que vinculo', s in (200, 204),
+                  'HTTP %s' % s)
+            s, quedan = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP,
+                                                                           punto_nuevo))
+            activas = [t for t in (quedan if isinstance(quedan, list) else [])
+                       if t.get('uid', '').upper() == uid_nfc and t.get('active')]
+            check('  y la etiqueta retirada deja de estar activa en el punto',
+                  s == 200 and not activas, 'HTTP %s %s' % (s, str(quedan)[:160]))
+        else:
+            omitido(['el supervisor retira la etiqueta que vinculo',
+                     'la etiqueta retirada deja de estar activa en el punto'],
+                    'la etiqueta no se llego a crear', POR_LA_PRUEBA)
     finally:
         s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s/active' % (PUNTOS_SUP, punto_nuevo),
                                 {'isActive': False})
@@ -1452,6 +1487,99 @@ else:
     s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints/import' % (PUNTOS_SUP, ajeno),
                             {'checkpoints': [{'name': 'Fila que no deberia entrar'}]})
     check('  ni importa una tanda por CSV ahi', s == 403, 'HTTP %s' % s)
+
+# LAS RUTAS POR ID, QUE SON EL CORAZON DEL ISSUE.
+#
+# Todo lo de arriba lleva el `siteId` en la URL, asi que el alcance se comprueba
+# leyendo un parametro. En estas cinco NO: el recinto hay que deducirlo del punto
+# o de la etiqueta, y ahi es donde un guard olvidado no se nota mirando la firma.
+# Hasta aca esas rutas se probaban solo contra el recinto PROPIO —o sea, el 2xx—
+# y el 403 quedaba verificado unicamente con mocks: exactamente el patron que ya
+# metio dos bugs a staging con CI en verde (ver CLAUDE.md, "como verificar tu
+# trabajo").
+#
+# Para probarlas hace falta un punto que exista en un recinto que el supervisor
+# NO tenga asignado, y eso el supervisor no lo puede fabricar por definicion. Lo
+# crea el ADMIN en el recinto descartable, con nombre fijo para reusarlo entre
+# corridas, y queda desactivado al final.
+ALCANCE_POR_ID = [
+    'el supervisor no edita un punto de un recinto ajeno',
+    'ni lo da de baja',
+    'ni lista las etiquetas de ese punto',
+    'ni le vincula una etiqueta NFC',
+    'ni retira una etiqueta de ese punto',
+]
+if not ajeno:
+    omitido(ALCANCE_POR_ID, 'no se pudo disponer de un recinto sin asignar', POR_LA_PRUEBA)
+else:
+    s, puntos_ajenos = admin.pedir('GET', '/admin/sites/%s/checkpoints' % ajeno)
+    lista_ajena = puntos_ajenos if isinstance(puntos_ajenos, list) else []
+    punto_ajeno = next((p.get('id') for p in lista_ajena
+                        if p.get('name') == PUNTO_DESCARTABLE), None)
+    if punto_ajeno is None:
+        s, punto_admin = admin.pedir('POST', '/admin/sites/%s/checkpoints' % ajeno, {
+            'name': PUNTO_DESCARTABLE,
+            'description': 'Creado por la prueba de humo para medir el alcance por recinto',
+            'suggestedOrder': 999,
+        })
+        punto_ajeno = cuerpo_dict(punto_admin).get('id') if s in (200, 201) else None
+        check('el ADMIN fabrica un punto en el recinto que el supervisor no tiene asignado',
+              s in (200, 201) and punto_ajeno, 'HTTP %s %s' % (s, str(punto_admin)[:140]))
+    else:
+        check('el ADMIN fabrica un punto en el recinto que el supervisor no tiene asignado',
+              True, 'reusa el de una corrida anterior')
+
+    tag_ajena = None
+    if punto_ajeno:
+        s, tags_ajenas = admin.pedir('GET', '/admin/checkpoints/%s/tags' % punto_ajeno)
+        tag_ajena = next((t.get('id') for t in (tags_ajenas if isinstance(tags_ajenas, list)
+                                                else []) if t.get('active')), None)
+        if tag_ajena is None:
+            s, tag_admin = admin.pedir('POST', '/admin/checkpoints/%s/tags' % punto_ajeno,
+                                       {'uid': UID_DESCARTABLE, 'tech': 'nfc'})
+            tag_ajena = cuerpo_dict(tag_admin).get('id') if s in (200, 201) else None
+            check('  y le pega una etiqueta NFC, que es lo que el supervisor no debe poder retirar',
+                  s in (200, 201) and tag_ajena, 'HTTP %s %s' % (s, str(tag_admin)[:140]))
+        else:
+            check('  y le pega una etiqueta NFC, que es lo que el supervisor no debe poder retirar',
+                  True, 'reusa la de una corrida anterior')
+
+    if not punto_ajeno:
+        omitido(ALCANCE_POR_ID,
+                'el ADMIN no pudo fabricar el punto en el recinto sin asignar', POR_LA_PRUEBA)
+    else:
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_ajeno),
+                                {'name': 'Renombrado por quien no supervisa este recinto'})
+        check('el supervisor no edita un punto de un recinto ajeno', s == 403, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s/active' % (PUNTOS_SUP, punto_ajeno),
+                                {'isActive': False})
+        check('  ni lo da de baja', s == 403, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno))
+        check('  ni lista las etiquetas de ese punto', s == 403, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno),
+                                {'uid': '04' + uuid.uuid4().hex[:6].upper(), 'tech': 'nfc'})
+        check('  ni le vincula una etiqueta NFC', s == 403, 'HTTP %s' % s)
+
+        if tag_ajena:
+            s, _ = supervisor.pedir('DELETE', '%s/tags/%s' % (PUNTOS_SUP, tag_ajena))
+            check('  ni retira una etiqueta de ese punto', s == 403, 'HTTP %s' % s)
+            # Que el 403 no sea un "no existe" disfrazado: la etiqueta tiene que
+            # seguir viva. Un DELETE que borra y despues devuelve 403 pasaria la
+            # comprobacion de arriba y habria perdido la etiqueta igual.
+            s, sigue = admin.pedir('GET', '/admin/checkpoints/%s/tags' % punto_ajeno)
+            check('  y la etiqueta ajena sigue vinculada y activa despues del intento',
+                  s == 200 and any(t.get('id') == tag_ajena and t.get('active')
+                                   for t in (sigue if isinstance(sigue, list) else [])),
+                  'HTTP %s %s' % (s, str(sigue)[:160]))
+        else:
+            omitido(['el supervisor no retira una etiqueta de un punto de un recinto ajeno',
+                     'la etiqueta ajena sigue vinculada y activa despues del intento'],
+                    'el ADMIN no pudo dejar una etiqueta en el punto descartable', POR_LA_PRUEBA)
+
+        # El punto es del ADMIN y del recinto no operativo: queda desactivado,
+        # igual que el recinto que lo contiene. La etiqueta se conserva a
+        # proposito — se reusa en la proxima corrida y evita crear una por vez.
+        admin.pedir('PATCH', '/admin/checkpoints/%s/active' % punto_ajeno, {'isActive': False})
 
 # El permiso es del SUPERVISOR y de nadie mas: el ADMIN entra por /admin/... y el
 # GUARDIA no entra. Y el supervisor sigue SIN poder asignarse recintos, que es la
