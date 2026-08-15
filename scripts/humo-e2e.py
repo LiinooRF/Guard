@@ -1508,6 +1508,7 @@ ALCANCE_POR_ID = [
     'ni lista las etiquetas de ese punto',
     'ni le vincula una etiqueta NFC',
     'ni retira una etiqueta de ese punto',
+    'y la etiqueta ajena sigue vinculada y activa despues del intento',
 ]
 if not ajeno:
     omitido(ALCANCE_POR_ID, 'no se pudo disponer de un recinto sin asignar', POR_LA_PRUEBA)
@@ -1572,8 +1573,8 @@ else:
                                    for t in (sigue if isinstance(sigue, list) else [])),
                   'HTTP %s %s' % (s, str(sigue)[:160]))
         else:
-            omitido(['el supervisor no retira una etiqueta de un punto de un recinto ajeno',
-                     'la etiqueta ajena sigue vinculada y activa despues del intento'],
+            omitido(['ni retira una etiqueta de ese punto',
+                     'y la etiqueta ajena sigue vinculada y activa despues del intento'],
                     'el ADMIN no pudo dejar una etiqueta en el punto descartable', POR_LA_PRUEBA)
 
         # El punto es del ADMIN y del recinto no operativo: queda desactivado,
