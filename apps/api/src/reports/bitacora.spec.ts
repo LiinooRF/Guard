@@ -4,6 +4,7 @@ import {
   construirBitacora,
   construirInformeRonda,
   redactarMotivoIncompleta,
+  redactarObservaciones,
   type EncabezadoRondaRow,
   type EntradaModelo,
   type FotoRow,
@@ -216,6 +217,38 @@ describe('construirBitacora · orden', () => {
     expect(bitacora.entradas).toHaveLength(3);
     expect(bitacora.omitidasPorTope).toBe(2);
   });
+
+  it('las fotos de las entradas recortadas se separan, no se descartan', () => {
+    // El defecto que ataja: `slice(0, tope)` se llevaba las entradas del final
+    // CON sus fotos, y como la bitacora apaga el anexo esas imagenes no salian
+    // en ninguna parte del documento.
+    const informe = armar({
+      scans: [
+        escaneo('cp-1', '2026-07-30T22:10:00-04:00'),
+        escaneo('cp-2', '2026-07-30T23:10:00-04:00'),
+        escaneo('cp-3', '2026-07-31T00:10:00-04:00'),
+      ],
+      fotos: [foto('f1', 'cp-1'), foto('f2', 'cp-3', { sha256: 'b'.repeat(64) })],
+    });
+
+    // inicio + cp-1 = 2 entradas dibujadas; se recortan cp-2, cp-3 y el cierre.
+    const bitacora = construirBitacora(informe, { maxEntradas: 2 });
+
+    expect(bitacora.omitidasPorTope).toBe(3);
+    expect(bitacora.fotosRecortadas.map((f) => f.id)).toEqual(['f2']);
+    // Y ninguna foto queda contada dos veces.
+    const dibujadas = bitacora.entradas.flatMap((e) => e.fotos.map((f) => f.id));
+    expect(dibujadas).toEqual(['f1']);
+  });
+
+  it('sin recorte no hay fotos rescatadas', () => {
+    const informe = armar({
+      scans: [escaneo('cp-1', '2026-07-30T22:10:00-04:00')],
+      fotos: [foto('f1', 'cp-1')],
+    });
+
+    expect(construirBitacora(informe).fotosRecortadas).toEqual([]);
+  });
 });
 
 describe('construirBitacora · reparto de la evidencia', () => {
@@ -345,6 +378,51 @@ describe('redactarMotivoIncompleta', () => {
     expect(motivos).toContain('El punto de cierre no se escaneó');
   });
 
+  it('una ronda sin checklist no gana ni una viñeta de tareas', () => {
+    const informe = armar({ scans: [escaneo('cp-1', '2026-07-30T23:00:00-04:00')] });
+
+    expect(redactarMotivoIncompleta(informe).join(' | ')).not.toContain('tarea');
+  });
+
+  it('avisa cuando la ronda quedó sin cierre registrado', () => {
+    const informe = armar({
+      scans: PUNTOS.map((p) => escaneo(p.id, '2026-07-30T23:00:00-04:00')),
+      ronda: { ...RONDA, closed_at: null },
+    });
+
+    expect(redactarMotivoIncompleta(informe)).toContain('Ronda sin cierre registrado');
+  });
+
+  it('una ronda entera con anomalías, desvío y checklist NO se declara incompleta', () => {
+    // El defecto que ataja: el recuadro rojo salia en rondas de 3/3 al 100% con
+    // 0 omitidos, y el informe se contradecia contra sus propias cifras. Lo que
+    // hace incompleta a una ronda es que falte un punto o que no haya cierre.
+    const informe = armar({
+      scans: [
+        ...PUNTOS.map((p) => escaneo(p.id, '2026-07-30T23:00:00-04:00')),
+        escaneo('cp-2', '2026-07-30T23:20:00-04:00', { anomalies: ['fuera_de_radio_gps'] }),
+      ],
+      ronda: { ...RONDA, scheduled_end_at: new Date('2026-07-30T22:30:00-04:00') },
+      tareas: [
+        tarea({ item_id: 'a' }),
+        tarea({
+          item_id: 'b',
+          response_id: 'rs-b',
+          value: 'falla',
+          failed: true,
+          requires_photo: true,
+          responded_at: new Date('2026-07-31T00:05:00-04:00'),
+        }),
+      ],
+    });
+
+    expect(informe.compliance.pct).toBe(100);
+    expect(informe.omitidos).toEqual([]);
+    expect(redactarMotivoIncompleta(informe)).toEqual([]);
+  });
+});
+
+describe('redactarObservaciones', () => {
   it('menciona las marcas de anomalía y el desvío de turno', () => {
     const informe = armar({
       scans: [
@@ -355,10 +433,10 @@ describe('redactarMotivoIncompleta', () => {
       ronda: { ...RONDA, scheduled_end_at: new Date('2026-07-30T22:30:00-04:00') },
     });
 
-    const motivos = redactarMotivoIncompleta(informe).join(' | ');
+    const observaciones = redactarObservaciones(informe).join(' | ');
 
-    expect(motivos).toContain('marca(s) fuera del turno');
-    expect(motivos).toContain('después del cierre del turno');
+    expect(observaciones).toContain('marca(s) fuera del turno');
+    expect(observaciones).toContain('después del cierre del turno');
   });
 
   it('cuenta las tareas sin responder, con falla y sin la foto exigida', () => {
@@ -377,26 +455,40 @@ describe('redactarMotivoIncompleta', () => {
       ],
     });
 
-    const motivos = redactarMotivoIncompleta(informe).join(' | ');
+    const observaciones = redactarObservaciones(informe).join(' | ');
 
-    expect(motivos).toContain('1 tarea(s) sin responder');
-    expect(motivos).toContain('1 tarea(s) con falla');
-    expect(motivos).toContain('1 tarea(s) sin la foto exigida');
+    expect(observaciones).toContain('1 tarea(s) sin responder');
+    expect(observaciones).toContain('1 tarea(s) con falla');
+    expect(observaciones).toContain('1 tarea(s) sin la foto exigida');
   });
 
-  it('una ronda sin checklist no gana ni una viñeta de tareas', () => {
-    const informe = armar({ scans: [escaneo('cp-1', '2026-07-30T23:00:00-04:00')] });
-
-    expect(redactarMotivoIncompleta(informe).join(' | ')).not.toContain('tarea');
-  });
-
-  it('avisa cuando la ronda quedó sin cierre registrado', () => {
+  it('una ronda limpia y completa no tiene nada que observar', () => {
     const informe = armar({
       scans: PUNTOS.map((p) => escaneo(p.id, '2026-07-30T23:00:00-04:00')),
-      ronda: { ...RONDA, closed_at: null },
     });
 
-    expect(redactarMotivoIncompleta(informe)).toContain('Ronda sin cierre registrado');
+    expect(redactarObservaciones(informe)).toEqual([]);
+  });
+
+  it('la ronda del histórico no recibe observaciones de un checklist que no tuvo', () => {
+    // SQL_TAREAS_DEL_TURNO cae en la plantilla VIGENTE cuando la ronda no
+    // respondio ninguna tarea, asi que el 100% del historico anterior al
+    // checklist llega aca con seis "tareas pendientes" que nunca existieron.
+    // Sin una sola respuesta, esa lista no consta y no se comenta.
+    const informe = armar({
+      scans: PUNTOS.map((p) => escaneo(p.id, '2026-07-30T23:00:00-04:00')),
+      tareas: [tarea({ item_id: 'a' }), tarea({ item_id: 'b' }), tarea({ item_id: 'c' })],
+    });
+
+    expect(informe.tareas).toHaveLength(3);
+    expect(redactarObservaciones(informe)).toEqual([]);
+    expect(redactarMotivoIncompleta(informe)).toEqual([]);
+  });
+
+  it('una ronda que no arrancó no acumula observaciones sobre lo que no ocurrió', () => {
+    const informe = armar({ ronda: { ...RONDA, started_at: null, closed_at: null } });
+
+    expect(redactarObservaciones(informe)).toEqual([]);
   });
 });
 

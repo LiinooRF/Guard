@@ -12,6 +12,7 @@ import {
   construirBitacora,
   etiquetaAnomalia,
   redactarMotivoIncompleta,
+  redactarObservaciones,
   resumirTareas,
   type Bitacora,
   type EntradaBitacora,
@@ -133,7 +134,19 @@ export interface ResumenRender {
   readonly paginasAnexo: number;
 }
 
+/**
+ * Lo que el cuerpo le deja pendiente al anexo.
+ *
+ * `fotosAlAnexo` es la evidencia que la bitacora NO alcanzo a dibujar porque el
+ * tope de entradas del tenant corto la cronologia. Viaja hasta el anexo en vez
+ * de perderse: ver la nota de `Bitacora.fotosRecortadas`.
+ */
+interface ResultadoCuerpo extends ResumenRender {
+  readonly fotosAlAnexo: readonly FotoAnexo[];
+}
+
 const VACIO: ResumenRender = { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
+const CUERPO_VACIO: ResultadoCuerpo = { ...VACIO, fotosAlAnexo: [] };
 
 /**
  * Dibuja el informe sobre `destino` (la respuesta HTTP, un archivo temporal, o
@@ -169,7 +182,7 @@ export async function renderizarInformeRonda(
       maxBytes: opciones.maxBytesFoto,
     });
     const cuerpo = await dibujarCuerpo(doc, modelo, logo, opciones);
-    const anexo = await dibujarAnexo(doc, modelo, opciones);
+    const anexo = await dibujarAnexo(doc, modelo, opciones, cuerpo.fotosAlAnexo);
     resumen = {
       fotosIncluidas: cuerpo.fotosIncluidas + anexo.fotosIncluidas,
       fotosOmitidas: cuerpo.fotosOmitidas + anexo.fotosOmitidas,
@@ -244,7 +257,7 @@ export async function dibujarCuerpo(
   modelo: InformeRonda,
   logo: Buffer | null,
   opciones: OpcionesRender,
-): Promise<ResumenRender> {
+): Promise<ResultadoCuerpo> {
   dibujarPortada(doc, modelo, logo, opciones);
 
   if (opciones.bitacora === false) {
@@ -252,7 +265,7 @@ export async function dibujarCuerpo(
     // que pidio la regla del tenant, no un camino muerto.
     dibujarTareas(doc, modelo);
     dibujarIncidentes(doc, modelo);
-    return VACIO;
+    return CUERPO_VACIO;
   }
 
   return dibujarBitacora(doc, modelo, opciones);
@@ -336,6 +349,7 @@ function dibujarPortada(
   dibujarLineaTiempoDeRonda(doc, modelo);
   dibujarTablaPuntos(doc, modelo);
   dibujarOmitidos(doc, modelo);
+  dibujarObservaciones(doc, modelo);
 }
 
 /** "13 min", o por que no hay duracion que mostrar. */
@@ -388,17 +402,39 @@ function indicadoresDe(modelo: InformeRonda): Indicador[] {
   return indicadores;
 }
 
-/** Solo si hay algo que explicar: una ronda perfecta no recibe un recuadro vacio. */
+/**
+ * El recuadro rojo, y SOLO cuando la ronda esta efectivamente incompleta:
+ * faltan puntos o no hubo cierre. Lo decide `redactarMotivoIncompleta`.
+ *
+ * Una ronda perfecta no recibe un recuadro vacio, y —desde el arreglo de #308—
+ * una ronda de 40/40 con una marca de anomalia tampoco recibe uno lleno.
+ */
 function dibujarMotivoIncompleta(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
-  const motivos = redactarMotivoIncompleta(modelo);
-  if (motivos.length === 0) return;
+  dibujarVinetas(doc, 'Motivo de ronda incompleta', redactarMotivoIncompleta(modelo), PALETA.alerta);
+}
 
-  dibujarTituloSeccion(doc, 'Motivo de ronda incompleta', PALETA.alerta);
-  doc.font('Helvetica').fontSize(9).fillColor(PALETA.tinta);
-  for (const motivo of motivos) {
+/**
+ * Lo que hay que decir sin declarar incompleta la ronda: anomalias, desvio de
+ * turno y checklist. Va abajo, despues de los puntos, y en tinta normal: el rojo
+ * es del recuadro de arriba, que significa otra cosa.
+ */
+function dibujarObservaciones(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
+  dibujarVinetas(doc, 'Observaciones', redactarObservaciones(modelo));
+}
+
+function dibujarVinetas(
+  doc: PDFKit.PDFDocument,
+  titulo: string,
+  lineas: readonly string[],
+  color?: string,
+): void {
+  if (lineas.length === 0) return;
+
+  dibujarTituloSeccion(doc, titulo, color);
+  for (const linea of lineas) {
     asegurarEspacioConPie(doc, 16);
     doc.font('Helvetica').fontSize(9).fillColor(PALETA.tinta)
-      .text(`•  ${motivo}`, doc.page.margins.left + 6, doc.y, { width: anchoUtil(doc) - 12 });
+      .text(`•  ${linea}`, doc.page.margins.left + 6, doc.y, { width: anchoUtil(doc) - 12 });
     doc.y += 2;
   }
   doc.y += 6;
@@ -531,7 +567,7 @@ async function dibujarBitacora(
   doc: PDFKit.PDFDocument,
   modelo: InformeRonda,
   opciones: OpcionesRender,
-): Promise<ResumenRender> {
+): Promise<ResultadoCuerpo> {
   const bitacora = construirBitacora(modelo, {
     ...(opciones.maxEntradasBitacora === undefined
       ? {}
@@ -539,13 +575,18 @@ async function dibujarBitacora(
   });
 
   const embebe = modelo.incluyeAnexo && opciones.fotosEnLinea !== false;
+  // La evidencia de las entradas recortadas se rescata al anexo. Solo tiene
+  // sentido cuando la bitacora era la unica que iba a dibujarlas: con
+  // `fotosEnLinea` apagado el anexo ya recibe TODAS y sumarlas seria repetirlas.
+  const fotosAlAnexo = embebe ? bitacora.fotosRecortadas : [];
   let incluidas = 0;
   let omitidas = 0;
 
   if (bitacora.entradas.length === 0) {
     // Ni titulo ni cabecera: una seccion vacia en un informe que va al cliente
     // se lee como un dato faltante, no como una funcion que no aplica.
-    return dibujarCierreBitacora(doc, bitacora, modelo, opciones, embebe);
+    const soloCierre = await dibujarCierreBitacora(doc, bitacora, modelo, opciones, embebe);
+    return { ...soloCierre, fotosAlAnexo };
   }
 
   doc.addPage();
@@ -595,11 +636,9 @@ async function dibujarBitacora(
   }
 
   if (bitacora.omitidasPorTope > 0) {
-    asegurarEspacioConPie(doc, 20);
+    asegurarEspacioConPie(doc, 30);
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(PALETA.gris)
-      .text(
-        `Se omitieron ${bitacora.omitidasPorTope} anotación(es) por extensión del informe. ` +
-          'La bitácora completa está en el panel.',
+      .text(avisoDeRecorte(bitacora.omitidasPorTope, bitacora.fotosRecortadas.length, modelo),
         doc.page.margins.left,
         doc.y,
         { width: anchoUtil(doc) },
@@ -612,7 +651,24 @@ async function dibujarBitacora(
     fotosIncluidas: incluidas + cierre.fotosIncluidas,
     fotosOmitidas: omitidas + cierre.fotosOmitidas,
     paginasAnexo: 0,
+    fotosAlAnexo,
   };
+}
+
+/**
+ * El aviso del recorte, diciendo QUE se recorto y donde quedo cada cosa.
+ *
+ * El texto anterior hablaba solo de "anotaciones omitidas" y nunca nombraba las
+ * fotografias, que era justo lo que estaba desapareciendo del documento. Quien
+ * recibe el informe tiene que poder saber que hay evidencia y donde esta.
+ */
+function avisoDeRecorte(entradas: number, fotos: number, modelo: InformeRonda): string {
+  const cabeza = `Se recortaron ${entradas} anotación(es) de la bitácora por extensión del informe`;
+  if (fotos === 0) return `${cabeza}; ninguna llevaba fotografías. La bitácora completa está en el panel.`;
+  const donde = modelo.incluyeAnexo
+    ? `sus ${fotos} fotografía(s) van completas en el anexo fotográfico, al final de este informe`
+    : `sus ${fotos} fotografía(s) quedan registradas en el panel, como el resto de la evidencia de este envío`;
+  return `${cabeza}; ${donde}. La bitácora completa está en el panel.`;
 }
 
 function dibujarCabeceraBitacora(doc: PDFKit.PDFDocument): void {
@@ -1009,24 +1065,32 @@ async function dibujarAnexo(
   doc: PDFKit.PDFDocument,
   modelo: InformeRonda,
   opciones: OpcionesRender,
+  rescatadas: readonly FotoAnexo[] = [],
 ): Promise<ResumenRender> {
   const yaEstanEnLinea = opciones.bitacora !== false && opciones.fotosEnLinea !== false;
-  if (!modelo.incluyeAnexo || modelo.anexo.length === 0 || yaEstanEnLinea) return VACIO;
+  // Con la bitacora encendida el anexo NO repite las fotos que ya salieron en
+  // linea, pero si dibuja las que la bitacora no alcanzo a mostrar: esa es la
+  // unica hoja del documento donde pueden aparecer.
+  const fotos = yaEstanEnLinea ? rescatadas : modelo.anexo;
+  if (!modelo.incluyeAnexo || fotos.length === 0) return VACIO;
 
   const porPagina = COLUMNAS_ANEXO * FILAS_ANEXO;
-  const paginas = Math.ceil(modelo.anexo.length / porPagina);
+  const paginas = Math.ceil(fotos.length / porPagina);
+  const titulo = yaEstanEnLinea
+    ? 'Anexo fotográfico · evidencia de las anotaciones recortadas'
+    : 'Anexo fotográfico';
   let incluidas = 0;
   let omitidas = 0;
   let geometria = geometriaPagina(doc);
 
-  for (const [indice, foto] of modelo.anexo.entries()) {
+  for (const [indice, foto] of fotos.entries()) {
     const posicion = indice % porPagina;
     if (posicion === 0) {
       doc.addPage();
       dibujarFranjaMarca(
         doc,
         modelo.marca,
-        `Anexo fotográfico · hoja ${Math.floor(indice / porPagina) + 1} de ${paginas}`,
+        `${titulo} · hoja ${Math.floor(indice / porPagina) + 1} de ${paginas}`,
       );
       geometria = geometriaPagina(doc);
     }

@@ -546,6 +546,18 @@ export interface Bitacora {
   readonly entradas: readonly EntradaBitacora[];
   /** Entradas que no se dibujaron por el tope del tenant. 0 = salieron todas. */
   readonly omitidasPorTope: number;
+  /**
+   * La evidencia que colgaba de las entradas recortadas por el tope.
+   *
+   * Existe porque recortar la cronologia NO puede recortar la evidencia: con la
+   * bitacora encendida el anexo 2x2 ya no se dibuja, asi que una foto que se
+   * quedaba fuera de la entrada se quedaba fuera del DOCUMENTO ENTERO, y el
+   * unico aviso hablaba de "anotaciones omitidas" sin nombrar las fotos. En un
+   * producto cuyo sentido es demostrar que alguien estuvo en un lugar, perder
+   * evidencia en silencio es lo peor que puede pasar. El renderer las manda al
+   * anexo; aca solo se separan para que no haya forma de olvidarlas.
+   */
+  readonly fotosRecortadas: readonly FotoAnexo[];
   /** Sin hora: nunca ocurrieron, asi que no pueden estar en una cronologia. */
   readonly tareasSinResponder: readonly TareaInforme[];
   /** Fotos de puntos que no estaban en la ruta. Se conservan, no se descartan. */
@@ -727,10 +739,12 @@ export function construirBitacora(
     .map((c) => c.entrada);
 
   const tope = maxEntradas !== undefined && maxEntradas > 0 ? maxEntradas : ordenadas.length;
+  const recortadas = ordenadas.slice(tope);
 
   return {
     entradas: ordenadas.slice(0, tope),
-    omitidasPorTope: Math.max(0, ordenadas.length - tope),
+    omitidasPorTope: recortadas.length,
+    fotosRecortadas: recortadas.flatMap((entrada) => entrada.fotos),
     // Ordenadas por hora pedida, con las sin hora al final: es como las lee un
     // supervisor que revisa que quedo sin hacer.
     tareasSinResponder: informe.tareas
@@ -761,6 +775,22 @@ function empujar<T>(mapa: Map<string, T[]>, clave: string, valor: T): void {
  * que justifique por escrito lo que el sistema ya sabe. Derivarlo tiene ademas
  * la ventaja de que no se puede falsear.
  *
+ * ---------------------------------------------------------------------------
+ * QUE HACE INCOMPLETA A UNA RONDA — decision de producto, no criterio del que
+ * dibuja: SOLO los puntos omitidos y la falta de cierre.
+ * ---------------------------------------------------------------------------
+ * Antes tambien sumaban las anomalias, el desvio de turno y el checklist, y eso
+ * ponia el recuadro rojo de "ronda incompleta" en rondas de 40/40 con 100% de
+ * cumplimiento y 0 omitidos: el informe se contradecia a si mismo contra sus
+ * propias cifras de la misma pagina. Peor todavia, la consulta de tareas cae en
+ * la plantilla vigente cuando la ronda no respondio ninguna, asi que TODA ronda
+ * anterior al checklist heredaba "tareas pendientes" y salia marcada incompleta
+ * sin serlo.
+ *
+ * Lo demas informa y por eso existe `redactarObservaciones`, que va en su propio
+ * bloque: una marca de anomalia importa —es el nucleo antifraude— pero no
+ * convierte en incompleta una ronda que se recorrio entera.
+ *
  * Devuelve la lista vacia cuando no hay nada que explicar: una ronda perfecta
  * no recibe un recuadro vacio.
  */
@@ -770,7 +800,7 @@ export function redactarMotivoIncompleta(informe: InformeRonda): string[] {
   if (informe.ejecucion.inicio === null) return ['Ronda no iniciada'];
 
   const motivos: string[] = [];
-  const { omitidos, puntos, compliance, tareas } = informe;
+  const { omitidos, puntos, compliance } = informe;
 
   if (omitidos.length > 0) {
     motivos.push(
@@ -786,10 +816,32 @@ export function redactarMotivoIncompleta(informe: InformeRonda): string[] {
     motivos.push('El punto de cierre no se escaneó');
   }
 
+  if (informe.ejecucion.cierre === null) motivos.push('Ronda sin cierre registrado');
+
+  return motivos;
+}
+
+/**
+ * Lo que hay que decir de la ronda sin declararla incompleta.
+ *
+ * Anomalias, desvio de turno y checklist: informan, y ninguna significa que
+ * falte un punto. Van en un bloque aparte titulado "Observaciones" para que el
+ * recuadro rojo siga queriendo decir una sola cosa.
+ *
+ * Vacio = no hay nada que observar, y entonces no se dibuja el bloque.
+ */
+export function redactarObservaciones(informe: InformeRonda): string[] {
+  // Una ronda que no arranco ya lo dice todo en el motivo; enumerarle
+  // observaciones de algo que nunca ocurrio es inventar.
+  if (informe.ejecucion.inicio === null) return [];
+
+  const observaciones: string[] = [];
+  const { puntos, tareas } = informe;
+
   const conMarcas = puntos.filter((p) => !p.omitido && p.anomalias.length > 0);
   if (conMarcas.length > 0) {
     const tipos = [...new Set(conMarcas.flatMap((p) => p.anomalias))].map(etiquetaAnomalia);
-    motivos.push(`${conMarcas.length} punto(s) con marcas de anomalía: ${listar(tipos)}`);
+    observaciones.push(`${conMarcas.length} punto(s) con marcas de anomalía: ${listar(tipos)}`);
   }
 
   const desvios = puntos
@@ -797,19 +849,36 @@ export function redactarMotivoIncompleta(informe: InformeRonda): string[] {
     .filter((d): d is DesvioDeTurno => d !== null);
   if (desvios.length > 0) {
     const peor = desvios.reduce((a, b) => (b.minutos > a.minutos ? b : a));
-    motivos.push(`${desvios.length} marca(s) fuera del turno; la mayor, ${peor.texto}`);
+    observaciones.push(`${desvios.length} marca(s) fuera del turno; la mayor, ${peor.texto}`);
   }
 
-  if (informe.ejecucion.cierre === null) motivos.push('Ronda sin cierre registrado');
+  // Del checklist solo se habla cuando CONSTA que esta ronda lo tuvo. Ver
+  // `checklistConsta`: sin esa condicion, el 100% del historico anterior al
+  // checklist recibiria observaciones sobre tareas que nunca existieron.
+  if (checklistConsta(tareas)) {
+    const resumen = resumirTareas(tareas);
+    if (resumen.pendientes > 0) {
+      observaciones.push(`${resumen.pendientes} tarea(s) sin responder`);
+    }
+    if (resumen.fallidas > 0) observaciones.push(`${resumen.fallidas} tarea(s) con falla`);
+    if (resumen.sinFoto > 0) observaciones.push(`${resumen.sinFoto} tarea(s) sin la foto exigida`);
+  }
 
-  // Una ronda sin checklist no gana ni una linea: `tareas` viene vacio y
-  // resumirTareas devuelve ceros, asi que ninguna de las tres se agrega.
-  const resumen = resumirTareas(tareas);
-  if (resumen.pendientes > 0) motivos.push(`${resumen.pendientes} tarea(s) sin responder`);
-  if (resumen.fallidas > 0) motivos.push(`${resumen.fallidas} tarea(s) con falla`);
-  if (resumen.sinFoto > 0) motivos.push(`${resumen.sinFoto} tarea(s) sin la foto exigida`);
+  return observaciones;
+}
 
-  return motivos;
+/**
+ * Si esta ronda tuvo checklist DE VERDAD, y no una plantilla deducida.
+ *
+ * La consulta de tareas (`SQL_TAREAS_DEL_TURNO`) resuelve la plantilla por los
+ * items ya respondidos, y solo cae en la plantilla vigente hoy cuando la ronda
+ * no respondio ninguno. En ese caso la lista es una suposicion razonable para
+ * mostrarla rotulada, pero NO es un hecho de la ronda: una ronda de 2025 resuelve
+ * hoy a una plantilla creada en 2026. Una respuesta —una sola— es lo que
+ * convierte esa lista en algo que consta que el guardia vio.
+ */
+function checklistConsta(tareas: readonly TareaInforme[]): boolean {
+  return tareas.some((tarea) => tarea.estado !== 'pendiente');
 }
 
 /** "A, B y 3 más": la lista completa de 40 nombres no cabe ni se lee. */

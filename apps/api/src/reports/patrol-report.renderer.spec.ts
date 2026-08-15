@@ -19,6 +19,7 @@ import {
 import {
   dibujarCuerpo,
   instalarPieDePagina,
+  renderizarInformeRonda,
   type OpcionesRender,
 } from './patrol-report.renderer';
 import type { MarcaDocumento } from './pdf-primitivas';
@@ -290,6 +291,26 @@ describe('dibujarCuerpo · portada', () => {
     expect(texto).toContain('2 punto(s) sin escanear');
     expect(texto).toContain('El punto de cierre no se escaneó');
   });
+
+  it('una ronda entera con una marca de anomalía se observa, no se declara incompleta', async () => {
+    // El defecto que ataja: el recuadro rojo aparecia en rondas de 3/3 al 100%
+    // con 0 omitidos, contradiciendo a las fichas de la misma pagina.
+    const corrida = await cuerpo(
+      armar({
+        scans: [
+          escaneo('cp-1', '2026-07-30T23:00:00-04:00'),
+          escaneo('cp-2', '2026-07-30T23:10:00-04:00', { anomalies: ['fuera_de_radio_gps'] }),
+          escaneo('cp-3', '2026-07-30T23:20:00-04:00'),
+        ],
+      }),
+    );
+    const texto = unido(corrida);
+
+    expect(texto).toContain('100%');
+    expect(texto).not.toContain('Motivo de ronda incompleta');
+    expect(texto).toContain('Observaciones');
+    expect(texto).toContain('1 punto(s) con marcas de anomalía');
+  });
 });
 
 describe('dibujarCuerpo · bitácora', () => {
@@ -393,7 +414,9 @@ describe('dibujarCuerpo · bitácora', () => {
     expect(unido(corrida)).not.toContain('por extensión del informe');
 
     const cortada = await cuerpo(completa(), { maxEntradasBitacora: 3 });
-    expect(unido(cortada)).toContain('Se omitieron 4 anotación(es) por extensión del informe');
+    expect(unido(cortada)).toContain('Se recortaron 4 anotación(es) de la bitácora');
+    // Sin fotos en las entradas recortadas el aviso lo dice, en vez de callar.
+    expect(unido(cortada)).toContain('ninguna llevaba fotografías');
   });
 
   it('deja el cursor dentro de la hoja para lo que venga después', async () => {
@@ -539,6 +562,90 @@ describe('dibujarCuerpo · evidencia en línea', () => {
 
     expect(unido(corrida)).toContain('Evidencia sin punto en la ruta (1)');
     expect(unido(corrida)).toContain('Patio trasero');
+  });
+});
+
+describe('renderizarInformeRonda · ninguna foto queda fuera del documento', () => {
+  let raiz: string;
+
+  beforeEach(async () => {
+    raiz = await mkdtemp(join(tmpdir(), 'voxia-tope-'));
+    await mkdir(join(raiz, 'tenant', 'patrol'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(raiz, { recursive: true, force: true });
+  });
+
+  /** 8 puntos escaneados, uno con foto cada uno, y los archivos en el volumen. */
+  async function conOchoFotos(): Promise<InformeRonda> {
+    const muchos: PuntoEsperadoRow[] = Array.from({ length: 8 }, (_, i) => ({
+      position: String(i + 1),
+      id: `cp-${i + 1}`,
+      name: `Punto de control ${i + 1}`,
+      kind: 'normal',
+      is_closing_point: i === 7,
+    }));
+    const fotos: FotoRow[] = [];
+    for (const [i, punto] of muchos.entries()) {
+      const id = `ft-${i}`;
+      await writeFile(join(raiz, 'tenant', 'patrol', `${id}.jpg`), jpegEmbebible());
+      fotos.push(fotoRow(id, punto.id, { storage_path: `tenant/patrol/${id}.jpg` }));
+    }
+    return armar({
+      puntos: muchos,
+      scans: muchos.map((p, i) =>
+        escaneo(p.id, new Date(Date.UTC(2026, 6, 31, 2, i * 5)).toISOString()),
+      ),
+      fotos,
+    });
+  }
+
+  const aBuffer = async (modelo: InformeRonda, opciones: Partial<OpcionesRender>) => {
+    const canal = new PassThrough();
+    const partes: Buffer[] = [];
+    canal.on('data', (parte: Buffer) => partes.push(parte));
+    const resumen = await renderizarInformeRonda(modelo, canal, {
+      ...OPCIONES,
+      raizEvidencia: raiz,
+      ...opciones,
+    });
+    return { resumen, pdf: Buffer.concat(partes) };
+  };
+
+  it('el tope de la bitácora recorta anotaciones, nunca evidencia', async () => {
+    // El defecto que ataja, verificado con 80 fotos y tope 50: 11 fotografias
+    // no aparecian EN NINGUNA PARTE del documento —la bitacora las cortaba y el
+    // anexo ya no se dibujaba— y el aviso solo hablaba de "anotaciones".
+    const modelo = await conOchoFotos();
+    const { resumen, pdf } = await aBuffer(modelo, { maxEntradasBitacora: 3 });
+
+    expect(modelo.evidencias).toHaveLength(8);
+    expect(resumen.fotosIncluidas + resumen.fotosOmitidas).toBe(8);
+    expect(resumen.fotosIncluidas).toBe(8);
+    // Y el anexo existe justamente para eso: 6 fotos rescatadas, 2 por hoja x 2.
+    expect(resumen.paginasAnexo).toBeGreaterThan(0);
+    expect(esPdf(pdf)).toBe(true);
+  });
+
+  it('sin recorte el anexo no repite lo que la bitácora ya mostró', async () => {
+    const modelo = await conOchoFotos();
+    const { resumen } = await aBuffer(modelo, { maxEntradasBitacora: 400 });
+
+    expect(resumen.fotosIncluidas).toBe(8);
+    expect(resumen.paginasAnexo).toBe(0);
+  });
+
+  it('con las fotos en línea apagadas el anexo sigue llevándolas todas', async () => {
+    const modelo = await conOchoFotos();
+    const { resumen } = await aBuffer(modelo, {
+      fotosEnLinea: false,
+      maxEntradasBitacora: 3,
+    });
+
+    // El anexo dibuja las 8, no solo las recortadas: sin fotos en linea es el
+    // unico lugar donde salen y no hay nada que rescatar aparte.
+    expect(resumen.fotosIncluidas).toBe(8);
   });
 });
 

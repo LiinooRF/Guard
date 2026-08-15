@@ -322,9 +322,96 @@ export interface Indicador {
   readonly color?: string;
 }
 
-const ANCHO_INDICADOR = 96;
-const ALTO_INDICADOR = 46;
+export const ANCHO_INDICADOR = 96;
 const SEPARACION_INDICADOR = 12;
+const PADDING_INDICADOR = 6;
+/** Aire entre la ultima linea del detalle y el borde de abajo. */
+const PADDING_INFERIOR_INDICADOR = 4;
+/** Donde arranca la cifra dentro de la ficha, y lo que ocupa impresa. */
+const Y_CIFRA_INDICADOR = 16;
+const TAM_CIFRA_INDICADOR = 20;
+const ALTO_CIFRA_INDICADOR = 19;
+/** Alto historico de la ficha; es el piso, no el techo. */
+const ALTO_MIN_INDICADOR = 46;
+/** Cuerpos que puede tomar el detalle, del preferido al ultimo recurso. */
+const TAMANOS_DETALLE = [6.5, 6, 5.5, 5] as const;
+
+export interface DetalleIndicador {
+  readonly tamano: number;
+  readonly lineas: readonly string[];
+}
+
+/**
+ * Acomoda el detalle de una ficha DENTRO de su recuadro, midiendolo.
+ *
+ * El defecto que ataja: "Sobre el umbral · umbral 70%" mide 85,8pt en cuerpo 6,5
+ * contra los 84pt utiles de la ficha, y "BAJO EL UMBRAL · umbral 70%" mide 95,7.
+ * pdfkit ENVUELVE igual aunque se le pase `lineBreak:false` —comprobado en el
+ * flujo del PDF: dos bloques BT/ET— asi que la segunda linea caia 4pt por debajo
+ * del borde inferior. No dependia de los datos: pasaba con 0%, con 89% y con
+ * 100%, o sea en todos los informes.
+ *
+ * Se prefiere partir por el separador propio del texto antes que achicar la
+ * letra: dos lineas en cuerpo 6,5 se leen impresas; una linea en cuerpo 5 no.
+ * Se exporta para poder comprobar contra las metricas reales de la fuente que lo
+ * que se va a escribir cabe, que es lo unico que este arreglo promete.
+ */
+export function ajustarDetalleIndicador(
+  doc: PDFKit.PDFDocument,
+  texto: string,
+  ancho: number,
+): DetalleIndicador {
+  const mide = (linea: string, tamano: number): number => {
+    doc.font('Helvetica').fontSize(tamano);
+    return doc.widthOfString(linea);
+  };
+
+  const candidatos = particionesDeDetalle(texto);
+  for (const tamano of TAMANOS_DETALLE) {
+    for (const lineas of candidatos) {
+      if (lineas.every((linea) => mide(linea, tamano) <= ancho)) return { tamano, lineas };
+    }
+  }
+
+  // Ni partido ni en el cuerpo mas chico entra: se recorta MIDIENDO. Un texto
+  // recortado con elipsis se entiende; uno escrito fuera del recuadro se lee
+  // como un informe roto.
+  const tamano = TAMANOS_DETALLE[TAMANOS_DETALLE.length - 1]!;
+  const ultimo = candidatos[candidatos.length - 1]!;
+  return {
+    tamano,
+    lineas: ultimo.map((linea) => recortarAlAncho(doc, linea, ancho, tamano)),
+  };
+}
+
+/** Formas de partir el detalle, de la mas legible a la menos. */
+function particionesDeDetalle(texto: string): string[][] {
+  const particiones: string[][] = [[texto]];
+  const partes = texto.split(' · ');
+  for (let corte = 1; corte < partes.length; corte += 1) {
+    particiones.push([partes.slice(0, corte).join(' · '), partes.slice(corte).join(' · ')]);
+  }
+  const palabras = texto.split(' ');
+  if (palabras.length > 1) {
+    const mitad = Math.ceil(palabras.length / 2);
+    particiones.push([palabras.slice(0, mitad).join(' '), palabras.slice(mitad).join(' ')]);
+  }
+  return particiones;
+}
+
+/** Recorte por ancho REAL de la fuente, no por cantidad de caracteres. */
+function recortarAlAncho(
+  doc: PDFKit.PDFDocument,
+  texto: string,
+  ancho: number,
+  tamano: number,
+): string {
+  doc.font('Helvetica').fontSize(tamano);
+  if (doc.widthOfString(texto) <= ancho) return texto;
+  let corte = texto.length;
+  while (corte > 1 && doc.widthOfString(`${texto.slice(0, corte - 1)}…`) > ancho) corte -= 1;
+  return `${texto.slice(0, Math.max(1, corte - 1))}…`;
+}
 
 /**
  * Franja de cifras de la portada: cumplimiento, puntos, escaneados, omitidos.
@@ -332,6 +419,10 @@ const SEPARACION_INDICADOR = 12;
  * Superficies planas y recuadro fino, sin sombra ni degradado: es la direccion
  * visual del producto y ademas lo unico que sobrevive a una impresora laser.
  * Las que no caben en el ancho util bajan a una segunda fila.
+ *
+ * El alto de la ficha se DERIVA de lo que hay que escribir adentro —el detalle
+ * ya medido— en vez de ser una constante que el texto desborda. Todas las fichas
+ * comparten el alto para que la franja siga leyendose como una sola fila.
  */
 export function dibujarIndicadores(
   doc: PDFKit.PDFDocument,
@@ -341,37 +432,65 @@ export function dibujarIndicadores(
 
   const x0 = doc.page.margins.left;
   const ancho = anchoUtil(doc);
+  const anchoTexto = ANCHO_INDICADOR - PADDING_INDICADOR * 2;
   const porFila = Math.max(1, Math.floor((ancho + SEPARACION_INDICADOR) / (ANCHO_INDICADOR + SEPARACION_INDICADOR)));
   const filas = Math.ceil(indicadores.length / porFila);
-  asegurarEspacioConPie(doc, filas * (ALTO_INDICADOR + SEPARACION_INDICADOR));
+
+  const detalles = indicadores.map((indicador) =>
+    indicador.detalle ? ajustarDetalleIndicador(doc, indicador.detalle, anchoTexto) : null,
+  );
+  const altoDetalle = detalles.reduce(
+    (mayor, detalle) => Math.max(mayor, detalle ? altoDeDetalle(doc, detalle) : 0),
+    0,
+  );
+  const altoFicha = Math.max(
+    ALTO_MIN_INDICADOR,
+    Y_CIFRA_INDICADOR + ALTO_CIFRA_INDICADOR + altoDetalle + PADDING_INFERIOR_INDICADOR,
+  );
+  asegurarEspacioConPie(doc, filas * (altoFicha + SEPARACION_INDICADOR));
 
   const yInicio = doc.y;
   indicadores.forEach((indicador, posicion) => {
     const columna = posicion % porFila;
     const fila = Math.floor(posicion / porFila);
     const x = x0 + columna * (ANCHO_INDICADOR + SEPARACION_INDICADOR);
-    const y = yInicio + fila * (ALTO_INDICADOR + SEPARACION_INDICADOR);
+    const y = yInicio + fila * (altoFicha + SEPARACION_INDICADOR);
 
     doc.lineWidth(0.5);
-    doc.rect(x, y, ANCHO_INDICADOR, ALTO_INDICADOR).stroke(PALETA.linea);
+    doc.rect(x, y, ANCHO_INDICADOR, altoFicha).stroke(PALETA.linea);
     doc.font('Helvetica-Bold').fontSize(7).fillColor(PALETA.gris)
-      .text(indicador.rotulo.toUpperCase(), x + 6, y + 6, {
-        width: ANCHO_INDICADOR - 12,
+      .text(indicador.rotulo.toUpperCase(), x + PADDING_INDICADOR, y + PADDING_INDICADOR, {
+        width: anchoTexto,
         lineBreak: false,
       });
-    doc.font('Helvetica-Bold').fontSize(20).fillColor(indicador.color ?? PALETA.tinta)
-      .text(indicador.cifra, x + 6, y + 16, { width: ANCHO_INDICADOR - 12, lineBreak: false });
-    if (indicador.detalle) {
-      doc.font('Helvetica').fontSize(6.5).fillColor(indicador.color ?? PALETA.gris)
-        .text(indicador.detalle, x + 6, y + ALTO_INDICADOR - 11, {
-          width: ANCHO_INDICADOR - 12,
+    doc.font('Helvetica-Bold').fontSize(TAM_CIFRA_INDICADOR)
+      .fillColor(indicador.color ?? PALETA.tinta)
+      .text(indicador.cifra, x + PADDING_INDICADOR, y + Y_CIFRA_INDICADOR, {
+        width: anchoTexto,
+        lineBreak: false,
+      });
+
+    const detalle = detalles[posicion];
+    if (!detalle) return;
+    doc.font('Helvetica').fontSize(detalle.tamano);
+    const alto = doc.currentLineHeight();
+    const yDetalle = y + altoFicha - PADDING_INFERIOR_INDICADOR - alto * detalle.lineas.length;
+    detalle.lineas.forEach((linea, indice) => {
+      doc.font('Helvetica').fontSize(detalle.tamano).fillColor(indicador.color ?? PALETA.gris)
+        .text(linea, x + PADDING_INDICADOR, yDetalle + indice * alto, {
+          width: anchoTexto,
           lineBreak: false,
         });
-    }
+    });
   });
 
   doc.x = x0;
-  doc.y = yInicio + filas * ALTO_INDICADOR + (filas - 1) * SEPARACION_INDICADOR + 12;
+  doc.y = yInicio + filas * altoFicha + (filas - 1) * SEPARACION_INDICADOR + 12;
+}
+
+function altoDeDetalle(doc: PDFKit.PDFDocument, detalle: DetalleIndicador): number {
+  doc.font('Helvetica').fontSize(detalle.tamano);
+  return doc.currentLineHeight() * detalle.lineas.length;
 }
 
 // ------------------------------------------------------- filas de la bitacora
@@ -499,7 +618,33 @@ export interface DatosLineaTiempo {
   readonly nota?: string | null;
 }
 
-const ALTO_LINEA_TIEMPO = 44;
+/**
+ * Las tres bandas de la linea de tiempo, cada una con su alto propio.
+ *
+ * Antes se solapaban POR CONSTRUCCION: las etiquetas de hora intermedias se
+ * escribian a yTope+9 con un alto de ~7,5pt y las marcas de tarea se dibujaban a
+ * yBase-14 = yTope+12. Los dos rangos se cruzan siempre, con cualquier duracion
+ * de ronda. Separarlas en bandas declaradas es lo que impide que vuelva a pasar
+ * al mover un numero suelto.
+ *
+ *   yTope                      etiquetas de hora (extremos e intermedias)
+ *   yTope + BANDA_ETIQUETAS    marcas sobre el eje (escaneos y tareas)
+ *   yBase                      el eje
+ *   yBase + ...                marcas de hora y novedades bajo el eje
+ *   yBase + Y_NOTA             las notas
+ */
+const BANDA_ETIQUETAS = 10;
+const BANDA_HITOS = 18;
+/** Marca de tarea: cuadrado sobre el eje, dentro de BANDA_HITOS. */
+const Y_MARCA_TAREA = -16;
+const Y_MARCA_ESCANEO = -8;
+const Y_CIRCULO_MARCADO = -10;
+/** Bajo el eje: primero la marquita de la escala, despues los triangulos. */
+const ALTO_TICK = 2;
+const Y_INCIDENTE = 4;
+const Y_NOTA = 13;
+const ALTO_NOTA = 8;
+const ALTO_LINEA_TIEMPO = BANDA_ETIQUETAS + BANDA_HITOS + Y_NOTA + ALTO_NOTA * 2;
 const PASOS_ESCALA = [5, 10, 15, 30, 60, 120, 240] as const;
 
 /**
@@ -534,6 +679,61 @@ export function pasoDeEtiquetas(duracionMin: number, ancho: number): number | nu
   return null;
 }
 
+export interface EscalaLinea {
+  readonly t0: number;
+  readonly t1: number;
+  /** true cuando la ventana programada se sale del tramo dibujado. */
+  readonly ventanaRecortada: boolean;
+}
+
+/**
+ * El rango horizontal de la linea: LO QUE OCURRIO, no lo que estaba programado.
+ *
+ * El defecto que ataja: la escala se armaba sobre el minimo y el maximo de
+ * ventana + ejecucion + hitos, asi que una ronda de 13 minutos dentro de un
+ * turno de 22:00 a 06:00 repartia sus 15 hitos sobre 14 de los 515pt del ancho
+ * util —el 2,7%— y salian encimados entre si y encima de la etiqueta de hora. La
+ * ventana programada ya esta escrita con todas sus letras en la ficha de la
+ * portada; lo que la linea tiene que mostrar es el recorrido.
+ *
+ * La ventana se sigue dibujando como banda de fondo, recortada al tramo visible
+ * (posicionEnLinea acota a [0, ancho]), y `ventanaRecortada` avisa que la banda
+ * llega hasta el borde porque se la corto y no porque ahi termine.
+ *
+ * Cuando no ocurrio NADA —ronda no iniciada, sin hitos— no hay recorrido que
+ * mostrar y se cae a la ventana: es lo unico que se sabe de esa ronda.
+ */
+export function escalaLineaDeTiempo(datos: DatosLineaTiempo): EscalaLinea {
+  const instantes = datos.hitos
+    .map((hito) => new Date(hito.instante).getTime())
+    .filter((t) => !Number.isNaN(t));
+  const ejecucion = [datos.ejecucion.inicio, datos.ejecucion.cierre]
+    .filter((f): f is Date => f !== null)
+    .map((f) => new Date(f).getTime())
+    .filter((t) => !Number.isNaN(t));
+  const ventana = [datos.ventana.desde, datos.ventana.hasta]
+    .filter((f): f is Date => f !== null && f !== undefined)
+    .map((f) => new Date(f).getTime())
+    .filter((t) => !Number.isNaN(t));
+
+  const ocurrido = [...instantes, ...ejecucion];
+  const base = ocurrido.length > 0 ? ocurrido : ventana;
+  if (base.length === 0) {
+    // Ni ventana valida: se devuelve un minuto para no dividir por cero mas
+    // abajo. pdfkit dibuja un NaN en el archivo sin protestar.
+    const ahora = Date.now();
+    return { t0: ahora, t1: ahora + 60_000, ventanaRecortada: false };
+  }
+
+  const t0 = Math.min(...base);
+  // Duracion cero: se fuerza un minuto para que la division tenga sentido en vez
+  // de repartir todo sobre el mismo pixel.
+  const t1 = Math.max(Math.max(...base), t0 + 60_000);
+  const ventanaRecortada =
+    ventana.length > 0 && (Math.min(...ventana) < t0 || Math.max(...ventana) > t1);
+  return { t0, t1, ventanaRecortada };
+}
+
 /**
  * Cuando ocurrio la ronda contra la ventana en que estaba prometida.
  *
@@ -549,26 +749,12 @@ export function dibujarLineaDeTiempo(doc: PDFKit.PDFDocument, datos: DatosLineaT
   const x0 = doc.page.margins.left;
   const ancho = anchoUtil(doc);
   const yTope = doc.y;
-  const yBase = yTope + 26;
+  const yBase = yTope + BANDA_ETIQUETAS + BANDA_HITOS;
 
+  const { t0, t1, ventanaRecortada } = escalaLineaDeTiempo(datos);
   const instantes = datos.hitos
     .map((hito) => new Date(hito.instante).getTime())
     .filter((t) => !Number.isNaN(t));
-  const bordes = [
-    datos.ventana.desde,
-    datos.ventana.hasta,
-    datos.ejecucion.inicio,
-    datos.ejecucion.cierre,
-  ]
-    .filter((f): f is Date => f !== null)
-    .map((f) => new Date(f).getTime())
-    .filter((t) => !Number.isNaN(t));
-
-  const todos = [...instantes, ...bordes];
-  const t0 = Math.min(...todos);
-  // Ventana de duracion cero: se fuerza un minuto para que la division tenga
-  // sentido en vez de repartir todo sobre el mismo pixel.
-  const t1 = Math.max(Math.max(...todos), t0 + 60_000);
   const x = (t: number) => x0 + posicionEnLinea(t0, t1, ancho, t);
 
   // 1. Banda de la ventana programada.
@@ -589,7 +775,8 @@ export function dibujarLineaDeTiempo(doc: PDFKit.PDFDocument, datos: DatosLineaT
   doc.lineWidth(0.5);
   doc.moveTo(x0, yBase).lineTo(x0 + ancho, yBase).stroke(PALETA.linea);
 
-  // 4-6. Los hitos.
+  // 4-6. Los hitos, todos dentro de BANDA_HITOS salvo las novedades, que van
+  // bajo el eje para no confundirse con un escaneo.
   for (const hito of datos.hitos) {
     const t = new Date(hito.instante).getTime();
     if (Number.isNaN(t)) continue;
@@ -597,53 +784,78 @@ export function dibujarLineaDeTiempo(doc: PDFKit.PDFDocument, datos: DatosLineaT
     if (hito.forma === 'escaneo' || hito.forma === 'escaneo_marcado') {
       const marcado = hito.forma === 'escaneo_marcado';
       doc.lineWidth(marcado ? 1.6 : 0.8);
-      doc.moveTo(xh, yBase).lineTo(xh, yBase - 8).stroke(marcado ? PALETA.alerta : PALETA.tinta);
+      doc.moveTo(xh, yBase).lineTo(xh, yBase + Y_MARCA_ESCANEO)
+        .stroke(marcado ? PALETA.alerta : PALETA.tinta);
       if (marcado) {
         doc.lineWidth(0.8);
-        doc.circle(xh, yBase - 10, 2.5).stroke(PALETA.alerta);
+        doc.circle(xh, yBase + Y_CIRCULO_MARCADO, 2.5).stroke(PALETA.alerta);
       }
     } else if (hito.forma === 'tarea') {
       doc.lineWidth(0.7);
-      doc.rect(xh - 2, yBase - 14, 4, 4).stroke(PALETA.tinta);
+      doc.rect(xh - 2, yBase + Y_MARCA_TAREA, 4, 4).stroke(PALETA.tinta);
     } else {
       const grave = hito.forma === 'incidente_grave';
       doc.lineWidth(0.7);
-      doc.polygon([xh, yBase + 3], [xh - 3, yBase + 9], [xh + 3, yBase + 9]);
+      doc.polygon(
+        [xh, yBase + Y_INCIDENTE],
+        [xh - 3, yBase + Y_INCIDENTE + 6],
+        [xh + 3, yBase + Y_INCIDENTE + 6],
+      );
       if (grave) doc.fill(PALETA.alerta);
       else doc.stroke(PALETA.gris);
     }
   }
 
   // Etiquetas de hora: los extremos siempre, las intermedias segun la escala.
+  // TODAS en la banda de arriba: la marquita bajo el eje es la que las ata a su
+  // instante, y asi ninguna cae encima de un hito.
+  const horaInicial = formatearHora(new Date(t0), datos.timezone);
+  const horaFinal = formatearHora(new Date(t1), datos.timezone);
   doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris);
-  doc.text(formatearHora(new Date(t0), datos.timezone), x0, yTope, { width: 60, lineBreak: false });
-  doc.text(formatearHora(new Date(t1), datos.timezone), x0 + ancho - 60, yTope, {
+  const anchoInicial = doc.widthOfString(horaInicial);
+  const anchoFinal = doc.widthOfString(horaFinal);
+  doc.text(horaInicial, x0, yTope, { width: 60, lineBreak: false });
+  doc.text(horaFinal, x0 + ancho - 60, yTope, {
     width: 60,
     align: 'right',
     lineBreak: false,
   });
+
   const paso = pasoDeEtiquetas((t1 - t0) / 60_000, ancho);
   if (paso !== null) {
+    doc.font('Helvetica').fontSize(6.5);
     for (let t = t0 + paso * 60_000; t < t1; t += paso * 60_000) {
       const xe = x(t);
       doc.lineWidth(0.4);
-      doc.moveTo(xe, yBase + 0).lineTo(xe, yBase + 3).stroke(PALETA.linea);
-      doc.font('Helvetica').fontSize(6.5).fillColor(PALETA.gris)
-        .text(formatearHora(new Date(t), datos.timezone), xe - 15, yTope + 9, {
-          width: 30,
-          align: 'center',
-          lineBreak: false,
-        });
+      doc.moveTo(xe, yBase).lineTo(xe, yBase + ALTO_TICK).stroke(PALETA.linea);
+
+      // La etiqueta se omite cuando pisaria a la del extremo: dos horas
+      // superpuestas no se leen ni son dos datos, son una mancha.
+      const etiqueta = formatearHora(new Date(t), datos.timezone);
+      doc.font('Helvetica').fontSize(6.5);
+      const medio = doc.widthOfString(etiqueta) / 2;
+      if (xe - medio < x0 + anchoInicial + 4) continue;
+      if (xe + medio > x0 + ancho - anchoFinal - 4) continue;
+      doc.fillColor(PALETA.gris)
+        .text(etiqueta, xe - 15, yTope, { width: 30, align: 'center', lineBreak: false });
     }
   }
 
-  if (datos.ejecucion.inicio === null) {
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(PALETA.gris)
-      .text('No iniciada', x0, yBase + 10, { width: ancho, align: 'center', lineBreak: false });
-  } else if (datos.nota) {
-    doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris)
-      .text(datos.nota, x0, yBase + 12, { width: ancho, lineBreak: false });
+  // Notas, una por linea y siempre bajo todo lo demas.
+  const notas: string[] = [];
+  if (datos.ejecucion.inicio === null) notas.push('Ronda no iniciada: no hay recorrido que mostrar');
+  else if (ventanaRecortada) {
+    notas.push(
+      `La escala muestra el tramo ejecutado (${horaInicial}—${horaFinal});` +
+        ` la ventana programada era ${formatearHora(new Date(datos.ventana.desde), datos.timezone)}` +
+        `—${formatearHora(new Date(datos.ventana.hasta), datos.timezone)}.`,
+    );
   }
+  if (datos.nota) notas.push(datos.nota);
+  notas.slice(0, 2).forEach((nota, indice) => {
+    doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris)
+      .text(nota, x0, yBase + Y_NOTA + indice * ALTO_NOTA, { width: ancho, lineBreak: false });
+  });
 
   doc.x = x0;
   doc.y = yTope + ALTO_LINEA_TIEMPO + 8;
