@@ -184,6 +184,39 @@ GET   /supervisor/live                                 patrols:monitor
         posición más reciente solo cuando la regla GPS efectiva está activa
 ```
 
+#### Puntos de control y etiquetas NFC — `/checkpoints/supervisor` (#309)
+
+Primer segmento distinto de `/admin` y de `/supervisor` a propósito: así ninguna
+ruta puede quedar tapada por otra según el orden de registro. Las ocho piden
+`checkpoints:manage` y comprueban `supervisor_sites` **en el servidor**; el id
+del supervisor sale del token, nunca de la URL.
+
+```
+GET    /checkpoints/supervisor/sites/:siteId/checkpoints
+POST   /checkpoints/supervisor/sites/:siteId/checkpoints  {name, description?, kind?,
+                                          suggestedOrder?, latitude?, longitude?,
+                                          instructions?, tagUid?}
+POST   /checkpoints/supervisor/sites/:siteId/checkpoints/import {checkpoints:[...]}
+PATCH  /checkpoints/supervisor/checkpoints/:checkpointId        {campos parciales, SIN kind}
+PATCH  /checkpoints/supervisor/checkpoints/:checkpointId/active {isActive}
+GET    /checkpoints/supervisor/checkpoints/:checkpointId/tags
+POST   /checkpoints/supervisor/checkpoints/:checkpointId/tags   {uid, tech?}
+DELETE /checkpoints/supervisor/tags/:tagId
+```
+
+Códigos: **404** = el punto no existe, o es de otra empresa (RLS lo tapa antes y
+no se revela que exista). **403** = existe en tu empresa pero su recinto no está
+entre los tuyos. **400** = mandaste `requiresPhoto`, `kind` al editar o `siteId`
+en el cuerpo: no están en el DTO y `forbidNonWhitelisted` los rechaza.
+
+Los recintos para el selector salen de `GET /supervisor/sites`, que ya devuelve
+solo los asignados. **`GET /admin/sites` no sirve acá** y no es un detalle de la
+pantalla sino del permiso.
+
+Lo que sigue siendo solo del `ADMIN`: el CRUD de recintos, el horario hábil y los
+feriados, `PATCH /admin/checkpoints/:id/photo`, `GET /admin/tags/resolve` y el QR
+de respaldo. Ver `docs/autorizacion.md` para el porqué de cada uno.
+
 El tablero consulta `/supervisor/live` cada 5 segundos (también al volver a una pestaña visible),
 por debajo del límite de 10 segundos del producto. `pollAfterMs` viene en la respuesta para dejar
 explícito el contrato. El mapa recibe `MAP_TILE_URL` y `MAP_ATTRIBUTION` desde el servidor; en los

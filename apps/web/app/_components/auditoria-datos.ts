@@ -157,37 +157,40 @@ export const CATALOGO_ACCIONES: readonly FichaAccion[] = [
     registro: 'ausente',
     nota: 'El sistema todavía no anota la baja de recintos.',
   },
+  // Las cuatro fichas de terreno pasaron a 'completo' en #309: AdminService
+  // ahora llama a AuditService.record en los dos caminos —el del ADMIN y el del
+  // SUPERVISOR—, asi que el registro ya no depende de por que puerta se entro.
   {
     codigo: 'punto.creado',
     etiqueta: 'Alta de punto de control',
-    descripcion: 'Se agregó un punto de control a un recinto.',
+    descripcion: 'Se agregó un punto de control a un recinto, o se importó una tanda por CSV.',
     grupo: 'recintos',
-    registro: 'ausente',
-    nota: 'El sistema todavía no anota el alta de puntos de control.',
+    registro: 'completo',
   },
   {
     codigo: 'punto.modificado',
     etiqueta: 'Cambio en un punto de control',
-    descripcion: 'Cambió el nombre, la criticidad, la exigencia de foto o la ubicación de un punto.',
+    descripcion:
+      'Cambió el nombre, la criticidad, la exigencia de foto, la ubicación o la vigencia de un punto. ' +
+      'El detalle dice cuáles cambiaron: mover las coordenadas y dar de baja un punto quedan escritos aparte.',
     grupo: 'recintos',
-    registro: 'ausente',
-    nota: 'El sistema todavía no anota los cambios en un punto de control.',
+    registro: 'completo',
   },
   {
     codigo: 'etiqueta.registrada',
     etiqueta: 'Etiqueta emitida o registrada',
-    descripcion: 'Se asoció una etiqueta NFC —o un QR de respaldo— a un punto de control.',
+    descripcion:
+      'Se asoció una etiqueta NFC —o un QR de respaldo— a un punto de control. ' +
+      'Cuando reemplaza a otra, el detalle nombra la que quedó fuera de servicio.',
     grupo: 'recintos',
-    registro: 'parcial',
-    nota: 'Hoy solo queda anotada la emisión de un QR de respaldo. El registro de una etiqueta NFC desde el panel no deja línea aquí.',
+    registro: 'completo',
   },
   {
     codigo: 'etiqueta.retirada',
     etiqueta: 'Etiqueta retirada',
     descripcion: 'Se dio de baja una etiqueta: deja de servir para marcar el punto.',
     grupo: 'recintos',
-    registro: 'ausente',
-    nota: 'El sistema todavía no anota el retiro de etiquetas.',
+    registro: 'completo',
   },
   {
     codigo: 'ruta.creada',

@@ -17,7 +17,7 @@ requiere cambiar el guard.
 |---|---|---|
 | `SUPERADMIN` | Plataforma, cruza tenants sin adoptar silenciosamente su contexto | sesiones propias; empresas; métricas; marca; soporte |
 | `ADMIN` | Tenant completo, aislado por RLS | sesiones propias; panel; usuarios; recintos; reglas; estadísticas; auditoría; seguridad; informes |
-| `SUPERVISOR` | Tenant y sólo recintos asignados | sesiones propias; panel; rutas; turnos; monitoreo; informes; incidentes |
+| `SUPERVISOR` | Tenant y sólo recintos asignados | sesiones propias; panel; rutas; turnos; tareas del turno; **puntos de control y sus etiquetas NFC**; monitoreo; informes; incidentes |
 | `GUARDIA` | Tenant y ronda asignada | sesiones propias; ejecutar ronda; incidentes |
 
 La restricción de recinto del supervisor se aplica además del permiso: las
@@ -29,7 +29,8 @@ consultas parten de `supervisor_sites` y RLS mantiene el aislamiento del tenant.
 |---|---|---|---|
 | Sesión | consultar sesión/dispositivos y revocarlos | `account:sessions:manage` | los cuatro |
 | Admin/usuarios | listar, crear, activar, revocar sesiones y asignar recintos | `tenant:users:manage` | `ADMIN` |
-| Admin/recintos | listar, crear, activar y participar en la asignación | `tenant:sites:manage` | `ADMIN` |
+| Admin/recintos | listar, crear, activar y participar en la asignación; también sus puntos de control y etiquetas sobre el tenant completo | `tenant:sites:manage` | `ADMIN` |
+| Terreno/puntos | listar, crear, importar, editar y dar de baja puntos; listar, vincular y retirar etiquetas — **sólo en los recintos asignados** | `checkpoints:manage` | `SUPERVISOR` |
 | Admin/seguridad | política de acceso y eventos | `tenant:security:manage` | `ADMIN` |
 | Panel tenant | resumen operacional autorizado | `tenant:dashboard:read` | `ADMIN`, `SUPERVISOR` |
 | Guardia | inicio y ejecución de su ronda | `patrols:execute` | `GUARDIA` |
@@ -42,7 +43,7 @@ públicas inventariadas.
 
 ## Controles automáticos
 
-- Todas las combinaciones de los 4 roles y los 18 permisos pasan por el guard.
+- Todas las combinaciones de los 4 roles y los 20 permisos pasan por el guard.
 - El inventario compara todos los métodos HTTP de todos los controladores: una
   ruta nueva sin entrada y política hace fallar la suite.
 - La integración compara el catálogo PostgreSQL con la matriz compartida.
