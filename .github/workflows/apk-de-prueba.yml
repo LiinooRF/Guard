@@ -21,6 +21,15 @@ on:
         description: 'A que portal apunta la app'
         required: true
         default: 'https://test-sentrycore.voxtilabs.cl'
+  # El gatillo por PR existe porque `workflow_dispatch` solo funciona cuando el
+  # workflow ya vive en la rama POR DEFECTO — y la rama por defecto es `main`,
+  # que despliega produccion: no se toca para conseguir un APK. Un PR que
+  # modifique ESTE archivo corre con la version de la rama, sin cola de EAS y
+  # sin tocar main. Se descubrio el dia que EAS agoto los builds gratis del mes
+  # con un arreglo del muestreador sin poder probar.
+  pull_request:
+    paths:
+      - '.github/workflows/apk-de-prueba.yml'
 
 permissions:
   contents: read
@@ -58,7 +67,7 @@ jobs:
       - name: Generar el proyecto Android
         env:
           NODE_ENV: production
-          EXPO_PUBLIC_WEB_URL: ${{ inputs.portal }}
+          EXPO_PUBLIC_WEB_URL: ${{ inputs.portal || 'https://test-sentrycore.voxtilabs.cl' }}
         run: npx expo prebuild --platform android --clean --no-install
 
       # setup-java va DESPUES del prebuild: con `cache: gradle` busca **/*.gradle
@@ -70,8 +79,15 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # EXPO_PUBLIC_* se hornea al EMPAQUETAR el JS, y el bundle corre DENTRO
+      # de gradle — no en el prebuild. Solo en el prebuild, la app salia
+      # apuntando al default HTTP del emulador y su guardia de arranque la
+      # mataba con "debe usar HTTPS". Descubierto en el primer uso real del
+      # workflow: nunca habia podido correrse (workflow_dispatch exige main).
       - name: Construir el APK
         working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_WEB_URL: ${{ inputs.portal || 'https://test-sentrycore.voxtilabs.cl' }}
         run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
       - name: Publicar el APK
@@ -88,7 +104,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Descargalo del artefacto **voxia-control-apk** de esta corrida." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Apunta a: \`${{ inputs.portal }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Apunta a: \`${{ inputs.portal || 'https://test-sentrycore.voxtilabs.cl' }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Firmado con la clave de **depuracion**: se instala en emulador y" >> "$GITHUB_STEP_SUMMARY"
           echo "telefono, pero **no** sirve para Play Store. Para publicar se usa" >> "$GITHUB_STEP_SUMMARY"
