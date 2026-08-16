@@ -690,9 +690,36 @@ function payloadShellValido(type: string, payload: unknown): boolean {
     case 'error':
       return CODIGOS_PUENTE.includes(payload['codigo'] as CodigoErrorPuente) &&
         typeof payload['mensaje'] === 'string';
+    // Traza en vivo (#280), sentido app -> portal. SIN esta rama, `track.point`
+    // caia al `default: return false` y CADA posicion de la traza se descartaba
+    // en silencio: el mensaje estaba declarado en TIPOS_SHELL, el emisor nativo
+    // lo mandaba, y el portal lo tiraba sin dejar rastro ni en consola. Es el
+    // mismo defecto que ya habia tenido `track.start` en el sentido contrario;
+    // un tipo declarado sin su caso aca no falla ruidosamente, desaparece.
+    case 'track.point':
+      return esFecha(payload['recordedAt']) &&
+        esLatitud(payload['latitude']) &&
+        esLongitud(payload['longitude']) &&
+        (payload['accuracyM'] === undefined ||
+          (typeof payload['accuracyM'] === 'number' &&
+            Number.isFinite(payload['accuracyM']) &&
+            payload['accuracyM'] >= 0));
     default:
       return false;
   }
+}
+
+/**
+ * Las coordenadas se validan por rango y no solo por tipo: un GPS que devuelve
+ * 0/0 o un NaN serializado como null no puede entrar a la traza como si fuera
+ * una posicion real del guardia.
+ */
+function esLatitud(valor: unknown): valor is number {
+  return typeof valor === 'number' && Number.isFinite(valor) && valor >= -90 && valor <= 90;
+}
+
+function esLongitud(valor: unknown): valor is number {
+  return typeof valor === 'number' && Number.isFinite(valor) && valor >= -180 && valor <= 180;
 }
 
 /**
