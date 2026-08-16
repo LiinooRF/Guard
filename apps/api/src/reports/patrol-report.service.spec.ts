@@ -35,8 +35,22 @@ const RONDA = {
 };
 
 const PUNTOS = [
-  { position: '1', id: 'cp-1', name: 'Acceso principal', kind: 'normal', is_closing_point: false },
-  { position: '2', id: 'cp-2', name: 'Portería', kind: 'acceso_critico', is_closing_point: true },
+  {
+    position: '1',
+    id: 'cp-1',
+    name: 'Acceso principal',
+    kind: 'normal',
+    is_closing_point: false,
+    instructions: 'Revisar el candado del portón',
+  },
+  {
+    position: '2',
+    id: 'cp-2',
+    name: 'Portería',
+    kind: 'acceso_critico',
+    is_closing_point: true,
+    instructions: null,
+  },
 ];
 
 const SCANS = [
@@ -48,6 +62,20 @@ const SCANS = [
     anomalies: [],
   },
 ];
+
+/** Metadatos de una foto tal como los devuelve la consulta, sin bytes. */
+const FOTO = {
+  id: 'f1',
+  scan_id: 'sc-1',
+  checkpoint_id: 'cp-2',
+  checkpoint_name: 'Portería',
+  storage_path: 'tenant/patrol/f1.jpg',
+  mime_type: 'image/jpeg',
+  size_bytes: '2048',
+  sha256: 'b'.repeat(64),
+  taken_at_device: null,
+  created_at: new Date('2026-07-31T05:41:00-04:00'),
+};
 
 /**
  * JPEG minimo que pdfkit acepta embeber: SOI + SOF0 con dimensiones y 3
@@ -117,17 +145,23 @@ const MARCA_TENANT: MarcaFake = {
 
 function armarServicio(
   fixture: Fixture,
-  extras: { raiz?: string; umbral?: number; marca?: MarcaFake; photoAppendix?: boolean } = {},
+  extras: {
+    raiz?: string;
+    umbral?: number;
+    marca?: MarcaFake;
+    photoAppendix?: boolean;
+    /** Reglas de forma del informe (#308): bitacora, fotos en linea, etc. */
+    reglasInforme?: Record<string, unknown>;
+  } = {},
 ) {
   const manager = fakeManager(fixture);
   const rules = {
-    effective: jest
-      .fn()
-      .mockResolvedValue(
-        patrolRulesSchema.parse(
-          extras.umbral === undefined ? {} : { complianceThreshold: extras.umbral },
-        ),
-      ),
+    effective: jest.fn().mockResolvedValue(
+      patrolRulesSchema.parse({
+        ...(extras.umbral === undefined ? {} : { complianceThreshold: extras.umbral }),
+        ...(extras.reglasInforme ?? {}),
+      }),
+    ),
   } as unknown as RulesService;
   const branding = {
     forDocuments: jest.fn().mockResolvedValue(extras.marca ?? MARCA_TENANT),
@@ -247,30 +281,40 @@ describe('PatrolReportService.buildModel', () => {
     expect(modelo.puntos).toHaveLength(2);
   });
 
-  it('sin anexo no consulta siquiera los metadatos de las fotos', async () => {
-    const { service, manager } = armarServicio({});
+  it('sin anexo el modelo queda sin fotos que dibujar, pero SÍ sabe que existen', async () => {
+    // Cambio de #308: antes ni siquiera se consultaban los metadatos, asi que el
+    // PDF que se adjunta al correo no podia decir "18 fotografias registradas" y
+    // quien lo recibia creia que la ronda no habia tenido evidencia. Los
+    // metadatos no traen bytes: el adjunto pesa lo mismo.
+    const { service, manager } = armarServicio({ fotos: [FOTO] });
 
     const modelo = await service.buildModel('patrol-id', { incluirAnexo: false });
 
     expect(modelo.anexo).toEqual([]);
+    expect(modelo.evidencias).toHaveLength(1);
     expect(
       manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('con el modulo photoAppendix APAGADO el PDF sale sin anexo (#286)', async () => {
     // El flag era un control muerto: el anexo se incluia siempre. Ahora, cuando
     // el llamador no opina (el PDF que se descarga), manda el modulo del tenant.
-    const { service, manager } = armarServicio({}, { photoAppendix: false });
+    const { service } = armarServicio({ fotos: [FOTO] }, { photoAppendix: false });
 
     const modelo = await service.buildModel('patrol-id');
 
     expect(modelo.incluyeAnexo).toBe(false);
     expect(modelo.anexo).toEqual([]);
-    // Y no gasta la consulta de metadatos de fotos si no las va a mostrar.
-    expect(
-      manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
-    ).toBe(false);
+  });
+
+  it('trae las instrucciones del punto, que la consulta no leía', async () => {
+    const { service } = armarServicio({});
+
+    const modelo = await service.buildModel('patrol-id');
+
+    expect(modelo.puntos[0]!.instrucciones).toBe('Revisar el candado del portón');
+    expect(modelo.puntos[1]!.instrucciones).toBeNull();
   });
 
   it('un llamador que pide incluirAnexo:false gana sobre el flag (el correo)', async () => {
@@ -339,6 +383,7 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
 
   const fotoRow = (id: string, archivo: string) => ({
     id,
+    scan_id: `sc-${id}`,
     checkpoint_id: 'cp-2',
     checkpoint_name: 'Portería',
     storage_path: `tenant/patrol/${archivo}`,
@@ -348,6 +393,14 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
     taken_at_device: null,
     created_at: new Date('2026-07-31T05:41:00-04:00'),
   });
+
+  /**
+   * Con la bitacora encendida las fotos se incrustan donde ocurrieron y el anexo
+   * no se dibuja: las mismas imagenes dos veces en el mismo PDF duplican el peso
+   * del archivo sin agregar nada. Estos extras apagan las fotos en linea para
+   * seguir cubriendo el camino del anexo, que es el que existe desde #85.
+   */
+  const SOLO_ANEXO = { reglasInforme: { reportInlinePhotos: false } };
 
   it('escribe un PDF válido en el stream, sin materializarlo en un Buffer', async () => {
     const { service } = armarServicio({}, { raiz });
@@ -361,7 +414,7 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
 
   it('incluye en el anexo la foto que sí está en el volumen', async () => {
     await writeFile(join(raiz, 'tenant', 'patrol', 'ok.jpg'), jpegEmbebible());
-    const { service } = armarServicio({ fotos: [fotoRow('f1', 'ok.jpg')] }, { raiz });
+    const { service } = armarServicio({ fotos: [fotoRow('f1', 'ok.jpg')] }, { raiz, ...SOLO_ANEXO });
 
     let resumen;
     const pdf = await recolectar(async (destino) => {
@@ -370,6 +423,19 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
 
     expect(esPdf(pdf)).toBe(true);
     expect(resumen).toMatchObject({ fotosIncluidas: 1, fotosOmitidas: 0, paginasAnexo: 1 });
+  });
+
+  it('con la bitácora encendida la foto va en línea y el anexo no se repite', async () => {
+    await writeFile(join(raiz, 'tenant', 'patrol', 'ok.jpg'), jpegEmbebible());
+    const { service } = armarServicio({ fotos: [fotoRow('f1', 'ok.jpg')] }, { raiz });
+
+    let resumen;
+    const pdf = await recolectar(async (destino) => {
+      resumen = await service.streamTo('patrol-id', destino);
+    });
+
+    expect(esPdf(pdf)).toBe(true);
+    expect(resumen).toMatchObject({ fotosIncluidas: 1, paginasAnexo: 0 });
   });
 
   it('una foto que falta en el volumen NO tumba el informe entero', async () => {
@@ -405,7 +471,7 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
   it('el anexo pagina de a 4 fotos por hoja', async () => {
     await writeFile(join(raiz, 'tenant', 'patrol', 'ok.jpg'), jpegEmbebible());
     const fotos = Array.from({ length: 9 }, (_, i) => fotoRow(`f${i}`, 'ok.jpg'));
-    const { service } = armarServicio({ fotos }, { raiz });
+    const { service } = armarServicio({ fotos }, { raiz, ...SOLO_ANEXO });
 
     let resumen;
     await recolectar(async (destino) => {
@@ -416,9 +482,10 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
   });
 
   it('un consumidor lento recibe el PDF completo y no cuelga la generación', async () => {
-    // El anexo cede el event loop entre foto y foto para no acumular salida en
+    // Las fotos ceden el event loop entre una y otra para no acumular salida en
     // el buffer interno de pdfkit, que ignora el backpressure. Este test cubre
-    // que esa espera no se transforme en un bloqueo.
+    // que esa espera no se transforme en un bloqueo — ahora tambien para las
+    // fotos incrustadas en la bitacora, que es el camino nuevo de #308.
     await writeFile(join(raiz, 'tenant', 'patrol', 'ok.jpg'), jpegEmbebible());
     const fotos = Array.from({ length: 5 }, (_, i) => fotoRow(`f${i}`, 'ok.jpg'));
     const { service } = armarServicio({ fotos }, { raiz });
@@ -517,8 +584,8 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
 });
 
 describe('PatrolReportService.toBuffer', () => {
-  it('devuelve los bytes y por defecto SIN anexo, para el adjunto del correo', async () => {
-    const { service, manager } = armarServicio({});
+  it('devuelve los bytes y por defecto SIN imágenes, para el adjunto del correo', async () => {
+    const { service } = armarServicio({ fotos: [FOTO] });
 
     const informe = await service.toBuffer('patrol-id');
 
@@ -526,19 +593,22 @@ describe('PatrolReportService.toBuffer', () => {
     expect(informe.filename).toBe('informe-ronda-patrol-id.pdf');
     expect(informe.tenantName).toBe('Vigilancia Austral Ltda');
     expect(informe.compliance).toMatchObject({ pct: 50, scanned: 1, expected: 2 });
+    // Lo que hace liviano al adjunto es que no se abre ningun archivo del
+    // volumen, no que se ignore la existencia de la evidencia.
     expect(informe.render.fotosIncluidas).toBe(0);
-    expect(
-      manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
-    ).toBe(false);
   });
 
-  it('con incluirAnexo explícito sí consulta las fotos', async () => {
-    const { service, manager } = armarServicio({});
+  it('el adjunto del correo no abre un solo archivo del volumen de evidencia', async () => {
+    // La prueba de que sigue siendo liviano: la raiz apunta a un directorio que
+    // no existe, asi que si intentara leer una imagen contaria una omitida.
+    const { service } = armarServicio({ fotos: [FOTO] }, { raiz: '/vol/no-existe' });
 
-    await service.toBuffer('patrol-id', { incluirAnexo: true });
+    const informe = await service.toBuffer('patrol-id');
 
-    expect(
-      manager.query.mock.calls.some(([sql]) => String(sql).includes('FROM scan_photos')),
-    ).toBe(true);
+    expect(informe.render).toMatchObject({
+      fotosIncluidas: 0,
+      fotosOmitidas: 0,
+      paginasAnexo: 0,
+    });
   });
 });

@@ -2,7 +2,11 @@ import { DataSource, type QueryRunner } from 'typeorm';
 
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
-import { SQL_TAREAS_DEL_TURNO } from './patrol-report.service';
+import {
+  SQL_FOTOS_DE_LA_RONDA,
+  SQL_PUNTOS_ESPERADOS,
+  SQL_TAREAS_DEL_TURNO,
+} from './patrol-report.service';
 
 const appUrl = process.env.DATABASE_APP_TEST_URL;
 const describeDatabase = appUrl ? describe : describe.skip;
@@ -119,5 +123,54 @@ describeDatabase('camino de informes (esquema real)', () => {
     )) as unknown[];
 
     expect(filas).toEqual([]);
+  });
+
+  /**
+   * Las dos columnas que #308 agrego a consultas que ya existian:
+   * `checkpoints.instructions` (la linea "Instrucciones:" de la bitacora) y
+   * `scan_photos.scan_id` (para agrupar la evidencia de una misma lectura).
+   *
+   * Las dos existen en la base desde su migracion inicial y el informe
+   * simplemente no las leia. Aun asi van contra PostgreSQL y no contra el mock:
+   * el mock del spec unitario devuelve lo que el autor escribio, asi que
+   * confirmaria una columna inventada sin pestañear. Es el bug que ya llego a
+   * staging con CI en verde.
+   */
+  it('la consulta de puntos esperados corre contra el esquema real', async () => {
+    const filas = (await enTenant(async (_c, runner) =>
+      runner.query(SQL_PUNTOS_ESPERADOS, ['00000000-0000-4000-8000-000000000000']),
+    )) as unknown[];
+
+    expect(filas).toEqual([]);
+  });
+
+  it('la consulta de evidencia de la ronda corre contra el esquema real', async () => {
+    const filas = (await enTenant(async (_c, runner) =>
+      runner.query(SQL_FOTOS_DE_LA_RONDA, ['00000000-0000-4000-8000-000000000000']),
+    )) as unknown[];
+
+    expect(filas).toEqual([]);
+  });
+
+  it('checkpoints y scan_photos conservan las columnas que el informe consulta', async () => {
+    const columnasDe = async (tabla: string) => {
+      const filas = (await enTenant(async (_c, runner) =>
+        runner.query(
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_name = $1 AND table_schema = 'public'`,
+          [tabla],
+        ),
+      )) as Array<{ column_name: string }>;
+      return new Set(filas.map((f) => f.column_name));
+    };
+
+    const checkpoints = await columnasDe('checkpoints');
+    for (const esperada of ['instructions', 'description', 'kind', 'name']) {
+      expect(checkpoints.has(esperada)).toBe(true);
+    }
+    const fotos = await columnasDe('scan_photos');
+    for (const esperada of ['scan_id', 'checkpoint_id', 'sha256', 'taken_at_device']) {
+      expect(fotos.has(esperada)).toBe(true);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 
+import { desvioDeTurno, redactarAtrasoDeTarea, redactarDuracion } from './desvio-de-turno';
 import {
   MOTIVO_TEXTO,
   leerEvidencia,
@@ -8,26 +9,37 @@ import {
 } from './evidence-reader';
 import {
   CRITICIDADES,
+  construirBitacora,
   etiquetaAnomalia,
+  redactarMotivoIncompleta,
+  redactarObservaciones,
   resumirTareas,
+  type Bitacora,
+  type EntradaBitacora,
   type EstadoTarea,
   type FotoAnexo,
   type InformeRonda,
 } from './patrol-report.model';
 import {
+  ALTO_PIE,
   ESTADOS_RONDA,
   MARGEN,
   PALETA,
   anchoUtil,
-  asegurarEspacio,
+  asegurarEspacioConPie,
   celdaAnexo,
   dibujarBarra,
   dibujarEncabezadoMarca,
   dibujarFicha,
+  dibujarFilaBitacora,
   dibujarFranjaMarca,
+  dibujarIndicadores,
+  dibujarLineaDeTiempo,
   dibujarPie,
+  dibujarSeparadorDia,
   dibujarTabla,
   dibujarTituloSeccion,
+  formatearFecha,
   formatearFechaHora,
   formatearHora,
   limiteInferior,
@@ -35,10 +47,13 @@ import {
   type Celda,
   type CeldaAnexo,
   type GeometriaAnexo,
+  type HitoLinea,
+  type Indicador,
+  type LineaBitacora,
 } from './pdf-primitivas';
 
 /**
- * Dibujo del informe de ronda en PDF (#85).
+ * Dibujo del informe de ronda en PDF (#85, rediseñado como bitacora en #308).
  *
  * ---------------------------------------------------------------------------
  * DECISION DE MEMORIA — por que streaming y no un Buffer
@@ -52,9 +67,11 @@ import {
  * false). Con `doc.pipe(respuesta)` los bytes salen hacia el cliente mientras
  * se dibuja, y lo unico vivo es la pagina en curso.
  *
- * El anexo se recorre foto a foto: se lee UNA imagen del disco, se embebe y se
+ * Las fotos se recorren de a una: se lee UNA imagen del disco, se embebe y se
  * suelta la referencia antes de leer la siguiente. El pico de memoria es una
- * foto, no el album, y no depende del largo de la ronda.
+ * foto, no el album, y no depende del largo de la ronda. Eso vale igual para
+ * las fotos incrustadas en la bitacora que para las del anexo — por eso el
+ * cuerpo del informe paso a ser ASINCRONO en #308: antes no tocaba el disco.
  *
  * Detalle nada obvio pero decisivo: a `doc.image()` se le pasa el BUFFER y no
  * la ruta. pdfkit cachea las imagenes en `_imageRegistry` cuando el origen es
@@ -68,6 +85,13 @@ const COLUMNAS_ANEXO = 2;
 const FILAS_ANEXO = 2;
 const SEPARACION_ANEXO = 14;
 const ALTO_LEYENDA = 34;
+
+/** Caja de la foto incrustada en la bitacora, y el alto de su rotulo. */
+const ANCHO_FOTO_LINEA = 190;
+const ALTO_FOTO_LINEA = 130;
+const ALTO_ROTULO_FOTO = 20;
+/** Lo que consume una foto en linea, con su rotulo y el aire de abajo. */
+const ALTO_BLOQUE_FOTO = ALTO_FOTO_LINEA + ALTO_ROTULO_FOTO + 6;
 
 /**
  * Techo del buffer de salida antes de frenar el dibujo.
@@ -94,6 +118,14 @@ export interface OpcionesRender {
   readonly maxBytesFoto: number;
   /** Aviso de evidencia que no se pudo incluir. Sin nombres ni ubicaciones. */
   readonly onEvidenciaFallida?: (fotoId: string, motivo: MotivoEvidencia) => void;
+  /** reportTimeline: la ronda contada como cronologia. Apagada, vuelven las tablas. */
+  readonly bitacora?: boolean;
+  /** reportInlinePhotos: la evidencia se muestra donde ocurrio. */
+  readonly fotosEnLinea?: boolean;
+  /** reportConfidentialLabel: la palabra CONFIDENCIAL en la portada. */
+  readonly etiquetaConfidencial?: boolean;
+  /** reportTimelineMaxEntries: tope de entradas dibujadas en la bitacora. */
+  readonly maxEntradasBitacora?: number;
 }
 
 export interface ResumenRender {
@@ -101,6 +133,20 @@ export interface ResumenRender {
   readonly fotosOmitidas: number;
   readonly paginasAnexo: number;
 }
+
+/**
+ * Lo que el cuerpo le deja pendiente al anexo.
+ *
+ * `fotosAlAnexo` es la evidencia que la bitacora NO alcanzo a dibujar porque el
+ * tope de entradas del tenant corto la cronologia. Viaja hasta el anexo en vez
+ * de perderse: ver la nota de `Bitacora.fotosRecortadas`.
+ */
+interface ResultadoCuerpo extends ResumenRender {
+  readonly fotosAlAnexo: readonly FotoAnexo[];
+}
+
+const VACIO: ResumenRender = { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
+const CUERPO_VACIO: ResultadoCuerpo = { ...VACIO, fotosAlAnexo: [] };
 
 /**
  * Dibuja el informe sobre `destino` (la respuesta HTTP, un archivo temporal, o
@@ -128,14 +174,20 @@ export async function renderizarInformeRonda(
 
   const terminado = esperarFin(doc, destino);
   doc.pipe(destino);
+  instalarPieDePagina(doc, modelo.timezone, modelo.marca.mailFooter);
 
-  let resumen: ResumenRender = { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
+  let resumen: ResumenRender = VACIO;
   try {
     const logo = await leerLogoMarca(modelo.marca.logoUri ?? null, opciones.raizEvidencia, {
       maxBytes: opciones.maxBytesFoto,
     });
-    dibujarCuerpo(doc, modelo, logo);
-    resumen = await dibujarAnexo(doc, modelo, opciones);
+    const cuerpo = await dibujarCuerpo(doc, modelo, logo, opciones);
+    const anexo = await dibujarAnexo(doc, modelo, opciones, cuerpo.fotosAlAnexo);
+    resumen = {
+      fotosIncluidas: cuerpo.fotosIncluidas + anexo.fotosIncluidas,
+      fotosOmitidas: cuerpo.fotosOmitidas + anexo.fotosOmitidas,
+      paginasAnexo: anexo.paginasAnexo,
+    };
   } catch (error) {
     // Ya salieron bytes por el cable: no hay forma de convertir esto en un 500
     // en JSON. Se cierra el documento para no dejar la conexion colgada y se
@@ -150,83 +202,281 @@ export async function renderizarInformeRonda(
   return resumen;
 }
 
+/**
+ * Deja el pie —fecha de generacion, linea legal del tenant y numero de pagina—
+ * en TODAS las hojas.
+ *
+ * Antes de #308 se dibujaba UNA vez, al final del cuerpo: con una ronda de 40
+ * puntos el cuerpo ya ocupaba varias hojas y la linea legal aparecia solo en la
+ * ultima. Con una bitacora de 6 o 7 paginas eso se nota de inmediato.
+ *
+ * Se engancha a `pageAdded` en vez de recorrer las paginas al final porque
+ * `bufferPages` esta en false a proposito y las hojas cerradas ya no existen.
+ * La primera hoja la crea el constructor del documento —antes de que este
+ * listener exista— asi que se pinta a mano.
+ */
+export function instalarPieDePagina(
+  doc: PDFKit.PDFDocument,
+  timezone: string,
+  mailFooter: string | null,
+): { readonly paginas: number } {
+  const estado = { paginas: 0 };
+  let pintando = false;
+
+  const pintar = () => {
+    // Cortafuegos: si alguna vez dibujar el pie provocara un salto de pagina, la
+    // reentrada seria infinita y el proceso se comeria la memoria en silencio.
+    if (pintando) return;
+    pintando = true;
+    estado.paginas += 1;
+    try {
+      dibujarPie(doc, timezone, mailFooter, estado.paginas);
+    } finally {
+      // El pie escribe con coordenadas absolutas y deja el cursor al fondo de la
+      // hoja: sin esto, la primera seccion de cada pagina se dibujaria ahi.
+      doc.x = doc.page.margins.left;
+      doc.y = doc.page.margins.top;
+      pintando = false;
+    }
+  };
+
+  doc.on('pageAdded', pintar);
+  pintar();
+  return estado;
+}
+
 // ------------------------------------------------------------------- cuerpo
 
-function dibujarCuerpo(
+/**
+ * El cuerpo del informe. Se exporta para poder probarlo sobre un documento
+ * propio: el renderer no tenia un solo test antes de #308 porque el documento
+ * se creaba aca adentro y no habia por donde mirarlo.
+ */
+export async function dibujarCuerpo(
   doc: PDFKit.PDFDocument,
   modelo: InformeRonda,
   logo: Buffer | null,
+  opciones: OpcionesRender,
+): Promise<ResultadoCuerpo> {
+  dibujarPortada(doc, modelo, logo, opciones);
+
+  if (opciones.bitacora === false) {
+    // Sin bitacora el informe vuelve a ser la pila de tablas de siempre. Es lo
+    // que pidio la regla del tenant, no un camino muerto.
+    dibujarTareas(doc, modelo);
+    dibujarIncidentes(doc, modelo);
+    return CUERPO_VACIO;
+  }
+
+  return dibujarBitacora(doc, modelo, opciones);
+}
+
+function dibujarPortada(
+  doc: PDFKit.PDFDocument,
+  modelo: InformeRonda,
+  logo: Buffer | null,
+  opciones: OpcionesRender,
 ): void {
   const tz = modelo.timezone;
   dibujarEncabezadoMarca(doc, modelo.marca, 'Informe de ronda', logo);
 
+  if (opciones.etiquetaConfidencial !== false) {
+    // Junto al filete y NUNCA dentro de la franja de color: encima del color de
+    // marca elegido por el admin no hay contraste garantizado. El cursor se
+    // repone para que la portada quede identica con la etiqueta y sin ella.
+    const yCursor = doc.y;
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(PALETA.gris)
+      .text('CONFIDENCIAL', doc.page.margins.left, yCursor - 11, {
+        width: anchoUtil(doc),
+        align: 'right',
+        lineBreak: false,
+      });
+    doc.y = yCursor;
+    doc.x = doc.page.margins.left;
+  }
+
+  // Identificacion de la ronda: el nombre de la ruta es como la nombra quien la
+  // encargo, y el recinto es donde ocurrio.
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(PALETA.tinta)
+    .text(modelo.recinto.ruta, doc.page.margins.left, doc.y + 4, {
+      width: anchoUtil(doc),
+      lineBreak: false,
+    });
+  doc.font('Helvetica').fontSize(9).fillColor(PALETA.gris)
+    .text(`${modelo.recinto.nombre} · ${modelo.recinto.sucursal}`, doc.page.margins.left, doc.y + 2, {
+      width: anchoUtil(doc),
+      lineBreak: false,
+    });
+  doc.y += 14;
+  doc.x = doc.page.margins.left;
+
+  // El recinto y la sucursal NO se repiten en la ficha: ya estan arriba, y la
+  // ruta tampoco, por lo mismo.
   dibujarFicha(doc, [
-    ['Recinto', modelo.recinto.nombre],
-    ['Sucursal', modelo.recinto.sucursal],
-    ['Ruta', modelo.recinto.ruta],
     ['Guardia', modelo.recinto.guardia],
     [
       'Ventana horaria',
       `${formatearFechaHora(modelo.ventana.desde, tz)} — ${formatearFechaHora(modelo.ventana.hasta, tz)}`,
     ],
     ['Inicio', formatearFechaHora(modelo.ejecucion.inicio, tz)],
-    ['Cierre', formatearFechaHora(modelo.ejecucion.cierre, tz)],
+    ['Fin', formatearFechaHora(modelo.ejecucion.cierre, tz)],
+    ['Duración', textoDuracion(modelo)],
     ['Estado', ESTADOS_RONDA[modelo.estado] ?? modelo.estado],
   ]);
 
-  dibujarCumplimiento(doc, modelo);
-  dibujarTablaPuntos(doc, modelo);
-  dibujarOmitidos(doc, modelo);
-  dibujarTareas(doc, modelo);
-  dibujarIncidentes(doc, modelo);
-  dibujarPie(doc, tz, modelo.marca.mailFooter);
-}
+  dibujarIndicadores(doc, indicadoresDe(modelo));
 
-function dibujarCumplimiento(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
-  const { compliance, umbral } = modelo;
-  asegurarEspacio(doc, 110);
-  const x = doc.page.margins.left;
-  const color = compliance.pct >= umbral ? PALETA.ok : PALETA.alerta;
-  const y = doc.y;
-
-  doc.font('Helvetica-Bold').fontSize(8).fillColor(PALETA.gris)
-    .text('CUMPLIMIENTO', x, y, { lineBreak: false });
-  doc.font('Helvetica-Bold').fontSize(42).fillColor(color)
-    .text(`${compliance.pct}%`, x, y + 10, { lineBreak: false });
-
-  const xDetalle = x + 160;
-  doc.font('Helvetica').fontSize(10).fillColor(PALETA.tinta)
-    .text(
-      `${compliance.scanned} de ${compliance.expected} puntos escaneados`,
-      xDetalle,
-      y + 18,
-      { lineBreak: false },
-    );
-  doc.fontSize(9).fillColor(PALETA.gris)
-    .text(`Umbral configurado: ${umbral}%`, xDetalle, y + 33, { lineBreak: false });
-
-  // Impreso en blanco y negro el rojo no se distingue del verde: el veredicto
-  // va escrito, no solo pintado.
-  doc.font('Helvetica-Bold').fontSize(9).fillColor(color)
-    .text(
-      compliance.belowThreshold ? 'BAJO EL UMBRAL' : 'Sobre el umbral',
-      xDetalle,
-      y + 47,
-      { lineBreak: false },
-    );
-  if (compliance.scanned > compliance.clean) {
-    doc.font('Helvetica').fontSize(9).fillColor(PALETA.alerta)
+  if (!modelo.incluyeAnexo && modelo.evidencias.length > 0) {
+    // Sin esta linea, quien recibe el informe por correo cree que la ronda no
+    // tuvo fotos. El interruptor esconde los bytes, no el hecho.
+    doc.font('Helvetica').fontSize(8).fillColor(PALETA.gris)
       .text(
-        `${compliance.scanned - compliance.clean} punto(s) con anomalías marcadas`,
-        xDetalle,
-        y + 60,
-        { lineBreak: false },
+        `Este informe se emite sin imágenes (${modelo.evidencias.length} fotografía(s) registradas). ` +
+          'La evidencia está disponible en el panel.',
+        doc.page.margins.left,
+        doc.y,
+        { width: anchoUtil(doc) },
       );
+    doc.y += 6;
   }
 
-  dibujarBarra(doc, x, y + 76, anchoUtil(doc), compliance.pct, umbral);
-  doc.x = x;
-  doc.y = y + 110;
+  asegurarEspacioConPie(doc, 34);
+  dibujarBarra(doc, doc.page.margins.left, doc.y, anchoUtil(doc), modelo.compliance.pct, modelo.umbral);
+  doc.y += 30;
+  doc.x = doc.page.margins.left;
+
+  dibujarMotivoIncompleta(doc, modelo);
+  dibujarLineaTiempoDeRonda(doc, modelo);
+  dibujarTablaPuntos(doc, modelo);
+  dibujarOmitidos(doc, modelo);
+  dibujarObservaciones(doc, modelo);
+}
+
+/** "13 min", o por que no hay duracion que mostrar. */
+function textoDuracion(modelo: InformeRonda): string {
+  if (modelo.ejecucion.inicio === null) return 'No iniciada';
+  if (modelo.ejecucion.cierre === null) return 'Sin cierre registrado';
+  return modelo.duracionMin === null ? '—' : redactarDuracion(modelo.duracionMin);
+}
+
+/**
+ * Las cifras salen TAL CUAL de `compliance`. Contar filas para obtenerlas es el
+ * bug clasico: el encabezado terminaria contradiciendo a la tabla de abajo.
+ */
+function indicadoresDe(modelo: InformeRonda): Indicador[] {
+  const { compliance, umbral } = modelo;
+  const color = compliance.belowThreshold ? PALETA.alerta : PALETA.ok;
+  const omitidos = compliance.expected - compliance.scanned;
+  const conMarcas = compliance.scanned - compliance.clean;
+
+  const indicadores: Indicador[] = [
+    {
+      rotulo: 'Cumplimiento',
+      cifra: `${compliance.pct}%`,
+      // Impreso en blanco y negro el rojo no se distingue del verde: el
+      // veredicto va escrito, no solo pintado.
+      detalle: `${compliance.belowThreshold ? 'BAJO EL UMBRAL' : 'Sobre el umbral'} · umbral ${umbral}%`,
+      color,
+    },
+    { rotulo: 'Puntos', cifra: String(compliance.expected) },
+    { rotulo: 'Escaneados', cifra: String(compliance.scanned) },
+    {
+      rotulo: 'Omitidos',
+      cifra: String(omitidos),
+      ...(omitidos > 0 ? { color: PALETA.alerta } : {}),
+    },
+  ];
+
+  if (conMarcas > 0) {
+    indicadores.push({ rotulo: 'Con marcas', cifra: String(conMarcas), color: PALETA.alerta });
+  }
+  // Una ronda sin checklist no gana ninguna ficha: ni vacia, ni en cero.
+  if (modelo.tareas.length > 0) {
+    const resumen = resumirTareas(modelo.tareas);
+    indicadores.push({
+      rotulo: 'Tareas',
+      cifra: `${resumen.cumplidas}/${resumen.total}`,
+      ...(resumen.cumplidas < resumen.total ? { color: PALETA.alerta } : {}),
+    });
+  }
+  return indicadores;
+}
+
+/**
+ * El recuadro rojo, y SOLO cuando la ronda esta efectivamente incompleta:
+ * faltan puntos o no hubo cierre. Lo decide `redactarMotivoIncompleta`.
+ *
+ * Una ronda perfecta no recibe un recuadro vacio, y —desde el arreglo de #308—
+ * una ronda de 40/40 con una marca de anomalia tampoco recibe uno lleno.
+ */
+function dibujarMotivoIncompleta(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
+  dibujarVinetas(doc, 'Motivo de ronda incompleta', redactarMotivoIncompleta(modelo), PALETA.alerta);
+}
+
+/**
+ * Lo que hay que decir sin declarar incompleta la ronda: anomalias, desvio de
+ * turno y checklist. Va abajo, despues de los puntos, y en tinta normal: el rojo
+ * es del recuadro de arriba, que significa otra cosa.
+ */
+function dibujarObservaciones(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
+  dibujarVinetas(doc, 'Observaciones', redactarObservaciones(modelo));
+}
+
+function dibujarVinetas(
+  doc: PDFKit.PDFDocument,
+  titulo: string,
+  lineas: readonly string[],
+  color?: string,
+): void {
+  if (lineas.length === 0) return;
+
+  dibujarTituloSeccion(doc, titulo, color);
+  for (const linea of lineas) {
+    asegurarEspacioConPie(doc, 16);
+    doc.font('Helvetica').fontSize(9).fillColor(PALETA.tinta)
+      .text(`•  ${linea}`, doc.page.margins.left + 6, doc.y, { width: anchoUtil(doc) - 12 });
+    doc.y += 2;
+  }
+  doc.y += 6;
+  doc.x = doc.page.margins.left;
+}
+
+function dibujarLineaTiempoDeRonda(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
+  dibujarTituloSeccion(doc, 'Línea de tiempo de la ronda');
+
+  const hitos: HitoLinea[] = [];
+  for (const punto of modelo.puntos) {
+    if (punto.escaneadoEn === null) continue;
+    hitos.push({
+      instante: punto.escaneadoEn,
+      forma: punto.anomalias.length > 0 ? 'escaneo_marcado' : 'escaneo',
+    });
+  }
+  for (const tarea of modelo.tareas) {
+    if (tarea.respondidaEn !== null) hitos.push({ instante: tarea.respondidaEn, forma: 'tarea' });
+  }
+  for (const incidente of modelo.incidentes) {
+    hitos.push({
+      instante: incidente.reportadoEn,
+      forma: incidente.destacado ? 'incidente_grave' : 'incidente',
+    });
+  }
+
+  // Los omitidos NO se dibujan: no tienen hora, y ponerlos en algun lado seria
+  // inventarla. Se dicen debajo del eje.
+  const nota =
+    modelo.omitidos.length > 0
+      ? `${modelo.omitidos.length} punto(s) omitido(s) no aparecen en la línea: no tienen hora.`
+      : null;
+
+  dibujarLineaDeTiempo(doc, {
+    ventana: modelo.ventana,
+    ejecucion: modelo.ejecucion,
+    hitos,
+    colorMarca: modelo.marca.primaryColor,
+    timezone: modelo.timezone,
+    nota,
+  });
 }
 
 function dibujarTablaPuntos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
@@ -235,38 +485,52 @@ function dibujarTablaPuntos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void
     doc,
     [
       { titulo: 'Nº', ancho: 26, alinear: 'right' },
-      { titulo: 'Punto', ancho: 175 },
-      { titulo: 'Estado', ancho: 74 },
-      { titulo: 'Hora (servidor)', ancho: 106 },
-      { titulo: 'Método', ancho: 40 },
-      { titulo: 'Anomalías', ancho: 94 },
+      { titulo: 'Punto', ancho: 168 },
+      { titulo: 'Estado', ancho: 70 },
+      { titulo: 'Fecha y hora', ancho: 104 },
+      { titulo: 'Método', ancho: 42 },
+      { titulo: 'Marcas', ancho: 105 },
     ],
     modelo.puntos.map((punto) => {
       const etiquetas: string[] = [];
-      if (punto.esCierre) etiquetas.push('cierre');
-      if (punto.esCritico) etiquetas.push('crítico');
+      if (punto.esCritico) etiquetas.push('CRÍTICO');
+      if (punto.esCierre) etiquetas.push('CIERRE');
       const nombre = etiquetas.length
-        ? `${punto.nombre} (${etiquetas.join(', ')})`
+        ? `${punto.nombre} · ${etiquetas.join(' · ')}`
         : punto.nombre;
       return [
         { texto: String(punto.numero) },
-        { texto: recortar(nombre, 42) },
+        { texto: recortar(nombre, 38) },
         // "OMITIDO" en mayuscula y negrita: se ve a la primera pasada de ojo y
         // sobrevive a una impresora en blanco y negro.
         punto.omitido
           ? { texto: 'OMITIDO', color: PALETA.alerta, negrita: true }
           : { texto: 'Escaneado', color: PALETA.ok },
+        // La celda vacia del informe de referencia se reemplaza por un guion:
+        // un blanco se lee como una falla de impresion, no como un dato ausente.
         { texto: formatearFechaHora(punto.escaneadoEn, modelo.timezone) },
         { texto: punto.metodo ? punto.metodo.toUpperCase() : '—' },
-        punto.anomalias.length > 0
-          ? {
-              texto: recortar(punto.anomalias.map(etiquetaAnomalia).join(', '), 26),
-              color: PALETA.alerta,
-            }
-          : { texto: '—' },
+        celdaMarcas(punto, modelo),
       ];
     }),
   );
+}
+
+/**
+ * La columna antifraude: anomalias y desvio de turno en el mismo lugar.
+ *
+ * Si esa marca no se ve en el informe, el informe da la falsa sensacion de
+ * control que CLAUDE.md nombra como peor que no tener sistema.
+ */
+function celdaMarcas(
+  punto: InformeRonda['puntos'][number],
+  modelo: InformeRonda,
+): Celda {
+  const partes = punto.anomalias.map(etiquetaAnomalia);
+  const desvio = desvioDeTurno(punto.escaneadoEn, modelo.ventana);
+  if (desvio) partes.push(`${desvio.minutos} min fuera de turno`);
+  if (partes.length === 0) return { texto: '—' };
+  return { texto: recortar(partes.join(', '), 30), color: PALETA.alerta };
 }
 
 function dibujarOmitidos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
@@ -279,7 +543,7 @@ function dibujarOmitidos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
   );
   doc.font('Helvetica').fontSize(9).fillColor(PALETA.tinta);
   for (const punto of modelo.omitidos) {
-    asegurarEspacio(doc, 14);
+    asegurarEspacioConPie(doc, 14);
     doc.text(
       `•  ${punto.numero}. ${punto.nombre}${punto.esCritico ? '  — acceso crítico' : ''}`,
       doc.page.margins.left + 6,
@@ -290,16 +554,397 @@ function dibujarOmitidos(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
   doc.y += 4;
 }
 
+// --------------------------------------------------------------- la bitacora
+
 /**
- * Tareas del turno (#265).
+ * La ronda contada hora por hora, con las fotos y el checklist en linea (#308).
+ *
+ * El orden y el reparto de la evidencia los decide `construirBitacora`, que es
+ * una funcion pura del modelo: aca solo se dibuja. Esa separacion es lo que
+ * permite probar el criterio de orden sin abrir un PDF.
+ */
+async function dibujarBitacora(
+  doc: PDFKit.PDFDocument,
+  modelo: InformeRonda,
+  opciones: OpcionesRender,
+): Promise<ResultadoCuerpo> {
+  const bitacora = construirBitacora(modelo, {
+    ...(opciones.maxEntradasBitacora === undefined
+      ? {}
+      : { maxEntradas: opciones.maxEntradasBitacora }),
+  });
+
+  const embebe = modelo.incluyeAnexo && opciones.fotosEnLinea !== false;
+  // La evidencia de las entradas recortadas se rescata al anexo. Solo tiene
+  // sentido cuando la bitacora era la unica que iba a dibujarlas: con
+  // `fotosEnLinea` apagado el anexo ya recibe TODAS y sumarlas seria repetirlas.
+  const fotosAlAnexo = embebe ? bitacora.fotosRecortadas : [];
+  let incluidas = 0;
+  let omitidas = 0;
+
+  if (bitacora.entradas.length === 0) {
+    // Ni titulo ni cabecera: una seccion vacia en un informe que va al cliente
+    // se lee como un dato faltante, no como una funcion que no aplica.
+    const soloCierre = await dibujarCierreBitacora(doc, bitacora, modelo, opciones, embebe);
+    return { ...soloCierre, fotosAlAnexo };
+  }
+
+  doc.addPage();
+  dibujarTituloSeccion(doc, 'Bitácora de la ronda');
+  dibujarCabeceraBitacora(doc);
+
+  let diaAnterior: string | null = null;
+
+  for (const entrada of bitacora.entradas) {
+    const dia = formatearFecha(entrada.instante, modelo.timezone);
+    if (dia !== diaAnterior) {
+      dibujarSeparadorDia(doc, dia);
+      diaAnterior = dia;
+    }
+
+    const lineas = lineasDeEntrada(entrada, modelo, embebe);
+    const area = dibujarFilaBitacora(doc, {
+      hora: formatearHora(entrada.instante, modelo.timezone),
+      evento: eventoDeEntrada(entrada),
+      lineas,
+      // Se reserva la PRIMERA foto junto al texto para que un escaneo no quede
+      // separado de su evidencia; las siguientes paginan por su cuenta.
+      ...(embebe && entrada.fotos.length > 0
+        ? { altoExtra: ALTO_FOTO_LINEA + ALTO_ROTULO_FOTO + 4 }
+        : {}),
+      ...(entrada.incidente?.destacado ? { destacado: true } : {}),
+    });
+
+    if (!embebe) continue;
+    // Donde termino el bloque de texto ya reservado, para no retroceder debajo.
+    const yTrasFila = doc.y;
+    for (const [indice, foto] of entrada.fotos.entries()) {
+      const primera = indice === 0;
+      if (!primera) asegurarEspacioConPie(doc, ALTO_BLOQUE_FOTO);
+      const y = primera ? area.y + 2 : doc.y;
+
+      const resultado = await pintarEvidencia(doc, modelo, foto, opciones, area.x, y);
+      if (resultado) incluidas += 1;
+      else omitidas += 1;
+
+      // pintarEvidencia escribe el rotulo y con eso deja el cursor de pdfkit A
+      // MEDIA foto: sin reponerlo, la anotacion siguiente se dibuja encima de la
+      // linea de la tarea y del borde inferior de la imagen.
+      doc.y = Math.max(primera ? yTrasFila : 0, y + ALTO_BLOQUE_FOTO);
+      await cederHastaDrenar(doc);
+    }
+  }
+
+  if (bitacora.omitidasPorTope > 0) {
+    asegurarEspacioConPie(doc, 30);
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(PALETA.gris)
+      .text(avisoDeRecorte(bitacora.omitidasPorTope, bitacora.fotosRecortadas.length, modelo),
+        doc.page.margins.left,
+        doc.y,
+        { width: anchoUtil(doc) },
+      );
+    doc.y += 10;
+  }
+
+  const cierre = await dibujarCierreBitacora(doc, bitacora, modelo, opciones, embebe);
+  return {
+    fotosIncluidas: incluidas + cierre.fotosIncluidas,
+    fotosOmitidas: omitidas + cierre.fotosOmitidas,
+    paginasAnexo: 0,
+    fotosAlAnexo,
+  };
+}
+
+/**
+ * El aviso del recorte, diciendo QUE se recorto y donde quedo cada cosa.
+ *
+ * El texto anterior hablaba solo de "anotaciones omitidas" y nunca nombraba las
+ * fotografias, que era justo lo que estaba desapareciendo del documento. Quien
+ * recibe el informe tiene que poder saber que hay evidencia y donde esta.
+ */
+function avisoDeRecorte(entradas: number, fotos: number, modelo: InformeRonda): string {
+  const cabeza = `Se recortaron ${entradas} anotación(es) de la bitácora por extensión del informe`;
+  if (fotos === 0) return `${cabeza}; ninguna llevaba fotografías. La bitácora completa está en el panel.`;
+  const donde = modelo.incluyeAnexo
+    ? `sus ${fotos} fotografía(s) van completas en el anexo fotográfico, al final de este informe`
+    : `sus ${fotos} fotografía(s) quedan registradas en el panel, como el resto de la evidencia de este envío`;
+  return `${cabeza}; ${donde}. La bitácora completa está en el panel.`;
+}
+
+function dibujarCabeceraBitacora(doc: PDFKit.PDFDocument): void {
+  const x = doc.page.margins.left;
+  const ancho = anchoUtil(doc);
+  const y = doc.y;
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(PALETA.gris);
+  doc.text('TIEMPO', x, y, { width: 44, lineBreak: false });
+  doc.text('ACCIÓN', x + 44, y, { width: 96, lineBreak: false });
+  doc.text('DETALLES', x + 140, y, { width: ancho - 140, lineBreak: false });
+  doc.lineWidth(0.8);
+  doc.moveTo(x, y + 11).lineTo(x + ancho, y + 11).stroke(PALETA.gris);
+  doc.x = x;
+  doc.y = y + 16;
+}
+
+function eventoDeEntrada(entrada: EntradaBitacora): string {
+  switch (entrada.tipo) {
+    case 'inicio':
+      return 'Inicio de ronda';
+    case 'escaneo':
+      return `Escaneo · punto ${entrada.punto?.numero ?? '—'}`;
+    case 'tarea':
+      return 'Lista de verificación';
+    case 'incidente':
+      return `Novedad · ${CRITICIDADES[entrada.incidente?.criticidad ?? ''] ?? entrada.incidente?.criticidad ?? ''}`;
+    default:
+      return 'Cierre de ronda';
+  }
+}
+
+/**
+ * El contenido de una anotacion.
+ *
+ * Cada linea condicional existe porque aporta algo que el lector no puede
+ * deducir: una ronda sin checklist, sin anomalias y sin instrucciones cargadas
+ * produce exactamente dos lineas por escaneo, no ocho vacias.
+ */
+function lineasDeEntrada(
+  entrada: EntradaBitacora,
+  modelo: InformeRonda,
+  embebe: boolean,
+): LineaBitacora[] {
+  const lineas: LineaBitacora[] = [];
+
+  if (entrada.tipo === 'inicio') {
+    lineas.push({ texto: `${modelo.recinto.ruta} · ${modelo.recinto.guardia}`, negrita: true });
+    lineas.push({
+      texto:
+        `Ventana programada ${formatearHora(modelo.ventana.desde, modelo.timezone)}` +
+        ` — ${formatearHora(modelo.ventana.hasta, modelo.timezone)}`,
+      tamano: 8,
+      color: PALETA.gris,
+    });
+  }
+
+  if (entrada.tipo === 'escaneo' && entrada.punto) {
+    const punto = entrada.punto;
+    const etiquetas: string[] = [];
+    if (punto.esCritico) etiquetas.push('CRÍTICO');
+    if (punto.esCierre) etiquetas.push('CIERRE');
+    lineas.push({
+      texto: `${punto.numero}. ${punto.nombre}${etiquetas.length ? ` · ${etiquetas.join(' · ')}` : ''}`,
+      negrita: true,
+    });
+    lineas.push({
+      texto: `Método ${punto.metodo ? punto.metodo.toUpperCase() : '—'}`,
+      tamano: 8,
+      color: PALETA.gris,
+    });
+    if (punto.instrucciones) {
+      lineas.push({ texto: `Instrucciones: ${recortar(punto.instrucciones, 220)}`, tamano: 8 });
+    }
+    if (punto.anomalias.length > 0) {
+      lineas.push({
+        texto: `Marcas: ${punto.anomalias.map(etiquetaAnomalia).join(', ')}`,
+        negrita: true,
+        color: PALETA.alerta,
+      });
+    }
+    const desvio = desvioDeTurno(punto.escaneadoEn, modelo.ventana);
+    if (desvio) lineas.push({ texto: desvio.texto, color: PALETA.alerta, tamano: 8 });
+  }
+
+  if (entrada.tipo === 'tarea' && entrada.tarea) {
+    const tarea = entrada.tarea;
+    lineas.push({ texto: tarea.etiqueta, negrita: true });
+    if (tarea.respuesta !== null) {
+      // El valor va TAL CUAL quedo guardado: el informe no puede decir algo
+      // distinto de lo que el guardia vio en el teléfono.
+      lineas.push({ texto: `Respuesta: ${tarea.respuesta}`, tamano: 8 });
+    }
+    if (tarea.estado !== 'cumplida') {
+      lineas.push({ texto: textoEstadoTarea(tarea.estado), negrita: true, color: PALETA.alerta });
+    }
+    if (tarea.observacion) {
+      lineas.push({ texto: `Observación: ${tarea.observacion}`, tamano: 8 });
+    }
+    const atraso = redactarAtrasoDeTarea(tarea.atrasoMinutos);
+    if (atraso) {
+      lineas.push({
+        // Los minutos se imprimen tal como los guardo el servidor: recalcularlos
+        // con otra zona horaria daria una cifra distinta a la que ya vio el guardia.
+        texto: `Hora pedida ${tarea.horaPedida ?? '—'} · ${atraso}`,
+        color: PALETA.alerta,
+        tamano: 8,
+      });
+    }
+    if (tarea.faltaFoto) {
+      lineas.push({ texto: 'FOTO EXIGIDA: NO ADJUNTA', negrita: true, color: PALETA.alerta });
+    }
+  }
+
+  if (entrada.tipo === 'incidente' && entrada.incidente) {
+    // El texto va completo: el libro de novedades es append-only y termina en
+    // juicios laborales; un registro recortado a 78 caracteres no sirve de prueba.
+    lineas.push({ texto: recortar(entrada.incidente.texto, 400) });
+  }
+
+  if (entrada.tipo === 'cierre') {
+    const { compliance } = modelo;
+    const duracion = modelo.duracionMin === null ? null : redactarDuracion(modelo.duracionMin);
+    lineas.push({
+      texto:
+        `${compliance.scanned} de ${compliance.expected} puntos · ${compliance.pct}%` +
+        (duracion ? ` · duración ${duracion}` : ''),
+      negrita: true,
+    });
+  }
+
+  // Sin bytes la evidencia igual queda anotada: esconder la imagen es una
+  // decision de tamaño de adjunto; esconder el hecho seria tergiversar la ronda
+  // ante quien recibe el informe.
+  if (!embebe) {
+    const donde = modelo.incluyeAnexo
+      ? 'ver anexo fotográfico'
+      : 'imagen no incluida en este envío';
+    for (const foto of entrada.fotos) {
+      lineas.push({
+        texto: `${rotuloFoto(foto, modelo)} · ${donde}`,
+        tamano: 7.5,
+        color: PALETA.gris,
+      });
+    }
+  }
+
+  return lineas;
+}
+
+function textoEstadoTarea(estado: EstadoTarea): string {
+  return estado === 'falla' ? 'FALLA' : 'NO HECHA';
+}
+
+/** La huella sha256 en cada aparicion es el enganche antifraude de la evidencia. */
+function rotuloFoto(foto: FotoAnexo, modelo: InformeRonda): string {
+  return `Foto ${foto.numero} · ${formatearHora(foto.capturadaEn, modelo.timezone)} · huella ${foto.huella}`;
+}
+
+/** Dibuja una foto incrustada con su rotulo. Devuelve false si no se pudo leer. */
+async function pintarEvidencia(
+  doc: PDFKit.PDFDocument,
+  modelo: InformeRonda,
+  foto: FotoAnexo,
+  opciones: OpcionesRender,
+  x: number,
+  y: number,
+): Promise<boolean> {
+  const caja = { x, y, ancho: ANCHO_FOTO_LINEA, alto: ALTO_FOTO_LINEA };
+  const lectura = await leerEvidencia(opciones.raizEvidencia, foto.storagePath, foto.mimeType, {
+    maxBytes: opciones.maxBytesFoto,
+  });
+
+  let ok = false;
+  if (lectura.ok) {
+    ok = dibujarImagen(doc, lectura.contenido, caja);
+    if (!ok) {
+      opciones.onEvidenciaFallida?.(foto.id, 'ilegible');
+      dibujarHuecoEvidencia(doc, caja, MOTIVO_TEXTO.ilegible);
+    }
+  } else {
+    opciones.onEvidenciaFallida?.(foto.id, lectura.motivo);
+    dibujarHuecoEvidencia(doc, caja, MOTIVO_TEXTO[lectura.motivo]);
+  }
+
+  doc.font('Helvetica').fontSize(7).fillColor(PALETA.gris)
+    .text(rotuloFoto(foto, modelo), x, y + ALTO_FOTO_LINEA + 2, {
+      width: ANCHO_FOTO_LINEA,
+      lineBreak: false,
+    });
+  if (foto.tarea !== null) {
+    doc.fontSize(7).fillColor(PALETA.tinta)
+      .text(`Tarea: ${recortar(foto.tarea, 40)}`, x, y + ALTO_FOTO_LINEA + 11, {
+        width: ANCHO_FOTO_LINEA,
+        lineBreak: false,
+      });
+  }
+  return ok;
+}
+
+/**
+ * Lo que no tiene hora, despues de la cronologia.
+ *
+ * La tarea NO hecha es el dato que mas le importa al supervisor y es justamente
+ * la que no puede estar en una linea de tiempo, porque nunca ocurrio.
+ * Inventarle la hora pedida como si fuera la hora en que paso seria escribir en
+ * el informe algo que no sucedio.
+ */
+async function dibujarCierreBitacora(
+  doc: PDFKit.PDFDocument,
+  bitacora: Bitacora,
+  modelo: InformeRonda,
+  opciones: OpcionesRender,
+  embebe: boolean,
+): Promise<ResumenRender> {
+  if (bitacora.tareasSinResponder.length > 0) {
+    dibujarTituloSeccion(
+      doc,
+      `Tareas sin responder (${bitacora.tareasSinResponder.length})`,
+      PALETA.alerta,
+    );
+    for (const tarea of bitacora.tareasSinResponder) {
+      asegurarEspacioConPie(doc, 14);
+      doc.font('Helvetica').fontSize(9).fillColor(PALETA.alerta)
+        .text(
+          `•  ${tarea.horaPedida ?? '—'} · ${tarea.etiqueta} · ${textoPunto(tarea.numeroPunto, tarea.punto)}`,
+          doc.page.margins.left + 6,
+          doc.y,
+          { width: anchoUtil(doc) - 12 },
+        );
+    }
+    doc.y += 6;
+  }
+
+  let incluidas = 0;
+  let omitidas = 0;
+
+  if (bitacora.evidenciaSinPunto.length > 0) {
+    dibujarTituloSeccion(
+      doc,
+      `Evidencia sin punto en la ruta (${bitacora.evidenciaSinPunto.length})`,
+    );
+    for (const foto of bitacora.evidenciaSinPunto) {
+      asegurarEspacioConPie(doc, 16);
+      doc.font('Helvetica').fontSize(8.5).fillColor(PALETA.tinta)
+        .text(
+          `•  ${rotuloFoto(foto, modelo)} · ${foto.checkpointName}`,
+          doc.page.margins.left + 6,
+          doc.y,
+          { width: anchoUtil(doc) - 12 },
+        );
+      if (!embebe) continue;
+
+      // La imagen se dibuja tambien aca: si solo se listara el rotulo, la
+      // evidencia de un punto que no estaba en la ruta desapareceria del PDF
+      // justo cuando el anexo ya no se dibuja.
+      asegurarEspacioConPie(doc, ALTO_BLOQUE_FOTO);
+      const y = doc.y;
+      const ok = await pintarEvidencia(doc, modelo, foto, opciones, doc.page.margins.left + 12, y);
+      if (ok) incluidas += 1;
+      else omitidas += 1;
+      doc.y = y + ALTO_BLOQUE_FOTO;
+      await cederHastaDrenar(doc);
+    }
+    doc.y += 6;
+  }
+
+  return { fotosIncluidas: incluidas, fotosOmitidas: omitidas, paginasAnexo: 0 };
+}
+
+// ------------------------------------------------------- tablas sin bitacora
+
+/**
+ * Tareas del turno (#265), el camino sin bitacora.
  *
  * Una ronda sin checklist NO dibuja nada: ni el titulo, ni una tabla vacia, ni
- * un "sin tareas". El informe de esas rondas queda byte a byte como antes, que
- * es el criterio (c) del carril.
- *
- * Lo que el producto pidio que "se mencione" —la falla y el atraso— va escrito
- * y no solo pintado: el informe se imprime en blanco y negro y ahi el rojo y el
- * verde son el mismo gris.
+ * un "sin tareas". El informe de esas rondas queda como antes de #265.
  */
 function dibujarTareas(doc: PDFKit.PDFDocument, modelo: InformeRonda): void {
   if (modelo.tareas.length === 0) return;
@@ -407,6 +1052,11 @@ function dibujarIncidentes(doc: PDFKit.PDFDocument, modelo: InformeRonda): void 
 /**
  * Anexo fotografico, paginado y leido de a una foto.
  *
+ * No se dibuja cuando la bitacora ya muestra las fotos donde ocurrieron: las
+ * mismas 18 imagenes dos veces en el mismo PDF duplican el peso del archivo sin
+ * agregar nada. Con `reportInlinePhotos` apagado el anexo vuelve a ser el unico
+ * lugar donde se ven, que es justo para lo que existe ese interruptor.
+ *
  * El bucle es secuencial a proposito. Leer las 40 en paralelo con Promise.all
  * seria mas rapido y traeria las 40 al heap a la vez, que es exactamente lo que
  * este diseño evita. El cuello de botella real es el disco, no el orden.
@@ -415,30 +1065,34 @@ async function dibujarAnexo(
   doc: PDFKit.PDFDocument,
   modelo: InformeRonda,
   opciones: OpcionesRender,
+  rescatadas: readonly FotoAnexo[] = [],
 ): Promise<ResumenRender> {
-  if (!modelo.incluyeAnexo || modelo.anexo.length === 0) {
-    return { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
-  }
+  const yaEstanEnLinea = opciones.bitacora !== false && opciones.fotosEnLinea !== false;
+  // Con la bitacora encendida el anexo NO repite las fotos que ya salieron en
+  // linea, pero si dibuja las que la bitacora no alcanzo a mostrar: esa es la
+  // unica hoja del documento donde pueden aparecer.
+  const fotos = yaEstanEnLinea ? rescatadas : modelo.anexo;
+  if (!modelo.incluyeAnexo || fotos.length === 0) return VACIO;
 
   const porPagina = COLUMNAS_ANEXO * FILAS_ANEXO;
-  const paginas = Math.ceil(modelo.anexo.length / porPagina);
+  const paginas = Math.ceil(fotos.length / porPagina);
+  const titulo = yaEstanEnLinea
+    ? 'Anexo fotográfico · evidencia de las anotaciones recortadas'
+    : 'Anexo fotográfico';
   let incluidas = 0;
   let omitidas = 0;
   let geometria = geometriaPagina(doc);
 
-  for (const [indice, foto] of modelo.anexo.entries()) {
+  for (const [indice, foto] of fotos.entries()) {
     const posicion = indice % porPagina;
     if (posicion === 0) {
       doc.addPage();
       dibujarFranjaMarca(
         doc,
         modelo.marca,
-        `Anexo fotográfico · hoja ${Math.floor(indice / porPagina) + 1} de ${paginas}`,
+        `${titulo} · hoja ${Math.floor(indice / porPagina) + 1} de ${paginas}`,
       );
-      // La geometria se fija ANTES del pie: dibujarPie escribe texto con
-      // coordenadas y eso deja el cursor de pdfkit al fondo de la hoja.
       geometria = geometriaPagina(doc);
-      dibujarPie(doc, modelo.timezone, modelo.marca.mailFooter);
     }
 
     const celda = celdaAnexo(geometria, posicion);
@@ -449,19 +1103,20 @@ async function dibujarAnexo(
       { maxBytes: opciones.maxBytesFoto },
     );
 
+    const caja = { x: celda.x, y: celda.y, ancho: celda.ancho, alto: celda.alto - ALTO_LEYENDA };
     if (lectura.ok) {
-      const dibujada = dibujarFoto(doc, lectura.contenido, celda);
+      const dibujada = dibujarImagen(doc, lectura.contenido, caja);
       if (dibujada) {
         incluidas += 1;
       } else {
         omitidas += 1;
         opciones.onEvidenciaFallida?.(foto.id, 'ilegible');
-        dibujarHuecoEvidencia(doc, celda, MOTIVO_TEXTO.ilegible);
+        dibujarHuecoEvidencia(doc, caja, MOTIVO_TEXTO.ilegible);
       }
     } else {
       omitidas += 1;
       opciones.onEvidenciaFallida?.(foto.id, lectura.motivo);
-      dibujarHuecoEvidencia(doc, celda, MOTIVO_TEXTO[lectura.motivo]);
+      dibujarHuecoEvidencia(doc, caja, MOTIVO_TEXTO[lectura.motivo]);
     }
 
     dibujarLeyendaFoto(doc, foto, celda, modelo.timezone, lectura.ok);
@@ -480,9 +1135,6 @@ async function cederHastaDrenar(doc: PDFKit.PDFDocument): Promise<void> {
   }
 }
 
-/** Alto reservado al pie de la hoja del anexo. */
-const ALTO_PIE = 26;
-
 function geometriaPagina(doc: PDFKit.PDFDocument): GeometriaAnexo {
   return {
     x0: doc.page.margins.left,
@@ -495,15 +1147,22 @@ function geometriaPagina(doc: PDFKit.PDFDocument): GeometriaAnexo {
   };
 }
 
+interface Caja {
+  readonly x: number;
+  readonly y: number;
+  readonly ancho: number;
+  readonly alto: number;
+}
+
 /** Devuelve false si pdfkit no pudo embeber la imagen; nunca lanza. */
-function dibujarFoto(doc: PDFKit.PDFDocument, contenido: Buffer, celda: CeldaAnexo): boolean {
-  const altoImagen = celda.alto - ALTO_LEYENDA;
+function dibujarImagen(doc: PDFKit.PDFDocument, contenido: Buffer, caja: Caja): boolean {
   try {
     doc.save();
-    doc.rect(celda.x, celda.y, celda.ancho, altoImagen).lineWidth(0.5).stroke(PALETA.linea);
+    doc.lineWidth(0.5);
+    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).stroke(PALETA.linea);
     // Se pasa el Buffer, no la ruta: ver la nota de memoria al inicio.
-    doc.image(contenido, celda.x + 2, celda.y + 2, {
-      fit: [celda.ancho - 4, altoImagen - 4],
+    doc.image(contenido, caja.x + 2, caja.y + 2, {
+      fit: [caja.ancho - 4, caja.alto - 4],
       align: 'center',
       valign: 'center',
     });
@@ -517,24 +1176,20 @@ function dibujarFoto(doc: PDFKit.PDFDocument, contenido: Buffer, celda: CeldaAne
   }
 }
 
-function dibujarHuecoEvidencia(
-  doc: PDFKit.PDFDocument,
-  celda: CeldaAnexo,
-  motivo: string,
-): void {
-  const altoImagen = celda.alto - ALTO_LEYENDA;
+function dibujarHuecoEvidencia(doc: PDFKit.PDFDocument, caja: Caja, motivo: string): void {
   doc.save();
-  doc.rect(celda.x, celda.y, celda.ancho, altoImagen).fill(PALETA.zebra);
-  doc.rect(celda.x, celda.y, celda.ancho, altoImagen).lineWidth(0.8).stroke(PALETA.alerta);
+  doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fill(PALETA.zebra);
+  doc.lineWidth(0.8);
+  doc.rect(caja.x, caja.y, caja.ancho, caja.alto).stroke(PALETA.alerta);
   doc.font('Helvetica-Bold').fontSize(9).fillColor(PALETA.alerta)
-    .text('EVIDENCIA NO DISPONIBLE', celda.x + 6, celda.y + altoImagen / 2 - 12, {
-      width: celda.ancho - 12,
+    .text('EVIDENCIA NO DISPONIBLE', caja.x + 6, caja.y + caja.alto / 2 - 12, {
+      width: caja.ancho - 12,
       align: 'center',
       lineBreak: false,
     });
   doc.font('Helvetica').fontSize(8).fillColor(PALETA.gris)
-    .text(motivo, celda.x + 6, celda.y + altoImagen / 2 + 2, {
-      width: celda.ancho - 12,
+    .text(motivo, caja.x + 6, caja.y + caja.alto / 2 + 2, {
+      width: caja.ancho - 12,
       align: 'center',
       lineBreak: false,
     });
@@ -549,13 +1204,16 @@ function dibujarLeyendaFoto(
   disponible: boolean,
 ): void {
   const y = celda.y + celda.alto - ALTO_LEYENDA + 4;
-  const titulo =
-    foto.numeroPunto === null
-      ? foto.checkpointName
-      : `${foto.numeroPunto}. ${foto.checkpointName}`;
+  const punto =
+    foto.numeroPunto === null ? foto.checkpointName : `${foto.numeroPunto}. ${foto.checkpointName}`;
 
+  // El mismo numero que en la bitacora: "la foto 12" significa lo mismo en las
+  // dos secciones.
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor(PALETA.tinta)
-    .text(recortar(titulo, 40), celda.x, y, { width: celda.ancho, lineBreak: false });
+    .text(recortar(`Foto ${foto.numero} · ${punto}`, 40), celda.x, y, {
+      width: celda.ancho,
+      lineBreak: false,
+    });
   doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris)
     .text(
       `${formatearHora(foto.capturadaEn, timezone)} · huella ${foto.huella}` +
