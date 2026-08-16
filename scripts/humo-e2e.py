@@ -1420,8 +1420,11 @@ else:
 
 if punto_nuevo:
     try:
+        # SIN `tech`: la ruta del supervisor no lo acepta a proposito (#309). Su
+        # DTO solo lleva el uid y el servidor fija 'nfc', porque un QR con UID
+        # elegido por el llamador se imprime y se pega en la garita.
         s, etiqueta = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo),
-                                       {'uid': uid_nfc, 'tech': 'nfc'})
+                                       {'uid': uid_nfc})
         tag_propia = cuerpo_dict(etiqueta).get('id') if s in (200, 201) else None
         check('el supervisor vincula una etiqueta NFC al punto que creo',
               s in (200, 201) and tag_propia,
@@ -1557,8 +1560,10 @@ else:
         check('  ni lo da de baja', s == 403, 'HTTP %s' % s)
         s, _ = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno))
         check('  ni lista las etiquetas de ese punto', s == 403, 'HTTP %s' % s)
+        # Tambien sin `tech`: con el campo, el 400 de validacion llegaba ANTES que
+        # el 403 y esta comprobacion dejaba de medir la autorizacion, que es lo suyo.
         s, _ = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno),
-                                {'uid': '04' + uuid.uuid4().hex[:6].upper(), 'tech': 'nfc'})
+                                {'uid': '04' + uuid.uuid4().hex[:6].upper()})
         check('  ni le vincula una etiqueta NFC', s == 403, 'HTTP %s' % s)
 
         if tag_ajena:
