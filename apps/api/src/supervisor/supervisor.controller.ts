@@ -14,11 +14,17 @@ import {
   WeekScheduleQueryDto,
 } from './dto/create-shift.dto';
 import { UpdateActiveDto } from '../admin/dto/update-active.dto';
+import { AssignGuardNfcCardDto } from './dto/guard-nfc.dto';
 import { SupervisorService } from './supervisor.service';
 
 class SiteParam {
   @IsUUID()
   siteId!: string;
+}
+
+class GuardParam {
+  @IsUUID()
+  guardId!: string;
 }
 
 class RouteParam {
@@ -136,6 +142,16 @@ export class SupervisorController {
   @Permissions('shifts:manage')
   listGuards(@Param() params: SiteParam, @Req() request: Autenticado) {
     return this.supervisor.listGuards(params.siteId, request.user.sub);
+  }
+
+  @Post('guards/:guardId/nfc-card')
+  @Permissions('shifts:manage')
+  assignGuardNfcCard(
+    @Param() params: GuardParam,
+    @Body() input: AssignGuardNfcCardDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.supervisor.assignGuardNfcCard(params.guardId, request.user.sub, input);
   }
 
   @Get('sites/:siteId/schedule')

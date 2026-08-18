@@ -6,7 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { QueryFailedError } from 'typeorm';
 
+import { normalizarUidNfc } from '../admin/uid-nfc';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
 import type { AssignShiftDto, CreateShiftDto } from './dto/create-shift.dto';
@@ -546,8 +548,9 @@ export class SupervisorService {
       id: string;
       given_name: string;
       family_name: string;
+      nfc_card_uid: string | null;
     }>>(
-      `SELECT u.id, u.given_name, u.family_name
+      `SELECT u.id, u.given_name, u.family_name, u.nfc_card_uid
        FROM memberships m
        JOIN users u ON u.id = m.user_id
        WHERE m.role_key = 'GUARDIA' AND u.is_active
@@ -556,7 +559,49 @@ export class SupervisorService {
     return rows.map((guard) => ({
       id: guard.id,
       name: `${guard.given_name} ${guard.family_name}`.trim(),
+      nfcCardUid: guard.nfc_card_uid ?? null,
     }));
+  }
+
+  async assignGuardNfcCard(
+    guardId: string,
+    supervisorId: string,
+    input: { nfcCardUid?: string | null },
+  ) {
+    const guards = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT u.id
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.user_id = $1 AND m.role_key = 'GUARDIA' AND u.is_active`,
+      [guardId],
+    );
+    if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
+
+    const supervisorSites = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+      `SELECT site_id FROM supervisor_sites WHERE supervisor_id = $1 LIMIT 1`,
+      [supervisorId],
+    );
+    if (!supervisorSites.length) {
+      throw new ForbiddenException('No tienes recintos asignados para gestionar guardias');
+    }
+
+    const normalizedUid = input.nfcCardUid ? normalizarUidNfc(input.nfcCardUid) : null;
+    try {
+      await this.tenantContext.manager.query(
+        `UPDATE users
+         SET nfc_card_uid = $2,
+             nfc_card_assigned_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE NULL END,
+             updated_at = now()
+         WHERE id = $1`,
+        [guardId, normalizedUid],
+      );
+      return { id: guardId, nfcCardUid: normalizedUid };
+    } catch (error) {
+      if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+        throw new ConflictException('La tarjeta NFC ya esta asignada a otro usuario');
+      }
+      throw error;
+    }
   }
 
   async weeklySchedule(siteId: string, supervisorId: string, from: string) {

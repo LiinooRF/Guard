@@ -397,4 +397,42 @@ describe('SupervisorService.createPatrol — orden aleatorio (#65)', () => {
     await servicio(query).createPatrol('route-id', SUPERVISOR, DTO_RONDA);
     expect(snapshotInsertado(query)).toEqual(ORIGINAL);
   });
+
+  it('listGuards devuelve los guardias con su nfcCardUid', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ present: true }]) // ensureAssignedSite
+      .mockResolvedValueOnce([
+        { id: 'guard-1', given_name: 'Juan', family_name: 'Pérez', nfc_card_uid: '04A1B2C3D4' },
+        { id: 'guard-2', given_name: 'Ana', family_name: 'Gómez', nfc_card_uid: null },
+      ]);
+    const guards = await servicio(query).listGuards('site-id', SUPERVISOR);
+    expect(guards).toEqual([
+      { id: 'guard-1', name: 'Juan Pérez', nfcCardUid: '04A1B2C3D4' },
+      { id: 'guard-2', name: 'Ana Gómez', nfcCardUid: null },
+    ]);
+  });
+
+  it('assignGuardNfcCard normaliza y actualiza la tarjeta NFC del guardia', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }]) // guardia activo existe
+      .mockResolvedValueOnce([{ site_id: 'site-1' }]) // supervisor tiene recintos
+      .mockResolvedValueOnce([]); // UPDATE users
+    const result = await servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, {
+      nfcCardUid: '04:a1:b2:c3:d4',
+    });
+    expect(result).toEqual({ id: 'guard-1', nfcCardUid: '04A1B2C3D4' });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users'),
+      ['guard-1', '04A1B2C3D4'],
+    );
+  });
+
+  it('assignGuardNfcCard rechaza si el supervisor no tiene recintos asignados', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }]) // guardia activo existe
+      .mockResolvedValueOnce([]); // supervisor sin recintos
+    await expect(
+      servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, { nfcCardUid: '04A1B2C3D4' }),
+    ).rejects.toThrow('No tienes recintos asignados para gestionar guardias');
+  });
 });

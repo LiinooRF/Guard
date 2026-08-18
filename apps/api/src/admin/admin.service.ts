@@ -33,6 +33,7 @@ interface UserRow {
   username: string | null;
   given_name: string;
   family_name: string;
+  nfc_card_uid?: string | null;
   role_key: 'ADMIN' | 'SUPERVISOR' | 'GUARDIA';
   is_active: boolean;
   site_ids: string[];
@@ -151,6 +152,7 @@ export class AdminService {
         users.username,
         users.given_name,
         users.family_name,
+        users.nfc_card_uid,
         memberships.role_key,
         users.is_active,
         COALESCE(
@@ -172,6 +174,7 @@ export class AdminService {
       username: user.username,
       givenName: user.given_name,
       familyName: user.family_name,
+      nfcCardUid: user.nfc_card_uid ?? null,
       role: user.role_key,
       isActive: user.is_active,
       siteIds: user.site_ids,
@@ -278,6 +281,20 @@ export class AdminService {
       }
       throw error;
     }
+    if (input.nfcCardUid) {
+      const normalizedUid = normalizarUidNfc(input.nfcCardUid);
+      try {
+        await this.tenantContext.manager.query(
+          `UPDATE users SET nfc_card_uid = $2, nfc_card_assigned_at = now() WHERE id = $1`,
+          [userId, normalizedUid],
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+          throw new ConflictException('La tarjeta NFC ya está asignada a otro usuario');
+        }
+        throw error;
+      }
+    }
     if (input.email) {
       const invitation = createAuthActionToken(24 * 60 * 60 * 1000);
       await this.tenantContext.manager.query(
@@ -369,6 +386,21 @@ export class AdminService {
         `UPDATE memberships SET role_key = $2 WHERE user_id = $1`,
         [userId, input.role],
       );
+    }
+
+    if (input.nfcCardUid !== undefined) {
+      const normalizedUid = input.nfcCardUid ? normalizarUidNfc(input.nfcCardUid) : null;
+      try {
+        await this.tenantContext.manager.query(
+          `UPDATE users SET nfc_card_uid = $2, nfc_card_assigned_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE NULL END WHERE id = $1`,
+          [userId, normalizedUid],
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+          throw new ConflictException('La tarjeta NFC ya está asignada a otro usuario');
+        }
+        throw error;
+      }
     }
 
     const updated = await this.tenantContext.manager.query<Array<{

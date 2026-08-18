@@ -24,6 +24,7 @@ import { HandoffTokenParams } from './dto/handoff-token.dto';
 import { Public } from './decorators/public.decorator';
 import { Permissions } from './decorators/permissions.decorator';
 import { LoginDto } from './dto/login.dto';
+import { NfcLoginDto } from './dto/nfc-login.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { clearSessionCookies, setSessionCookies } from './session-cookies';
 
@@ -50,6 +51,29 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.auth.login(
+      input,
+      request.ip,
+      request.get('user-agent') ?? 'Dispositivo desconocido',
+    );
+    if ('requiresTenantSelection' in result) return result;
+
+    setSessionCookies(response, result);
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
+  }
+
+  @Post('nfc-login')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  async nfcLogin(
+    @Body() input: NfcLoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.nfcLogin(
       input,
       request.ip,
       request.get('user-agent') ?? 'Dispositivo desconocido',

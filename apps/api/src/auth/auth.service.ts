@@ -15,7 +15,9 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 
+import { normalizarUidNfc } from '../admin/uid-nfc';
 import type { LoginDto } from './dto/login.dto';
+import type { NfcLoginDto } from './dto/nfc-login.dto';
 import {
   createAuthActionToken,
   hashAuthActionToken,
@@ -191,6 +193,70 @@ export class AuthService {
     await this.clearFailedLogin(identityHash);
 
     const activeRows = rows.filter(
+      (row) => row.is_platform_role || row.tenant_status === 'active',
+    );
+    if (activeRows.length === 0) {
+      throw new ForbiddenException({
+        code: 'TENANT_SUSPENDED',
+        message: 'Tu organización está suspendida. Contacta al administrador de la plataforma.',
+      });
+    }
+
+    const selected = this.selectMembership(activeRows, input.tenantId);
+    if (!selected) {
+      return {
+        requiresTenantSelection: true,
+        tenants: activeRows
+          .filter(
+            (row): row is AuthIdentityRow & { tenant_id: string; tenant_name: string } =>
+              !row.is_platform_role && Boolean(row.tenant_id && row.tenant_name),
+          )
+          .map((row) => ({
+            tenantId: row.tenant_id,
+            tenantName: row.tenant_name,
+            role: row.role_key,
+          })),
+      };
+    }
+
+    return this.createSession(selected, device);
+  }
+
+  async nfcLogin(
+    input: NfcLoginDto,
+    sourceIp = 'unknown',
+    device = 'Dispositivo desconocido',
+  ): Promise<LoginResult> {
+    const cardUid = normalizarUidNfc(input.cardUid);
+    const rows = await this.lookupIdentity(cardUid);
+    // Solo usuarios con rol GUARDIA pueden autenticarse con tarjeta NFC
+    const guardRows = rows.filter((row) => row.role_key === 'GUARDIA');
+
+    const policy = guardRows[0]
+      ? {
+          maxAttempts: guardRows[0].max_failed_attempts,
+          windowSeconds: guardRows[0].window_seconds,
+          baseLockSeconds: guardRows[0].base_lock_seconds,
+          maxLockSeconds: guardRows[0].max_lock_seconds,
+        }
+      : DEFAULT_LOGIN_POLICY;
+    const identityHash = createHash('sha256').update(cardUid).digest('hex');
+    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
+    await this.assertLoginNotLocked(identityHash, ipHash);
+
+    if (guardRows.length === 0) {
+      const locked = await this.recordFailedLogin(identityHash, ipHash, policy);
+      if (locked) {
+        throw new HttpException(
+          'Demasiados intentos. Espera antes de volver a intentarlo.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+    await this.clearFailedLogin(identityHash);
+
+    const activeRows = guardRows.filter(
       (row) => row.is_platform_role || row.tenant_status === 'active',
     );
     if (activeRows.length === 0) {
