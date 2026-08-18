@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
-import { Camera } from 'expo-camera';
 
 import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
@@ -165,25 +164,22 @@ export default function App() {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
 
+
   /*
-   * El permiso de camara se pide al arrancar, no cuando se necesita.
+   * El permiso de camara YA NO se pide al arrancar.
    *
-   * La foto de evidencia la toma el PORTAL con `<input type="file"
-   * capture="environment">`, y en Android eso lo resuelve el WebView abriendo la
-   * camara del sistema. Ese camino **no pide el permiso por su cuenta**: si la
-   * app no lo tiene concedido, el boton "Tomar foto" no hace absolutamente nada
-   * — sin dialogo, sin error, sin nada.
+   * Se pedia aca porque la foto la toma el portal con `<input type="file"
+   * capture>` y ese camino no pide el permiso por su cuenta: sin el concedido,
+   * el boton "Tomar foto" no hace nada. Pero pedirlo en una pantalla en blanco,
+   * antes del login, es preguntarle a alguien por fotos y videos cuando todavia
+   * no hay ningun motivo en pantalla —y en Android son dos negativas y se acabo
+   * el dialogo para siempre—.
    *
-   * Y la foto del acceso critico no es un extra: es la evidencia por la que el
-   * cliente paga. Un guardia que toca el boton y no pasa nada no puede ni
-   * reportar el problema.
-   *
-   * Se pide al inicio y no en el momento porque el momento es *dentro* del
-   * WebView, donde ya no hay forma de interceptarlo.
+   * Ahora lo pide el portal por el puente, en `pedirFotoDelPunto`: el instante
+   * en que el guardia va a fotografiar el acceso critico, con el punto ya
+   * escaneado y el motivo a la vista. Sigue llegando ANTES de que el boton
+   * exista, que es la condicion que hacia falta.
    */
-  useEffect(() => {
-    void Camera.requestCameraPermissionsAsync().catch(() => undefined);
-  }, []);
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
       puente.notificarConexion(normalizarConexion(estado));

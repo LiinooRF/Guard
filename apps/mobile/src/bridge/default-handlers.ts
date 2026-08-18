@@ -1,7 +1,7 @@
 import { Camera, CameraView } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as Network from 'expo-network';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 import { detenerTraza, iniciarTraza } from '../geo/traza';
 import { ErrorEscaneo, type ManejadoresNativos } from './native';
@@ -35,6 +35,53 @@ export function normalizarConexion(estado: Network.NetworkState): EstadoConexion
   return { enLinea: true, tipo: 'desconocida' };
 }
 
+/** Desde Android 13 (API 33) `POST_NOTIFICATIONS` se pide con dialogo. */
+const ANDROID_NOTIFICACIONES_EXPLICITAS = 33;
+
+/**
+ * Permiso de notificaciones.
+ *
+ * Antes esto devolvia 'no-aplica' y el dialogo NO aparecia nunca: el guardia
+ * quedaba sin avisos y nadie se enteraba, porque Android tampoco avisa que los
+ * esta ocultando. El sintoma en terreno es el peor posible —el supervisor jura
+ * que la app no sirve porque el panico nunca sono—.
+ *
+ * Se pide con `PermissionsAndroid` a proposito: PEDIR el permiso no necesita
+ * proveedor de push ni FCM. La entrega de notificaciones es otra cosa (la
+ * epica #174, que esta en M4 y no se trabaja en esta etapa); esto es solo la
+ * puerta, y sin ella lo que se construya despues igual no se ve.
+ *
+ * DOS RECHAZOS Y SE ACABO: Android deja de mostrar el dialogo tras dos
+ * negativas y la unica salida pasa a ser Ajustes. Por eso el momento lo elige
+ * el portal, con contexto, y no el arranque de la app.
+ */
+async function permisoDeNotificaciones(pedir: boolean): Promise<ResultadoPermisoPayload> {
+  if (Platform.OS !== 'android') return noAplica('notificaciones');
+  if (Number(Platform.Version) < ANDROID_NOTIFICACIONES_EXPLICITAS) {
+    // Antes de 33 quedaba habilitado al instalar: no hay dialogo que abrir.
+    return { permiso: 'notificaciones', estado: 'concedido', puedeVolverAPedir: false };
+  }
+  const clave = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
+  if (!pedir) {
+    const tiene = await PermissionsAndroid.check(clave);
+    return {
+      permiso: 'notificaciones',
+      estado: tiene ? 'concedido' : 'denegado',
+      puedeVolverAPedir: !tiene,
+    };
+  }
+  const respuesta = await PermissionsAndroid.request(clave);
+  if (respuesta === PermissionsAndroid.RESULTS.GRANTED) {
+    return { permiso: 'notificaciones', estado: 'concedido', puedeVolverAPedir: false };
+  }
+  const definitivo = respuesta === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+  return {
+    permiso: 'notificaciones',
+    estado: definitivo ? 'denegado-definitivo' : 'denegado',
+    puedeVolverAPedir: !definitivo,
+  };
+}
+
 async function permiso(permisoSolicitado: Permiso, pedir: boolean) {
   switch (permisoSolicitado) {
     case 'camara':
@@ -56,10 +103,11 @@ async function permiso(permisoSolicitado: Permiso, pedir: boolean) {
           ? Location.requestBackgroundPermissionsAsync()
           : Location.getBackgroundPermissionsAsync()),
       );
-    // NFC no tiene permiso runtime en Android. Notificaciones se conecta al
-    // proveedor que el equipo elija; mentir con "concedido" sería peor.
-    case 'nfc':
     case 'notificaciones':
+      return await permisoDeNotificaciones(pedir);
+    // NFC no tiene permiso runtime en Android: el sistema lo concede al
+    // instalar. 'no-aplica' aca es la verdad, no una excusa.
+    case 'nfc':
       return noAplica(permisoSolicitado);
   }
 }
