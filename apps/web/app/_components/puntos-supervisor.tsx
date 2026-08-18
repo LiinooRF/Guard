@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 
 import { CoordinateMap } from './coordinate-map';
+import { marcasDePuntos } from './puntos-marcas';
 import { avisoSinCoordenadas } from './site-gps-aviso';
 
 interface RecintoAsignado {
@@ -298,6 +299,7 @@ export function PuntosSupervisor({
               tileUrl={mapTileUrl}
               attribution={mapAttribution}
               onPick={(lat, lng) => setCoordenadas([redondear(lat), redondear(lng)])}
+              markers={marcasDePuntos(puntos)}
             />
           </div>
 
@@ -383,6 +385,7 @@ function enviar(url: string, method: string, body?: object) {
 function redondear(valor: number) {
   return Math.round(valor * 1_000_000) / 1_000_000;
 }
+
 
 async function textoDeError(respuesta: Response) {
   if (respuesta.status === 403) {
