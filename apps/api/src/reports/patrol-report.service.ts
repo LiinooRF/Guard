@@ -1,5 +1,8 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createReadStream } from 'node:fs';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { ComplianceResult } from '@sentrycore/shared';
 
@@ -211,6 +214,7 @@ export class PatrolReportService {
       `
         SELECT
           p.id,
+          p.tenant_id,
           p.status,
           p.scheduled_start_at,
           p.scheduled_end_at,
@@ -313,10 +317,54 @@ export class PatrolReportService {
     return { ...modelo, mapa };
   }
 
+  /**
+   * Ruta en el volumen de evidencia donde se guarda el PDF inmutable de la ronda
+   * cerrada (#266).
+   */
+  private rutaCache(tenantId: string, patrolId: string, incluirAnexo: boolean): string {
+    return join(
+      this.raizEvidencia,
+      tenantId,
+      patrolId,
+      incluirAnexo ? 'informe-ronda-anexo.pdf' : 'informe-ronda.pdf',
+    );
+  }
+
+  /**
+   * Una ronda cerrada es inmutable: su informe no vuelve a cambiar y se sirve
+   * desde la copia en disco (#266).
+   */
+  private esRondaCerrada(estado: string): boolean {
+    return ['completada', 'incompleta', 'vencida'].includes(estado);
+  }
+
   /** Dibuja el informe ya resuelto sobre el destino que decida el llamador. */
   async render(modelo: InformeRonda, destino: NodeJS.WritableStream): Promise<ResumenRender> {
+    const tenantId = modelo.tenantId;
+    const cerrada = this.esRondaCerrada(modelo.estado);
+    const rutaCache = tenantId ? this.rutaCache(tenantId, modelo.patrolId, modelo.incluyeAnexo) : null;
+
+    if (cerrada && rutaCache) {
+      try {
+        const stats = await stat(rutaCache);
+        if (stats.size > 0) {
+          const lector = createReadStream(rutaCache);
+          lector.pipe(destino);
+          await new Promise<void>((resolve, reject) => {
+            lector.on('end', resolve);
+            lector.on('error', reject);
+          });
+          return { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
+        }
+      } catch {
+        // No está en cache todavía: se dibuja y guarda en disco.
+      }
+    }
+
     const reglas = await this.rules.effective();
-    return renderizarInformeRonda(modelo, destino, {
+    const partes: Buffer[] = [];
+
+    const resumen = await renderizarInformeRonda(modelo, destino, {
       raizEvidencia: this.raizEvidencia,
       // El mismo techo que aplica al subir la foto (#13): si una imagen supera
       // el maximo del tenant, esta corrupta o alguien la escribio a mano en el
@@ -328,6 +376,7 @@ export class PatrolReportService {
       fotosEnLinea: reglas.reportInlinePhotos,
       etiquetaConfidencial: reglas.reportConfidentialLabel,
       maxEntradasBitacora: reglas.reportTimelineMaxEntries,
+      onChunk: cerrada && rutaCache ? (chunk: Buffer) => partes.push(chunk) : undefined,
       onEvidenciaFallida: (fotoId, motivo) => {
         // Log sin nombres ni ubicaciones de personas (regla 5 de CLAUDE.md).
         this.logger.warn(
@@ -340,6 +389,24 @@ export class PatrolReportService {
         );
       },
     });
+
+    if (cerrada && rutaCache && partes.length > 0) {
+      try {
+        const bufferCompleto = Buffer.concat(partes);
+        await mkdir(join(this.raizEvidencia, tenantId!, modelo.patrolId), { recursive: true });
+        await writeFile(rutaCache, bufferCompleto);
+      } catch (error) {
+        this.logger.warn(
+          JSON.stringify({
+            event: 'cache_informe_escritura_fallida',
+            patrolId: modelo.patrolId,
+            message: error instanceof Error ? error.message : 'error desconocido',
+          }),
+        );
+      }
+    }
+
+    return resumen;
   }
 
   /** Atajo de una sola llamada para servir el PDF por streaming. */
@@ -360,10 +427,33 @@ export class PatrolReportService {
    * de descarga del panel —que si lleva anexo— nunca pasa por aca.
    */
   async toBuffer(patrolId: string, opciones: OpcionesInforme = {}): Promise<InformeRondaPdf> {
+    const incluirAnexo = opciones.incluirAnexo ?? false;
     const modelo = await this.buildModel(patrolId, {
       ...opciones,
-      incluirAnexo: opciones.incluirAnexo ?? false,
+      incluirAnexo,
     });
+
+    const tenantId = modelo.tenantId;
+    const cerrada = this.esRondaCerrada(modelo.estado);
+    const rutaCache = tenantId ? this.rutaCache(tenantId, modelo.patrolId, incluirAnexo) : null;
+
+    if (cerrada && rutaCache) {
+      try {
+        const bufferEnDisco = await readFile(rutaCache);
+        if (bufferEnDisco.length > 0) {
+          return {
+            pdf: bufferEnDisco,
+            filename: modelo.filename,
+            patrolId: modelo.patrolId,
+            tenantName: modelo.marca.displayName,
+            compliance: modelo.compliance,
+            render: { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 },
+          };
+        }
+      } catch {
+        // Cache miss: generamos y guardamos.
+      }
+    }
 
     const canal = new PassThrough();
     const partes: Buffer[] = [];

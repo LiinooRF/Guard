@@ -1,5 +1,5 @@
 import { patrolRulesSchema } from '@sentrycore/shared';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -21,6 +21,7 @@ import type { MapaRecorridoService } from './mapa-recorrido.service';
 
 const RONDA = {
   id: 'patrol-id',
+  tenant_id: 'tenant-1',
   status: 'completada',
   scheduled_start_at: new Date('2026-07-30T22:00:00-04:00'),
   scheduled_end_at: new Date('2026-07-31T06:00:00-04:00'),
@@ -619,5 +620,57 @@ describe('PatrolReportService.toBuffer', () => {
       fotosOmitidas: 0,
       paginasAnexo: 0,
     });
+  });
+});
+
+describe('PatrolReportService — cache de informe de ronda cerrada (#266)', () => {
+  let dirEvidencia: string;
+
+  beforeEach(async () => {
+    dirEvidencia = await mkdtemp(join(tmpdir(), 'evidencia-cache-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(dirEvidencia, { recursive: true, force: true });
+  });
+
+  it('guarda el PDF generado de una ronda cerrada en el volumen de evidencia', async () => {
+    const { service } = armarServicio({}, { raiz: dirEvidencia });
+
+    await recolectar((destino) => service.streamTo('patrol-id', destino, { incluirAnexo: true }));
+
+    const rutaCache = join(dirEvidencia, 'tenant-1', 'patrol-id', 'informe-ronda-anexo.pdf');
+    const contenido = await readFile(rutaCache);
+    expect(esPdf(contenido)).toBe(true);
+  });
+
+  it('sirve el PDF desde cache en consultas subsiguientes sin re-dibujar', async () => {
+    const { service } = armarServicio({}, { raiz: dirEvidencia });
+
+    // Primera llamada genera y guarda en cache
+    const pdf1 = await recolectar((destino) =>
+      service.streamTo('patrol-id', destino, { incluirAnexo: true }),
+    );
+
+    // Segunda llamada devuelve el archivo cacheado
+    const pdf2 = await recolectar((destino) =>
+      service.streamTo('patrol-id', destino, { incluirAnexo: true }),
+    );
+
+    expect(Buffer.compare(pdf1, pdf2)).toBe(0);
+
+    // toBuffer también usa el archivo en cache
+    const buf = await service.toBuffer('patrol-id', { incluirAnexo: true });
+    expect(Buffer.compare(pdf1, buf.pdf)).toBe(0);
+  });
+
+  it('una ronda abierta (en curso) no se guarda en cache', async () => {
+    const rondaAbierta = { ...RONDA, status: 'en_curso' };
+    const { service } = armarServicio({ encabezado: [rondaAbierta] }, { raiz: dirEvidencia });
+
+    await recolectar((destino) => service.streamTo('patrol-id', destino, { incluirAnexo: true }));
+
+    const rutaCache = join(dirEvidencia, 'tenant-1', 'patrol-id', 'informe-ronda-anexo.pdf');
+    await expect(stat(rutaCache)).rejects.toThrow();
   });
 });
