@@ -2,12 +2,13 @@
 """
 Prueba end-to-end contra un despliegue REAL. No mockea nada.
 
-    python scripts/humo-e2e.py                       # contra staging
-    SENTRYCORE_BASE=https://otro.dominio python scripts/humo-e2e.py
+    SENTRYCORE_BASE=https://test-sentrycore.voxtilabs.cl \
+      SENTRYCORE_DEMO_PASSWORD='(desde el gestor de secretos)' \
+      python scripts/humo-e2e.py
 
-Variables: SENTRYCORE_BASE (por defecto staging), SENTRYCORE_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo) y SENTRYCORE_HUMO_ESTRICTO
-(ver "lo que no se pudo probar").
+SENTRYCORE_BASE y SENTRYCORE_DEMO_PASSWORD son OBLIGATORIAS y no tienen valor
+por defecto: la clave demo dejo de vivir en el repositorio (#295). Opcional:
+SENTRYCORE_HUMO_ESTRICTO (ver "lo que no se pudo probar").
 
 LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
 es una comprobacion que pasa, y este script llego a saltarse cuatro en silencio
@@ -69,9 +70,14 @@ import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('SENTRYCORE_BASE', 'https://test-sentrycore.voxtilabs.cl')
+BASE = os.environ.get('SENTRYCORE_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', '')
+if not BASE or not CLAVE:
+    raise SystemExit(
+        'Faltan SENTRYCORE_BASE y/o SENTRYCORE_DEMO_PASSWORD. La clave demo no vive\n'
+        'en el repositorio (#295): pasala por entorno o desde el gestor de secretos.'
+    )
 API = BASE + '/api'
-CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', 'DemoGuardia2026!')
 
 # El recinto que la seccion 14 necesita NO asignado al supervisor. Nombre fijo y
 # no unico por corrida a proposito: la API no ofrece borrar recintos, asi que uno
