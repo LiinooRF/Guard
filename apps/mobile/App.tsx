@@ -105,18 +105,20 @@ function esErrorHttpFatalPortal(
   }
 
   if (!url) {
-    return true;
+    return false;
   }
 
   try {
     const urlObj = new URL(url);
     if (urlObj.origin !== portalOrigin) return false;
     const path = urlObj.pathname;
+    const search = urlObj.search;
     if (
       path.startsWith('/api/') ||
       path.startsWith('/auth/') ||
       path.startsWith('/_next/') ||
       path.includes('favicon') ||
+      search.includes('_rsc=') ||
       /\.(svg|png|jpg|jpeg|gif|webp|ico|css|js|map|json)$/i.test(path)
     ) {
       return false;
@@ -293,19 +295,29 @@ export default function App() {
           setLoading(false);
         }}
         onError={({ nativeEvent }) => {
-          // Ignorar abortos/cancelaciones de peticiones intermedias
-          if (nativeEvent.code === -3 || nativeEvent.code === -999) {
+          // Ignorar abortos/cancelaciones de peticiones intermedias o errores tras carga inicial
+          const desc = (nativeEvent.description ?? '').toLowerCase();
+          if (
+            nativeEvent.code === -3 ||
+            nativeEvent.code === -999 ||
+            nativeEvent.code === -1 ||
+            desc.includes('err_aborted') ||
+            desc.includes('net::err_aborted') ||
+            desc.includes('cancel') ||
+            desc.includes('abort') ||
+            cargadoInicialmente.current
+          ) {
             return;
           }
-          if (!cargadoInicialmente.current) {
-            setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
-            mostrarFallo();
-          }
+          setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
+          mostrarFallo();
         }}
         onHttpError={({ nativeEvent }) => {
           if (esErrorHttpFatalPortal(nativeEvent.url, nativeEvent.statusCode, portal.origin)) {
-            setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
-            mostrarFallo();
+            if (!cargadoInicialmente.current) {
+              setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
+              mostrarFallo();
+            }
           }
         }}
         webviewDebuggingEnabled={DEPURABLE}
