@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EventsStreamService, type StreamEvent } from '../events-stream/events-stream.service';

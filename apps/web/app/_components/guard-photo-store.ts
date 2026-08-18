@@ -24,7 +24,7 @@
  * reabrir o al recuperar señal".
  */
 
-const NOMBRE_BD = 'voxia.guard.fotos';
+const NOMBRE_BD = 'sentrycore.guard.fotos';
 const ALMACEN = 'fotos';
 const VERSION_BD = 1;
 

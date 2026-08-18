@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import { GpsPolicyService } from './gps-policy.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

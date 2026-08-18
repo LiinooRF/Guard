@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import { ConsentService } from './consent.service';
 import type { AuditService } from '../audit/audit.service';

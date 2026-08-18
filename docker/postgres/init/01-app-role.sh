@@ -1,6 +1,6 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# Rol de aplicacion de VoxIA Control.
+# Rol de aplicacion de SentryCore.
 #
 # El producto es multi-tenant: muchas empresas comparten una sola base y el
 # aislamiento se aplica con Row Level Security. Para que RLS sirva de algo, la
@@ -15,10 +15,10 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-APP_USER="${DATABASE_APP_USER:-voxia_app}"
+APP_USER="${DATABASE_APP_USER:-sentrycore_app}"
 APP_PASSWORD="${DATABASE_APP_PASSWORD:-cambiar_en_local}"
 
-echo "[voxia] creando rol de aplicacion '${APP_USER}' (sin BYPASSRLS)"
+echo "[sentrycore] creando rol de aplicacion '${APP_USER}' (sin BYPASSRLS)"
 
 psql -v ON_ERROR_STOP=1 \
      --username "$POSTGRES_USER" \
@@ -49,8 +49,8 @@ BYPASS=$(psql -tAX --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   -c "SELECT rolbypassrls FROM pg_roles WHERE rolname = '${APP_USER}'")
 
 if [ "$BYPASS" != "f" ]; then
-  echo "[voxia] ERROR: el rol ${APP_USER} tiene BYPASSRLS. RLS no protegeria nada." >&2
+  echo "[sentrycore] ERROR: el rol ${APP_USER} tiene BYPASSRLS. RLS no protegeria nada." >&2
   exit 1
 fi
 
-echo "[voxia] rol '${APP_USER}' listo y sin BYPASSRLS"
+echo "[sentrycore] rol '${APP_USER}' listo y sin BYPASSRLS"

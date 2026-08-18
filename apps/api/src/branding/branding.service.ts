@@ -6,7 +6,7 @@ import {
   MIN_CONTRAST_AA,
   tenantBrandingSchema,
   type TenantBranding,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 
@@ -133,7 +133,7 @@ export class BrandingService {
     >(`SELECT display_name, legal_name FROM tenants WHERE id = app_tenant_id()`);
     // Cascada de mas comercial a mas formal: la marca configurada, el nombre
     // con que la plataforma muestra a la empresa, y recien despues el legal.
-    const nombreLegal = filas[0]?.display_name ?? filas[0]?.legal_name ?? 'VoxIA Control';
+    const nombreLegal = filas[0]?.display_name ?? filas[0]?.legal_name ?? 'SentryCore';
     return {
       displayName: marca.commercialName ?? nombreLegal,
       logoUri: marca.logoUri,

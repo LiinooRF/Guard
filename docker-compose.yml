@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# VoxIA Control — infraestructura de desarrollo local.
+# SentryCore — infraestructura de desarrollo local.
 #
 # Levanta SOLO los servicios de apoyo: PostgreSQL, Redis y un capturador de
 # correo. La API y la web se corren nativas con `npm run dev:api` y
@@ -15,18 +15,18 @@
 #   docker compose down -v     detener y BORRAR los datos
 # ---------------------------------------------------------------------------
 
-name: voxia
+name: sentrycore
 
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: voxia-postgres
+    container_name: sentrycore-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-voxia}
+      POSTGRES_USER: ${POSTGRES_USER:-sentrycore}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cambiar_en_local}
-      POSTGRES_DB: ${POSTGRES_DB:-voxia}
-      DATABASE_APP_USER: ${DATABASE_APP_USER:-voxia_app}
+      POSTGRES_DB: ${POSTGRES_DB:-sentrycore}
+      DATABASE_APP_USER: ${DATABASE_APP_USER:-sentrycore_app}
       DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD:-cambiar_en_local}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -34,7 +34,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voxia} -d ${POSTGRES_DB:-voxia}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentrycore} -d ${POSTGRES_DB:-sentrycore}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,7 +42,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: voxia-redis
+    container_name: sentrycore-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
     ports:
@@ -59,7 +59,7 @@ services:
   # Bandeja en http://localhost:8025
   mailpit:
     image: axllent/mailpit:latest
-    container_name: voxia-mailpit
+    container_name: sentrycore-mailpit
     restart: unless-stopped
     ports:
       - "1025:1025"

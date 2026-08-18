@@ -173,6 +173,6 @@ de entorno están en `INTEGRACION.md` y en `apps/api/src/push/fcm.provider.ts`.
 `deep-link.ts` es **byte por byte el mismo archivo** que
 `apps/api/src/push/deep-link.ts`. No importa nada, así que se copia tal cual —
 `apps/mobile` está fuera de los workspaces de npm y no puede importar
-`@voxia/shared`. El riesgo de que se separen sin que nadie lo note se cierra con
+`@sentrycore/shared`. El riesgo de que se separen sin que nadie lo note se cierra con
 el paso de CI propuesto en `INTEGRACION.md`, el mismo que ya se propuso para el
 protocolo del puente.

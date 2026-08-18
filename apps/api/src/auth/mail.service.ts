@@ -33,9 +33,9 @@ export class MailService {
         to: recipient,
         tenantId,
         template: {
-          subject: 'Activa tu acceso a VoxIA Control',
+          subject: 'Activa tu acceso a SentryCore',
           text:
-            `Tu organización te invitó a VoxIA Control.\n\n` +
+            `Tu organización te invitó a SentryCore.\n\n` +
             `Define tu contraseña desde este enlace, válido por 24 horas:\n${link}\n\n` +
             `Si no esperabas esta invitación, ignora el mensaje.`,
         },
@@ -63,7 +63,7 @@ export class MailService {
         to: recipient,
         tenantId,
         template: {
-          subject: 'Recupera tu acceso a VoxIA Control',
+          subject: 'Recupera tu acceso a SentryCore',
           text:
             `Recibimos una solicitud para cambiar tu contraseña.\n\n` +
             `Define una nueva desde este enlace, válido por 30 minutos:\n${link}\n\n` +

@@ -23,7 +23,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 BASE = 'https://test-sentrycore.voxtilabs.cl'
 API = BASE + '/api'
 CLAVE = 'DemoGuardia2026!'
-UA_APP = 'VoxIAAndroid/1.0 (puente 1.3)'
+UA_APP = 'SentryCoreAndroid/1.0 (puente 1.3)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 
 fallas = []
@@ -40,7 +40,7 @@ def pedir(metodo, url, carga=None, galletas='', agente=UA_PC):
     datos = json.dumps(carga).encode() if carga is not None else None
     peticion = urllib.request.Request(url, data=datos, method=metodo)
     peticion.add_header('Origin', BASE)
-    peticion.add_header('X-Voxia-Request', 'web')
+    peticion.add_header('X-SentryCore-Request', 'web')
     peticion.add_header('User-Agent', agente)
     if datos is not None:
         peticion.add_header('Content-Type', 'application/json')

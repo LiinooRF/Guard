@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { DEFAULT_FEATURE_FLAGS, featureFlagsSchema } from '@voxia/shared';
+import { DEFAULT_FEATURE_FLAGS, featureFlagsSchema } from '@sentrycore/shared';
 
 import {
   FEATURE_CATALOG,

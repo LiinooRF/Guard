@@ -34,8 +34,8 @@ import { borrarClave, escribirJson, leerJson } from './guard-storage';
  * probar, y esto es evidencia.
  */
 
-const CLAVE_PLANTILLA = 'voxia.guard.tareas.plantilla.v1';
-const CLAVE_ESTADO = 'voxia.guard.tareas.v1';
+const CLAVE_PLANTILLA = 'sentrycore.guard.tareas.plantilla.v1';
+const CLAVE_ESTADO = 'sentrycore.guard.tareas.v1';
 
 export type TipoRespuestaTarea = 'ok_falla' | 'texto' | 'numero';
 

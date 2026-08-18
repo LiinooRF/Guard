@@ -7,7 +7,7 @@ import {
   patrolRulesSchema,
   PATROL_RULE_CATALOG,
   PATROL_RULE_KEYS,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 /**
  * El renombre `gpsSharingRequired` -> `gpsSharingMandatory` toca TRES capas: el

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 import { comoEntero, filasAfectadas, filasDe } from '../consent/sql-result';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -376,7 +376,7 @@ export class CrashReportingService {
    */
   private releaseDeLaApp(appVersion: string): string {
     const version = depurarEtiqueta(appVersion, 32);
-    return version ? `voxia-app@${version}` : this.config.release;
+    return version ? `sentrycore-app@${version}` : this.config.release;
   }
 
   /** Purga por retencion. Se hace al recibir; no hay proceso aparte que barra. */

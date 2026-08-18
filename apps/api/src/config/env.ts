@@ -38,7 +38,7 @@ const envSchema = z.object({
   // adaptador por marca hasta que se decida y haya una razon concreta para
   // usar su API en vez de SMTP.
   MAIL_DRIVER: z.enum(['mailpit', 'smtp']).default('mailpit'),
-  MAIL_FROM: z.string().default('VoxIA Control <no-reply@localhost>'),
+  MAIL_FROM: z.string().default('SentryCore <no-reply@localhost>'),
   MAILPIT_HOST: z.string().default('localhost'),
   MAILPIT_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_HOST: z.string().optional(),

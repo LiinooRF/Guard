@@ -2,11 +2,11 @@ import { validateEnv } from './env';
 
 const valid = {
   NODE_ENV: 'production',
-  DATABASE_URL: 'postgresql://app:unique-password@postgres:5432/voxia',
+  DATABASE_URL: 'postgresql://app:unique-password@postgres:5432/sentrycore',
   REDIS_URL: 'redis://:another-unique-password@redis:6379',
   JWT_SECRET: 'a-secure-and-unique-production-secret-with-48-characters',
   MAIL_DRIVER: 'smtp',
-  MAIL_FROM: 'VoxIA <no-reply@example.test>',
+  MAIL_FROM: 'SentryCore <no-reply@example.test>',
   SMTP_HOST: 'smtp.example.test',
   SMTP_PORT: '465',
   SMTP_SECURE: 'true',

@@ -52,7 +52,7 @@ export class RondasAbandonadas1726261200000 implements MigrationInterface {
       $$
     `);
     await queryRunner.query(
-      `GRANT EXECUTE ON FUNCTION rondas_abandonadas(integer, integer) TO voxia_app`,
+      `GRANT EXECUTE ON FUNCTION rondas_abandonadas(integer, integer) TO sentrycore_app`,
     );
   }
 

@@ -1,4 +1,4 @@
-import { DEFAULT_PATROL_RULES, type PatrolRules } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES, type PatrolRules } from '@sentrycore/shared';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -154,7 +154,7 @@ describe('purga por retencion', () => {
   let base: string;
 
   beforeEach(async () => {
-    base = await mkdtemp(join(tmpdir(), 'voxia-purga-svc-'));
+    base = await mkdtemp(join(tmpdir(), 'sentrycore-purga-svc-'));
   });
 
   async function crearArchivo(rutaRelativa: string): Promise<void> {

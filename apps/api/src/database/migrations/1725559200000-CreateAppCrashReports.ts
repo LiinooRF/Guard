@@ -131,11 +131,11 @@ export class CreateAppCrashReports1725559200000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- DELETE es necesario: la retencion la aplica la propia API al
           -- recibir un reporte, no hay proceso aparte que barra.
           -- UPDATE solo se usa para marcar forwarded.
-          GRANT SELECT, INSERT, UPDATE, DELETE ON app_crash_reports TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON app_crash_reports TO sentrycore_app;
         END IF;
       END
       $$

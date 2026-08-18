@@ -37,7 +37,7 @@ const ALERTA_CHECKLIST_FALLA = {
     'Respuesta: {{value}}\n' +
     'Observación: {{notes}}\n' +
     'Hora (servidor): {{at}}\n\n' +
-    'El detalle de la ronda está en el panel de VoxIA Control.',
+    'El detalle de la ronda está en el panel de SentryCore.',
 } as const;
 
 /**
@@ -380,7 +380,7 @@ export class ChecklistsService {
           respuesta.notes?.trim() ?? null,
           interpretada.failed,
           respuesta.photoId ?? null,
-          // Se escribe en el INSERT o no se escribe nunca: voxia_app tiene
+          // Se escribe en el INSERT o no se escribe nunca: sentrycore_app tiene
           // REVOKE UPDATE sobre checklist_responses, asi que no existe la opcion
           // de "calcularlo despues".
           veredicto.minutosDeAtraso,

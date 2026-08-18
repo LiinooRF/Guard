@@ -1,12 +1,13 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassThrough } from 'node:stream';
-import type { ComplianceResult } from '@voxia/shared';
+import type { ComplianceResult } from '@sentrycore/shared';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { FeatureFlagsService } from '../rules/feature-flags.service';
+import { MapaRecorridoService } from './mapa-recorrido.service';
 import { RulesService } from '../rules/rules.service';
 import {
   construirInformeRonda,
@@ -131,6 +132,49 @@ export const SQL_TAREAS_DEL_TURNO = `
   ORDER BY i.due_local_time ASC NULLS LAST, i.position
 `;
 
+/**
+ * Los puntos esperados en su orden EFECTIVO, con lo que hay que revisar en cada
+ * uno.
+ *
+ * Se exporta por la misma razon que SQL_TAREAS_DEL_TURNO: `c.instructions`
+ * entro en #308 y un mock diria que si existe aunque la columna se llamara de
+ * otra forma. Contra el esquema real la consulta habla sola.
+ */
+export const SQL_PUNTOS_ESPERADOS = `
+  SELECT
+    ord.position,
+    c.id,
+    c.name,
+    c.kind,
+    c.instructions,
+    COALESCE(rc.is_closing_point, false) AS is_closing_point
+  FROM patrols p
+  CROSS JOIN LATERAL jsonb_array_elements_text(p.expected_checkpoint_ids)
+    WITH ORDINALITY AS ord(checkpoint_id, position)
+  JOIN checkpoints c ON c.tenant_id = p.tenant_id AND c.id = ord.checkpoint_id::uuid
+  LEFT JOIN route_checkpoints rc
+    ON rc.tenant_id = p.tenant_id
+    AND rc.route_id = p.route_id
+    AND rc.checkpoint_id = c.id
+  WHERE p.id = $1
+  ORDER BY ord.position
+`;
+
+/**
+ * Metadatos de la evidencia: rutas, huellas y horas. NUNCA bytes.
+ *
+ * `ph.scan_id` entro en #308 para poder agrupar la evidencia de una misma
+ * lectura sin depender de `created_at`, que es la hora de subida.
+ */
+export const SQL_FOTOS_DE_LA_RONDA = `
+  SELECT ph.id, ph.scan_id, ph.checkpoint_id, c.name AS checkpoint_name, ph.storage_path,
+         ph.mime_type, ph.size_bytes, ph.sha256, ph.taken_at_device, ph.created_at
+  FROM scan_photos ph
+  JOIN checkpoints c ON c.tenant_id = ph.tenant_id AND c.id = ph.checkpoint_id
+  WHERE ph.patrol_id = $1
+  ORDER BY ph.created_at
+`;
+
 @Injectable()
 export class PatrolReportService {
   private readonly logger = new Logger(PatrolReportService.name);
@@ -141,6 +185,7 @@ export class PatrolReportService {
     private readonly rules: RulesService,
     private readonly branding: BrandingService,
     private readonly features: FeatureFlagsService,
+    private readonly mapaRecorrido: MapaRecorridoService,
     config: ConfigService,
   ) {
     this.raizEvidencia = config.getOrThrow<string>('EVIDENCE_PATH');
@@ -195,24 +240,7 @@ export class PatrolReportService {
     // randomizeRouteOrder): la tabla del informe respeta ese orden, no el de la
     // ruta.
     const puntos = await this.tenantContext.manager.query<PuntoEsperadoRow[]>(
-      `
-        SELECT
-          ord.position,
-          c.id,
-          c.name,
-          c.kind,
-          COALESCE(rc.is_closing_point, false) AS is_closing_point
-        FROM patrols p
-        CROSS JOIN LATERAL jsonb_array_elements_text(p.expected_checkpoint_ids)
-          WITH ORDINALITY AS ord(checkpoint_id, position)
-        JOIN checkpoints c ON c.tenant_id = p.tenant_id AND c.id = ord.checkpoint_id::uuid
-        LEFT JOIN route_checkpoints rc
-          ON rc.tenant_id = p.tenant_id
-          AND rc.route_id = p.route_id
-          AND rc.checkpoint_id = c.id
-        WHERE p.id = $1
-        ORDER BY ord.position
-      `,
+      SQL_PUNTOS_ESPERADOS,
       [patrolId],
     );
 
@@ -242,14 +270,17 @@ export class PatrolReportService {
       patrolId,
     ]);
 
-    const fotos = incluirAnexo ? await this.leerMetadatosFotos(patrolId) : [];
+    // Sin condicional: son metadatos, no bytes, y el peso del adjunto no cambia.
+    // Lo que decide `incluirAnexo` es si se abre el archivo al dibujar.
+    const fotos = await this.leerMetadatosFotos(patrolId);
 
     const [reglas, marca] = await Promise.all([
       this.rules.effective(),
       this.branding.forDocuments(),
     ]);
 
-    return construirInformeRonda({
+
+    const modelo = construirInformeRonda({
       ronda,
       puntos,
       scans,
@@ -269,6 +300,17 @@ export class PatrolReportService {
       incluirAnexo,
       criticidadesDestacadas: reglas.escalationCriticalities,
     });
+
+    // El recorrido (#79) se arma DESPUES del modelo porque necesita los puntos ya
+    // resueltos (`FilaPunto`), no las filas crudas: el mapa ubica cada marca por
+    // su numero de punto. Solo va cuando el informe lleva anexo — el liviano del
+    // correo se manda sin mapa por lo mismo que sin fotos, que es pesar poco.
+    // `construir` devuelve null si el tenant apago la regla `reportIncludeMap`.
+    const mapa = incluirAnexo
+      ? await this.mapaRecorrido.construir(patrolId, modelo.puntos, { requester })
+      : null;
+
+    return { ...modelo, mapa };
   }
 
   /** Dibuja el informe ya resuelto sobre el destino que decida el llamador. */
@@ -280,6 +322,12 @@ export class PatrolReportService {
       // el maximo del tenant, esta corrupta o alguien la escribio a mano en el
       // volumen, y cargarla es justo lo que no queremos.
       maxBytesFoto: reglas.photoMaxSizeMB * 1024 * 1024,
+      // Forma del informe (#308). Ninguna de las cuatro es una constante del
+      // renderer: son decisiones de cada cliente y viven en la cascada.
+      bitacora: reglas.reportTimeline,
+      fotosEnLinea: reglas.reportInlinePhotos,
+      etiquetaConfidencial: reglas.reportConfidentialLabel,
+      maxEntradasBitacora: reglas.reportTimelineMaxEntries,
       onEvidenciaFallida: (fotoId, motivo) => {
         // Log sin nombres ni ubicaciones de personas (regla 5 de CLAUDE.md).
         this.logger.warn(
@@ -334,18 +382,16 @@ export class PatrolReportService {
 
   // ------------------------------------------------------------------ datos
 
+  /**
+   * Corre SIEMPRE, tambien cuando el informe va sin anexo (#308). Antes se
+   * saltaba con `incluirAnexo:false` y el PDF que se adjunta al correo no sabia
+   * siquiera que la ronda habia tenido 18 fotografias: quien lo recibia no tenia
+   * como enterarse de que habia evidencia esperandolo en el panel. El anexo
+   * gobierna los BYTES de las imagenes, no el HECHO de que existan, y esta
+   * consulta no abre un solo archivo del volumen.
+   */
   private async leerMetadatosFotos(patrolId: string): Promise<FotoRow[]> {
-    return this.tenantContext.manager.query<FotoRow[]>(
-      `
-        SELECT ph.id, ph.checkpoint_id, c.name AS checkpoint_name, ph.storage_path,
-               ph.mime_type, ph.size_bytes, ph.sha256, ph.taken_at_device, ph.created_at
-        FROM scan_photos ph
-        JOIN checkpoints c ON c.tenant_id = ph.tenant_id AND c.id = ph.checkpoint_id
-        WHERE ph.patrol_id = $1
-        ORDER BY ph.created_at
-      `,
-      [patrolId],
-    );
+    return this.tenantContext.manager.query<FotoRow[]>(SQL_FOTOS_DE_LA_RONDA, [patrolId]);
   }
 
   /**

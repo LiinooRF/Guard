@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EscalationService } from '../escalation/escalation.service';

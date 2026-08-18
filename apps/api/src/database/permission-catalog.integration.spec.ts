@@ -1,4 +1,4 @@
-import { PERMISSIONS, ROLES, ROLE_PERMISSIONS } from '@voxia/shared';
+import { PERMISSIONS, ROLES, ROLE_PERMISSIONS } from '@sentrycore/shared';
 import { Client } from 'pg';
 
 const adminUrl = process.env.DATABASE_TEST_URL;

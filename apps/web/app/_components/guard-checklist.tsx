@@ -24,7 +24,7 @@ import { tareasDelCierre } from './guard-tareas-modelo';
  * servidor va a descartar por duplicado.
  */
 
-const CLAVE_RESPUESTAS = 'voxia.guard.checklist.v1';
+const CLAVE_RESPUESTAS = 'sentrycore.guard.checklist.v1';
 
 type TipoRespuesta = 'ok_falla' | 'texto' | 'numero';
 

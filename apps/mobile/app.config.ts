@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ExpoConfig } from 'expo/config';
 
 /**
- * Configuracion del shell Android de VoxIA Control.
+ * Configuracion del shell Android de SentryCore.
  *
  * Android es la unica plataforma: iOS esta fuera de alcance (CLAUDE.md,
  * "Decisiones ya tomadas"). Por eso no hay bloque `ios` ni assets de iOS.
@@ -45,7 +45,7 @@ function asset(nombre: string): string | undefined {
     return `./assets/${nombre}`;
   }
   const mensaje =
-    `[voxia] falta ./assets/${nombre}. Exportalo desde el SVG maestro: ` +
+    `[sentrycore] falta ./assets/${nombre}. Exportalo desde el SVG maestro: ` +
     `ver apps/mobile/assets/README.md`;
   if (perfilDeTienda) {
     throw new Error(mensaje);
@@ -60,8 +60,8 @@ const SPLASH_FONDO = '#1f3b73';
 const ADAPTATIVO_FONDO = '#1f3b73';
 
 const config: ExpoConfig = {
-  name: 'VoxIA Control',
-  slug: 'voxia-control',
+  name: 'SentryCore',
+  slug: 'sentrycore',
   /**
    * Cuenta de Expo dueña del proyecto. Es la ORGANIZACION, no la cuenta
    * personal: el `projectId` de abajo pertenece a `liinoos-team`, y EAS aborta
@@ -82,6 +82,10 @@ const config: ExpoConfig = {
    * puede rehacer.
    */
   extra: {
+    // OJO: este projectId pertenece al proyecto EAS viejo (slug voxia-control).
+    // `eas build` va a abortar por el desajuste hasta correr `eas init` con el
+    // slug nuevo (pendiente: la cuota del plan gratis se renueva el 1-sep).
+    // El APK de CI (apk-de-prueba.yml) compila con Gradle y no pasa por EAS.
     eas: { projectId: '955e4e6a-d7af-459f-8232-a83b03b771a9' },
   },
   /**
@@ -93,7 +97,7 @@ const config: ExpoConfig = {
   version: '0.1.0',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
-  scheme: 'voxia',
+  scheme: 'sentrycore',
   primaryColor: MARCA,
   icon: asset('icon.png'),
   assetBundlePatterns: ['assets/**/*'],
@@ -133,7 +137,7 @@ const config: ExpoConfig = {
       'expo-camera',
       {
         cameraPermission:
-          'VoxIA Control usa la camara para fotografiar el estado de los accesos criticos durante la ronda.',
+          'SentryCore usa la camara para fotografiar el estado de los accesos criticos durante la ronda.',
         // Sin audio: la evidencia es una foto fija. Dejarlo en true agrega
         // RECORD_AUDIO al manifiesto y convierte la revision de Play en una
         // conversacion sobre grabacion de audio en el trabajo que no queremos
@@ -146,9 +150,9 @@ const config: ExpoConfig = {
       'expo-location',
       {
         locationAlwaysAndWhenInUsePermission:
-          'VoxIA Control registra tu ubicacion durante el turno para acreditar que la ronda se recorrio en terreno.',
+          'SentryCore registra tu ubicacion durante el turno para acreditar que la ronda se recorrio en terreno.',
         locationWhenInUsePermission:
-          'VoxIA Control registra tu ubicacion al escanear cada punto de control.',
+          'SentryCore registra tu ubicacion al escanear cada punto de control.',
         // Android 14 exige declarar el tipo de servicio en primer plano y el
         // permiso FOREGROUND_SERVICE_LOCATION. El plugin agrega ambos.
         isAndroidForegroundServiceEnabled: true,
@@ -166,10 +170,10 @@ const config: ExpoConfig = {
      * Play Store: cambiarlo significa ficha nueva, instalaciones desde cero y
      * migrar a los guardias a mano. Decidirlo ANTES de la primera subida.
      *
-     * El andamiaje traia `cl.voxia.control`; esto lo cambia a la convencion de
+     * El andamiaje traia `cl.sentrycore.control`; esto lo cambia a la convencion de
      * la empresa. Cambiarlo hoy es gratis (nada publicado); manana no.
      */
-    package: 'com.voxtilabs.voxiacontrol',
+    package: 'com.voxtilabs.sentrycore',
 
     adaptiveIcon: {
       foregroundImage: asset('adaptive-icon-foreground.png'),

@@ -7,7 +7,7 @@ import { ConsentService } from './consent.service';
 
 /**
  * Publicar el aviso de geolocalizacion, contra PostgreSQL de verdad y con el
- * rol de la aplicacion (`voxia_app`, sin BYPASSRLS).
+ * rol de la aplicacion (`sentrycore_app`, sin BYPASSRLS).
  *
  * Existe porque la prueba de humo contra staging encontro que
  * `POST /consent/policies` responde 500 con las 1740 pruebas de mock en verde.

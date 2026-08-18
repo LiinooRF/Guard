@@ -1,8 +1,8 @@
 {
-  "name": "@voxia/api",
+  "name": "@sentrycore/api",
   "version": "0.1.0",
   "private": true,
-  "description": "API de VoxIA Control (NestJS)",
+  "description": "API de SentryCore (NestJS)",
   "_comment": "Dependencias de runtime usadas por la API. PostgreSQL y TypeORM respaldan el esquema multi-tenant desde el issue #28.",
   "scripts": {
     "build": "nest build",
@@ -23,7 +23,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/typeorm": "^11.0.3",
-    "@voxia/shared": "*",
+    "@sentrycore/shared": "*",
     "argon2": "^0.45.1",
     "bullmq": "5.81.3",
     "class-transformer": "^0.5.1",

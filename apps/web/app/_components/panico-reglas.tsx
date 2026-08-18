@@ -25,7 +25,7 @@ import { escribirJson, leerJson } from './guard-storage';
  *      el boton no sirve justo donde se necesita.
  *   3. El ultimo recurso de mas abajo, solo hasta que llegue (1) o (2).
  *
- * A proposito NO se importa `DEFAULT_PATROL_RULES` de `@voxia/shared`: ese valor
+ * A proposito NO se importa `DEFAULT_PATROL_RULES` de `@sentrycore/shared`: ese valor
  * se calcula con zod, y un import de valor meteria zod entero en el bundle que
  * se abre dentro del WebView de un telefono de gama baja. Todo `apps/web`
  * importa de ese paquete solo tipos, y esto no es la excepcion.
@@ -38,7 +38,7 @@ export interface ReglasPanico {
   segundosReintento: number;
 }
 
-const CLAVE_CACHE = 'voxia.guard.panic.rules.v1';
+const CLAVE_CACHE = 'sentrycore.guard.panic.rules.v1';
 
 const CLAVE_MANTENER = 'panicHoldSeconds';
 const CLAVE_REINTENTO = 'panicRetrySeconds';

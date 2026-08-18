@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 
+import type { AuditService } from '../audit/audit.service';
 import type { AuthService } from '../auth/auth.service';
 import type { MailService } from '../auth/mail.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -22,6 +23,7 @@ function servicio(query: jest.Mock, revokeAllSessions = jest.fn().mockResolvedVa
       { manager: { query } } as unknown as TenantContextService,
       { revokeAllSessions } as unknown as AuthService,
       {} as MailService,
+      { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
     ),
     revokeAllSessions,
   };

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * Renovación silenciosa de la sesión (#38).
  *
- * `voxia_access` dura 15 minutos y `voxia_refresh` 30 días, ambas HttpOnly: el
+ * `sentrycore_access` dura 15 minutos y `sentrycore_refresh` 30 días, ambas HttpOnly: el
  * JavaScript no puede leerlas ni saber cuándo vencen. Lo único que el navegador
  * conoce es el `expiresIn` que devuelven `/auth/login` y `/auth/refresh`, así
  * que se guarda el INSTANTE de renovación —no un token— para que todas las
@@ -28,8 +28,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * que renovar y el 401 sería el estado normal.
  */
 
-const RENEW_AT_KEY = 'voxia.session.renew_at';
-const LOCK_KEY = 'voxia.session.refresh_lock';
+const RENEW_AT_KEY = 'sentrycore.session.renew_at';
+const LOCK_KEY = 'sentrycore.session.refresh_lock';
 
 /** Renovar al 80% de la vida deja 3 minutos de margen sobre los 15 del access. */
 const RENEW_FRACTION = 0.8;

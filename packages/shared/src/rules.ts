@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Reglas configurables de VoxIA Control.
+ * Reglas configurables de SentryCore.
  *
  * Las reglas que dio el cliente (umbral de 70%, foto obligatoria fuera de
  * horario) son EL DEFAULT DE UN CLIENTE, no la ley del producto. Esto es un
@@ -229,6 +229,37 @@ export const patrolRulesSchema = z.object({
   mapTrackMaxAccuracyM: z.number().int().min(5).max(500).default(100),
   /** Tope de puntos del trazo: un mapa con miles de puntos no se lee (#79). */
   mapMaxTrackPoints: z.number().int().min(50).max(5000).default(500),
+
+  /* ------------------------------------------------------------------ *
+   * Forma del informe de ronda (#308)
+   *
+   * El informe pasa a leerse como una bitacora cronologica. Que se muestre y
+   * que no es decision del CLIENTE, no del producto: uno va a querer el informe
+   * sin la palabra Confidencial y otro sin fotos incrustadas porque le pesa el
+   * correo. Ninguna de estas cuatro puede quedar como constante en el renderer.
+   * ------------------------------------------------------------------ */
+
+  /** Estampa la palabra CONFIDENCIAL en la portada del informe (#308). */
+  reportConfidentialLabel: z.boolean().default(true),
+  /**
+   * Bitacora cronologica en el informe de ronda (#308). Apagada, el informe
+   * vuelve a ser la pila de tablas de antes: puntos, tareas e incidentes cada
+   * uno en su seccion.
+   */
+  reportTimeline: z.boolean().default(true),
+  /**
+   * Las fotos se incrustan dentro de la bitacora, donde ocurrieron (#308).
+   * Apagada, la bitacora igual menciona cada evidencia con su hora y su huella,
+   * y la imagen sale solo en el anexo.
+   */
+  reportInlinePhotos: z.boolean().default(true),
+  /**
+   * Tope de entradas dibujadas en la bitacora (#308). Pasado el tope se corta
+   * con una linea que dice cuantas se omitieron; el resto del informe sigue
+   * completo. Una ronda de 40 puntos con checklist puede pasar las 300 entradas
+   * y un PDF de 60 paginas no lo lee nadie.
+   */
+  reportTimelineMaxEntries: z.number().int().min(50).max(2000).default(400),
 
   /**
    * Minutos de anticipacion con que se le avisa al guardia que su ronda esta por
@@ -932,6 +963,52 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     default: DEFAULT_PATROL_RULES.mapMaxTrackPoints,
     scopes: SOLO_EMPRESA,
     group: 'ubicacion',
+  },
+  reportConfidentialLabel: {
+    key: 'reportConfidentialLabel',
+    label: 'Marcar el informe como confidencial',
+    description:
+      'Estampa la palabra Confidencial en la portada del informe de ronda. Algunas empresas la exigen y otras la prohiben en documentos que entregan a terceros.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.reportConfidentialLabel,
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
+  },
+  reportTimeline: {
+    key: 'reportTimeline',
+    label: 'Informe como bitacora cronologica',
+    description:
+      'El informe cuenta la ronda hora por hora: cada marca, la respuesta de cada tarea y cada novedad en el orden en que ocurrieron. Apagado, el informe vuelve a listar cada cosa en su propia tabla.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.reportTimeline,
+    scopes: HASTA_RECINTO,
+    group: 'operacion',
+  },
+  reportInlinePhotos: {
+    key: 'reportInlinePhotos',
+    label: 'Fotos dentro de la bitacora',
+    description:
+      'Cada fotografia se muestra en el momento de la ronda en que se tomo, y no solo en el anexo del final. Apagado, la bitacora igual deja constancia de la evidencia con su hora y su huella.',
+    type: 'boolean',
+    unit: null,
+    default: DEFAULT_PATROL_RULES.reportInlinePhotos,
+    scopes: HASTA_RECINTO,
+    group: 'evidencia',
+  },
+  reportTimelineMaxEntries: {
+    key: 'reportTimelineMaxEntries',
+    label: 'Maximo de anotaciones en la bitacora',
+    description:
+      'Tope de anotaciones que se dibujan en la bitacora del informe. Pasado el tope el informe dice cuantas quedaron fuera; el resto del documento sale completo.',
+    type: 'integer',
+    unit: null,
+    min: 50,
+    max: 2000,
+    default: DEFAULT_PATROL_RULES.reportTimelineMaxEntries,
+    scopes: SOLO_EMPRESA,
+    group: 'operacion',
   },
   reportMailMaxAttachmentMB: {
     key: 'reportMailMaxAttachmentMB',

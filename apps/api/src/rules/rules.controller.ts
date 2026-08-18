@@ -10,7 +10,7 @@ import {
   RULE_SCOPES,
   RULE_UNIT_LABELS,
   RULE_VALUE_TYPES,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 import type { Request } from 'express';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';

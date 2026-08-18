@@ -69,7 +69,7 @@ def revisar():
 
     # EAS exige que el slug de app.config.ts sea EL MISMO que el del proyecto
     # dueño del projectId, y lo comprueba recien al encolar. Ya nos costo un
-    # intento: el proyecto se llamaba `pruebas` y el config decia `voxia-control`.
+    # intento: el proyecto se llamaba `pruebas` y el config decia `sentrycore`.
     codigo, salida = correr('npx eas-cli project:info')
     desajuste = re.search(r'Slug for project identified by[^(]*\(([^)]+)\)[^(]*\(([^)]+)\)', salida)
     todo &= paso('el slug del proyecto en EAS coincide con el del config',

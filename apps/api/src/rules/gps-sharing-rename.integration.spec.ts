@@ -31,7 +31,7 @@ import { RenameGpsSharingMandatory1725994800000 } from '../database/migrations/1
  *
  * `DATABASE_TEST_URL` es la credencial de migraciones, igual que en
  * tenant-isolation.integration.spec.ts: esta migracion corre como el dueño de
- * las tablas, no como voxia_app.
+ * las tablas, no como sentrycore_app.
  */
 const adminUrl = process.env.DATABASE_TEST_URL;
 const describeDatabase = adminUrl ? describe : describe.skip;

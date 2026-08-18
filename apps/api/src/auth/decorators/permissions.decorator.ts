@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import type { Permission } from '@voxia/shared';
+import type { Permission } from '@sentrycore/shared';
 
 export const REQUIRED_PERMISSIONS = 'auth:requiredPermissions';
 

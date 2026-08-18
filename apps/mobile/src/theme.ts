@@ -4,12 +4,12 @@
  * ---------------------------------------------------------------------------
  * ESTO NO ES EL WHITE-LABEL DEL TENANT. Es lo contrario.
  * ---------------------------------------------------------------------------
- * VoxIA Control es un SaaS multi-tenant: muchas empresas de seguridad usan la
+ * SentryCore es un SaaS multi-tenant: muchas empresas de seguridad usan la
  * misma instancia, cada una con su marca. Pero en Google Play hay **una sola
  * ficha y un solo APK**, asi que el icono, el splash y el nombre de la app son
  * de la PLATAFORMA y no se pueden pintar por empresa.
  *
- * La marca del cliente (`tenantBrandingSchema` en `@voxia/shared`) vive dentro
+ * La marca del cliente (`tenantBrandingSchema` en `@sentrycore/shared`) vive dentro
  * del WebView y se resuelve despues del login, que es el primer momento en que
  * se sabe a que empresa pertenece quien abrio la app.
  *

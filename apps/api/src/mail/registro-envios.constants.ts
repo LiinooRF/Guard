@@ -3,9 +3,9 @@ export const REGISTRO_CORRELACION_REDIS = Symbol('REGISTRO_CORRELACION_REDIS');
 
 /**
  * Prefijo de las llaves del indice Message-ID -> tenant. Namespace propio para
- * que un `KEYS voxia:notif:*` de soporte no toque sesiones ni colas.
+ * que un `KEYS sentrycore:notif:*` de soporte no toque sesiones ni colas.
  */
-export const CORRELACION_PREFIJO = 'voxia:notif:msg:';
+export const CORRELACION_PREFIJO = 'sentrycore:notif:msg:';
 
 /**
  * Cuanto vive una correlacion. Un rebote diferido puede tardar dias —el servidor

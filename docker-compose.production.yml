@@ -1,4 +1,4 @@
-name: voxia-production
+name: sentrycore-production
 
 services:
   traefik:
@@ -7,7 +7,7 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=voxia_proxy
+      - --providers.docker.network=sentrycore_proxy
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -145,11 +145,11 @@ services:
       - no-new-privileges:true
     labels:
       - traefik.enable=true
-      - traefik.http.routers.voxia-api.rule=Host(`${APP_DOMAIN}`) && (PathPrefix(`/api`) || Path(`/health`) || Path(`/ready`))
-      - traefik.http.routers.voxia-api.entrypoints=websecure
-      - traefik.http.routers.voxia-api.tls.certresolver=letsencrypt
-      - traefik.http.routers.voxia-api.priority=100
-      - traefik.http.services.voxia-api.loadbalancer.server.port=3001
+      - traefik.http.routers.sentrycore-api.rule=Host(`${APP_DOMAIN}`) && (PathPrefix(`/api`) || Path(`/health`) || Path(`/ready`))
+      - traefik.http.routers.sentrycore-api.entrypoints=websecure
+      - traefik.http.routers.sentrycore-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.sentrycore-api.priority=100
+      - traefik.http.services.sentrycore-api.loadbalancer.server.port=3001
 
   web:
     build:
@@ -178,14 +178,14 @@ services:
       - no-new-privileges:true
     labels:
       - traefik.enable=true
-      - traefik.http.routers.voxia-web.rule=Host(`${APP_DOMAIN}`)
-      - traefik.http.routers.voxia-web.entrypoints=websecure
-      - traefik.http.routers.voxia-web.tls.certresolver=letsencrypt
-      - traefik.http.services.voxia-web.loadbalancer.server.port=3000
+      - traefik.http.routers.sentrycore-web.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.sentrycore-web.entrypoints=websecure
+      - traefik.http.routers.sentrycore-web.tls.certresolver=letsencrypt
+      - traefik.http.services.sentrycore-web.loadbalancer.server.port=3000
 
 networks:
   proxy:
-    name: voxia_proxy
+    name: sentrycore_proxy
   internal:
     internal: true
 

@@ -632,7 +632,7 @@ export async function escribirLibroExcel(
     { nombre: '[Content_Types].xml', contenido: [contentTypes(hojas.length)] },
     { nombre: '_rels/.rels', contenido: [RELS_RAIZ] },
     { nombre: 'docProps/core.xml', contenido: [coreXml(generadoEn)] },
-    { nombre: 'docProps/app.xml', contenido: [appXml(opciones.aplicacion ?? 'VoxIA Control')] },
+    { nombre: 'docProps/app.xml', contenido: [appXml(opciones.aplicacion ?? 'SentryCore')] },
     { nombre: 'xl/workbook.xml', contenido: [workbookXml(nombres)] },
     { nombre: 'xl/_rels/workbook.xml.rels', contenido: [workbookRels(hojas.length)] },
     { nombre: 'xl/styles.xml', contenido: [stylesXml(colorFondo, colorTexto)] },

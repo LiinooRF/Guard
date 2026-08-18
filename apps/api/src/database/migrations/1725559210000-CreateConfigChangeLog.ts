@@ -57,7 +57,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * aplicacion — ahi siguen valiendo las reglas de siempre.
  *
  * Supuesto heredado de CreateFeatureFlags (#82): el dueño del esquema —el rol
- * que corre las migraciones, separado de voxia_app— se salta RLS. Es lo que
+ * que corre las migraciones, separado de sentrycore_app— se salta RLS. Es lo que
  * deja que el trigger SECURITY DEFINER escriba una tabla con FORCE ROW LEVEL
  * SECURITY cuando el SUPERADMIN cambia el techo de una empresa sin tener
  * contexto de tenant abierto.
@@ -149,7 +149,7 @@ export class CreateConfigChangeLog1725559210000 implements MigrationInterface {
     // Sin tenant_id y sin RLS, por la misma razon que platform_rules y
     // plan_feature_flags: es configuracion de la PLATAFORMA, comun a todas las
     // empresas, y no contiene datos de ninguna. No hay nada que aislar. Lo que
-    // si tiene es control de lectura: voxia_app no la toca ni para leer, y el
+    // si tiene es control de lectura: sentrycore_app no la toca ni para leer, y el
     // SUPERADMIN la consulta por una funcion que exige su rol.
     // -----------------------------------------------------------------
     await queryRunner.query(`
@@ -520,26 +520,26 @@ export class CreateConfigChangeLog1725559210000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- La aplicacion LEE su historial y no lo escribe. La unica via de
           -- escritura es el trigger, que corre con los privilegios del dueño.
           -- El REVOKE no sobra: el script de init deja ALTER DEFAULT PRIVILEGES
           -- con los cuatro verbos, asi que la tabla nace escribible y un GRANT
           -- SELECT no la achica. Sin esto, la "auditoria" seria un registro que
           -- el propio auditado puede corregir.
-          GRANT SELECT ON config_change_log TO voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON config_change_log FROM voxia_app;
+          GRANT SELECT ON config_change_log TO sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON config_change_log FROM sentrycore_app;
 
           -- El historial de plataforma no se lee ni con SELECT directo: sale
           -- solo por la funcion que exige SUPERADMIN.
-          REVOKE ALL ON platform_config_change_log FROM voxia_app;
+          REVOKE ALL ON platform_config_change_log FROM sentrycore_app;
 
           GRANT EXECUTE ON FUNCTION platform_config_history(
             uuid, uuid, text, text, timestamptz, timestamptz, integer
-          ) TO voxia_app;
+          ) TO sentrycore_app;
           GRANT EXECUTE ON FUNCTION platform_rules_history(
             uuid, text, text, timestamptz, timestamptz, integer
-          ) TO voxia_app;
+          ) TO sentrycore_app;
 
           -- Las funciones de trigger quedan SIN grant: las invoca el motor por
           -- cuenta del dueño de la tabla. Expuestas, no servirian de nada util y

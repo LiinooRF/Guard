@@ -118,13 +118,13 @@ export class CreateShiftSchedules1724684400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT, UPDATE, DELETE ON shift_patterns TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT, UPDATE, DELETE ON shift_patterns TO sentrycore_app;
           -- schedule_runs es bitacora, igual que audit_log: se acumula, no se
           -- corrige. Borrar la corrida que no genero nada es exactamente lo que
           -- haria quien quiere tapar una noche sin rondas.
-          GRANT SELECT, INSERT ON schedule_runs TO voxia_app;
-          REVOKE UPDATE, DELETE ON schedule_runs FROM voxia_app;
+          GRANT SELECT, INSERT ON schedule_runs TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON schedule_runs FROM sentrycore_app;
         END IF;
       END
       $$

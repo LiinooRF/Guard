@@ -3,7 +3,7 @@
 
 El sobre tiene que ser exactamente el de `armarSobre()` en protocol.ts:
 
-    { p: 'voxia.bridge', v: 1, id, type, payload, ts }
+    { p: 'sentrycore.bridge', v: 1, id, type, payload, ts }
 
 La version anterior de este guion mandaba `{ protocolo, type, id, payload }` —
 nombre de campo equivocado y sin `v` ni `ts`—, asi que `leerMensajePortal` lo
@@ -21,14 +21,14 @@ ESPERA_S = 40
 
 GUION_ENVIAR = """
 (function () {
-  if (!window.__voxiaPuente) return 'SIN PUENTE';
+  if (!window.__sentrycorePuente) return 'SIN PUENTE';
   window.__respuestas = [];
   window.__t0 = Date.now();
-  window.__voxiaPuente.suscribir(function (json) {
+  window.__sentrycorePuente.suscribir(function (json) {
     window.__respuestas.push({ ms: Date.now() - window.__t0, json: String(json).slice(0, 240) });
   });
-  window.__voxiaPuente.enviar(JSON.stringify({
-    p: 'voxia.bridge',
+  window.__sentrycorePuente.enviar(JSON.stringify({
+    p: 'sentrycore.bridge',
     v: 1,
     id: 'medicion-' + Date.now(),
     type: 'hello',

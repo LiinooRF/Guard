@@ -60,7 +60,7 @@ export class AllowSuppressedDispatchReason1725822000000 implements MigrationInte
     // dice menos, pero no dice nada falso: no habia a quien despacharle.
     //
     // El UPDATE corre con el rol de migraciones, que no es el de la aplicacion:
-    // a voxia_app la migracion original le revoco UPDATE a proposito.
+    // a sentrycore_app la migracion original le revoco UPDATE a proposito.
     await queryRunner.query(`
       UPDATE report_dispatch_attempts
       SET reason = 'sin_destinatarios'
