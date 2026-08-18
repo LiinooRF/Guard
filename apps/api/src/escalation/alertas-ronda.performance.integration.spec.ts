@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 import { Client } from 'pg';
 import { DataSource, type QueryRunner } from 'typeorm';
 
@@ -27,7 +27,7 @@ import { AlertasRondaService } from './alertas-ronda.service';
  *
  * Comando exacto (las dos URLs deben apuntar a la misma DB descartable):
  * RUN_PERFORMANCE_TESTS=1 DATABASE_TEST_URL="$QA222_ADMIN_URL" \
- * DATABASE_APP_TEST_URL="$QA222_APP_URL" npm test --workspace @voxia/api -- \
+ * DATABASE_APP_TEST_URL="$QA222_APP_URL" npm test --workspace @sentrycore/api -- \
  * --runInBand alertas-ronda.performance.integration.spec.ts
  */
 const appUrl = process.env.DATABASE_APP_TEST_URL;
