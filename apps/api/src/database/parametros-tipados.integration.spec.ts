@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 
 import { SQL_ASIGNAR_TARJETA_NFC_ADMIN } from '../admin/admin.service';
+import { SQL_RECINTO_ASIGNADO_DEL_GUARDIA } from '../guard/guard.service';
 import { SQL_ASIGNAR_TARJETA_NFC_SUPERVISOR } from '../supervisor/supervisor.service';
 
 /**
@@ -82,6 +83,19 @@ describeDatabase('parametros ligados que PostgreSQL debe poder tipar', () => {
       'supervisor · quitar tarjeta y PIN',
       SQL_ASIGNAR_TARJETA_NFC_SUPERVISOR,
       [randomUUID(), null, true, null],
+    ],
+    // El panico de un guardia sin GPS: los dos parametros de coordenada llegan
+    // en NULL y solo aparecen dentro de un `IS NULL`. Sin `::float8` esto es
+    // un 42P08 y el boton de panico devuelve 500.
+    [
+      'guardia · recinto del panico sin coordenadas',
+      SQL_RECINTO_ASIGNADO_DEL_GUARDIA,
+      [randomUUID(), null, null],
+    ],
+    [
+      'guardia · recinto del panico con coordenadas',
+      SQL_RECINTO_ASIGNADO_DEL_GUARDIA,
+      [randomUUID(), -33.45, -70.66],
     ],
   ];
 
