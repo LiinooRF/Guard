@@ -143,7 +143,58 @@ En un **development build** se puede forzar el worker desde una pantalla de
 diagnóstico llamando `BackgroundTask.triggerTaskWorkerForTestingAsync()`. La
 prueba de aceptación real es: encolar en modo avión, mandar la app al fondo,
 restaurar red y comprobar en `/sync/status` que cada UUID aparece una sola vez.
-Expo Go no ejecuta este worker nativo.
+
+## Inicio rápido en 15 minutos
+
+Cualquier integrante del equipo puede tener la app corriendo en menos de 15 minutos siguiendo estos pasos:
+
+### 1. Prerequisitos (2 minutos)
+- Node.js >= 22 instalado.
+- Emulador Android (Android Studio / LDPlayer) corriendo, o teléfono Android conectado por USB con depuración activada.
+
+### 2. Instalación y configuración (3 minutos)
+```bash
+# Desde la raíz del repositorio
+npm --prefix apps/mobile install
+npm --prefix apps/mobile run typecheck
+```
+
+### 3. Iniciar el portal y la app (5 minutos)
+```bash
+# Terminal 1: Iniciar el backend y portal web si se prueba en local
+npm run dev:api
+npm run dev:web
+
+# Terminal 2: Iniciar el servidor Metro
+cd apps/mobile
+
+# Para emulador Android (apunta por defecto a http://10.0.2.2:13000):
+npm run android
+
+# O para teléfono físico en la misma red local:
+EXPO_PUBLIC_WEB_URL=http://<IP_DE_TU_PC>:13000 npm start
+```
+
+### 4. Verificar en pantalla (5 minutos)
+- El WebView cargará el portal del guardia (`/app/guardia`).
+- En emulador: se detectará la ausencia de antena NFC física y el sistema activará automáticamente el botón de escaneo alternativo por **cámara QR** (`VistaCamaraQr`).
+- En teléfono con Dev Client: se activará la antena NFC real (`NfcManager`) para lectura de etiquetas NTAG213/215/216.
+
+---
+
+## Matriz de capacidades por entorno de prueba
+
+| Funcionalidad / Módulo | Teléfono Android Real (Dev Client / APK) | Emulador Android (Android Studio / LDPlayer) | Expo Go (Sandbox) |
+|---|:---:|:---:|:---:|
+| **Login y navegación del guardia** | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Escaneo NFC físico** (`react-native-nfc-manager`) | ✅ Sí (hardware real) | ❌ No (sin emulación NFC) | ❌ No (requiere módulo nativo) |
+| **Respaldo por escaneo QR** (`expo-camera` / #226-#227) | ✅ Sí | ✅ Sí (con cámara virtual/webcam) | ✅ Sí |
+| **Ubicación GPS y telemetría** (`expo-location`) | ✅ Sí (GPS de precisión) | ✅ Sí (coordenadas simuladas) | ✅ Sí |
+| **Firma criptográfica de hardware** (`device-signature.ts`) | ✅ Sí (`expo-crypto`) | ✅ Sí (`expo-crypto`) | ✅ Sí |
+| **Base de datos cifrada offline** (`expo-sqlite` / SQLCipher) | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Tareas en segundo plano** (`expo-background-task`) | ✅ Sí | ✅ Sí (con trigger manual) | ❌ No (requiere build nativo) |
+| **Reportador de caídas y ErrorBoundary** (`observability/`) | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Ronda completa de punta a punta** | ✅ Sí (NFC o QR) | ✅ Sí (vía QR de respaldo) | ✅ Sí (vía QR de respaldo) |
 
 ---
 
@@ -229,16 +280,16 @@ casi todos son **calendario, no código**:
 
 ---
 
-## Qué hay hoy y qué falta
+## Estado técnico de módulos móviles
 
-| | Estado |
-|---|---|
-| Shell WebView con reintento y sin conexión (`App.tsx`) | hecho |
-| Configuración de permisos, identidad visual y perfiles de EAS | hecho (este PR) |
-| Contrato del puente versionado (`src/bridge/`) | hecho (este PR) |
-| Módulos nativos de NFC, cámara y ubicación | **falta** — carril #11 / #5 |
-| Cableado del puente en `App.tsx` | hecho (#58): saludo, origen, compatibilidad y conectividad |
-| Autenticidad criptográfica del escaneo | **falta** — se completa en #59; `postMessage` solo no puede probar dispositivo |
-
-`App.tsx` no se toca en este PR a propósito: lo está trabajando el carril de NFC
-y dos agentes escribiendo el mismo archivo es cómo se pierde trabajo.
+| Módulo / Capacidad | Estado | Implementación |
+|---|:---:|---|
+| Shell WebView con reintento y sin conexión | Hecho | `App.tsx` |
+| Configuración de permisos y perfiles EAS | Hecho | `app.config.ts`, `eas.json` |
+| Contrato del puente versionado | Hecho | `src/bridge/protocol.ts` (Major 1, Minor 5) |
+| Lector NFC nativo con timeout y fallback | Hecho | `src/nfc/` (`react-native-nfc-manager`) |
+| Escáner de respaldo por cámara QR | Hecho | `src/qr/` (`expo-camera`) |
+| Firma criptográfica del dispositivo | Hecho | `src/security/device-signature.ts` |
+| Persistencia cifrada SQLCipher y cola offline | Hecho | `src/offline/` (`expo-sqlite`, `expo-secure-store`) |
+| Tarea de sincronización en segundo plano | Hecho | `src/offline/sync-task.ts` (`expo-background-task`) |
+| Reportador de caídas y ErrorBoundary | Hecho | `src/observability/` (`ErrorUtils`, `ErrorBoundary`) |
