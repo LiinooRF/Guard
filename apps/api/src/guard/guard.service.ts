@@ -1082,7 +1082,7 @@ export class GuardService {
    * field_events, asi que no existe el camino para reescribir la historia.
    */
   async reportEvent(guardId: string, input: ReportEventDto) {
-    let patrol: { id: string; site_id: string } | undefined;
+    let patrol: { id: string | null; site_id: string } | undefined;
     if (input.patrolId) {
       const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
         `SELECT id, site_id FROM patrols WHERE id = $1 AND guard_id = $2`,
@@ -1100,7 +1100,30 @@ export class GuardService {
       );
       patrol = rows[0];
       if (!patrol) {
-        throw new ConflictException('No hay una ronda que asocie el evento a un recinto');
+        // Si el guardia no tiene rondas registradas aun, se asocia el evento al
+        // recinto de su jornada activa (shift_assignments en curso) o recinto asignado.
+        const shiftRows = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+          `SELECT s.site_id
+           FROM shift_assignments a
+           JOIN shifts s ON s.id = a.shift_id
+           WHERE a.guard_id = $1 AND a.status = 'en_curso'
+           ORDER BY a.started_at DESC
+           LIMIT 1`,
+          [guardId],
+        );
+        if (shiftRows[0]?.site_id) {
+          patrol = { id: null, site_id: shiftRows[0].site_id };
+        } else {
+          const userSiteRows = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+            `SELECT site_id FROM user_sites WHERE user_id = $1 LIMIT 1`,
+            [guardId],
+          );
+          if (userSiteRows[0]?.site_id) {
+            patrol = { id: null, site_id: userSiteRows[0].site_id };
+          } else {
+            throw new ConflictException('No hay una ronda o recinto que asocie el evento');
+          }
+        }
       }
     }
 

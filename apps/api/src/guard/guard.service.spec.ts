@@ -634,6 +634,72 @@ describe('GuardService.registerScan', () => {
     expect(correo.enqueue).not.toHaveBeenCalled();
   });
 
+  it('el boton de panico se puede accionar en jornada activa aunque no existan rondas registradas', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([]) // sin rondas previas
+      .mockResolvedValueOnce([{ site_id: 'site-jornada-1' }]) // jornada activa en curso
+      .mockResolvedValueOnce([{ id: 'evento-panico-jornada', reported_at_server: new Date() }]); // insert
+    const escalamiento = sinEscalamiento(1);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+      escalamiento,
+      sinPuertaGps(),
+      sinEnvioInforme(),
+    );
+
+    const res = await service.reportEvent('guard-id', {
+      criticality: 'panico',
+      clientEventId: 'panico-shift-uuid-1',
+      latitude: -33.45,
+      longitude: -70.66,
+    });
+
+    expect(res).toMatchObject({
+      replay: false,
+      notified: true,
+      criticality: 'panico',
+      siteId: 'site-jornada-1',
+      patrolId: null,
+    });
+    expect(escalamiento.notify).toHaveBeenCalledWith(
+      'evento-panico-jornada',
+      'panico',
+      expect.objectContaining({ siteId: 'site-jornada-1', guardId: 'guard-id' }),
+    );
+  });
+
+  it('el boton de panico se puede accionar por recinto asignado cuando no hay rondas ni jornada', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([]) // sin rondas
+      .mockResolvedValueOnce([]) // sin jornada
+      .mockResolvedValueOnce([{ site_id: 'site-usuario-1' }]) // user_sites asignado
+      .mockResolvedValueOnce([{ id: 'evento-panico-user-site', reported_at_server: new Date() }]); // insert
+    const escalamiento = sinEscalamiento(1);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+      escalamiento,
+      sinPuertaGps(),
+      sinEnvioInforme(),
+    );
+
+    const res = await service.reportEvent('guard-id', {
+      criticality: 'panico',
+      clientEventId: 'panico-user-site-uuid-1',
+    });
+
+    expect(res).toMatchObject({
+      siteId: 'site-usuario-1',
+      patrolId: null,
+      notified: true,
+    });
+  });
+
   it('marca sin_fix_gps cuando no vienen coordenadas, pero registra igual', async () => {
     const manager = { query: jest.fn() };
     manager.query

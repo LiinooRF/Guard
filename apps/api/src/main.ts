@@ -22,6 +22,7 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
+  app.enableShutdownHooks();
 
   // La app movil y la web consumen esta misma API.
   app.enableCors({
