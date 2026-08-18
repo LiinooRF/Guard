@@ -7,6 +7,7 @@ import {
 import { DataSource, type EntityManager, QueryFailedError } from 'typeorm';
 
 import { overridesComoObjeto, sanitizeOverrides } from './rule-overrides';
+import { RulesLayersCache } from './rules-layers.cache';
 
 interface PlatformRulesRow {
   overrides: unknown;
@@ -29,7 +30,10 @@ interface PlatformRulesRow {
 export class PlatformRulesService {
   private readonly logger = new Logger(PlatformRulesService.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly cache: RulesLayersCache = new RulesLayersCache(),
+  ) {}
 
   /** Lo que hay hoy en el nivel plataforma, mas el catalogo de lo editable ahi. */
   async view() {
@@ -55,6 +59,7 @@ export class PlatformRulesService {
           `SELECT overrides, updated_at, updated_by FROM platform_rules WHERE id`,
         );
       });
+      this.invalidateEffectiveRulesCache();
       return this.vista(rows[0]);
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === '42501') {
@@ -65,6 +70,18 @@ export class PlatformRulesService {
         );
       }
       throw error;
+    }
+  }
+
+  private invalidateEffectiveRulesCache(): void {
+    try {
+      this.cache.invalidateAll();
+    } catch {
+      // La escritura ya fue confirmada por DataSource.transaction. La cache es
+      // auxiliar y las replicas convergen por TTL aunque esta invalidacion falle.
+      this.logger.warn(
+        JSON.stringify({ event: 'rules_cache_failure', operation: 'invalidate_all' }),
+      );
     }
   }
 

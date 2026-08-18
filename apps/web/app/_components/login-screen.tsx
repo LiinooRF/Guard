@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
+import { esAppDelGuardia } from '../_lib/app-del-guardia';
 import { leerCredenciales } from './login-form-data';
 
 export function LoginScreen() {
@@ -99,14 +100,21 @@ export function LoginScreen() {
         return;
       }
 
-      const esAndroidValido =
+      /*
+       * Dentro de la app hay dos señales mejores que el user-agent:
+       * `ReactNativeWebView`, que solo existe en un WebView de React Native, y
+       * el puente ya inyectado. El user-agent queda de respaldo porque puede
+       * llegar recortado, y porque un APK viejo puede tardar en inyectar el
+       * puente: expulsar al guardia por llegar un instante antes seria repetir
+       * el bug del renombre por otra via.
+       */
+      const dentroDeLaApp =
         typeof window !== 'undefined' &&
         (Boolean((window as unknown as { __sentrycorePuente?: unknown }).__sentrycorePuente) ||
           Boolean((window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView) ||
-          /sentrycoreandroid/i.test(navigator.userAgent) ||
-          /sentrycore/i.test(navigator.userAgent));
+          esAppDelGuardia(navigator.userAgent));
 
-      if (result.user.role === 'GUARDIA' && !esAndroidValido) {
+      if (result.user.role === 'GUARDIA' && !dentroDeLaApp) {
         await fetch(`${apiUrl}/auth/logout`, {
           method: 'POST',
           credentials: 'include',

@@ -1,26 +1,14 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { peticionDeAppDelGuardia } from './app/_lib/app-del-guardia';
+
 const ROLE_PATHS = {
   SUPERADMIN: 'superadmin',
   ADMIN: 'admin',
   SUPERVISOR: 'supervisor',
   GUARDIA: 'guardia',
 } as const;
-
-function esClienteAndroidGuardia(request: NextRequest): boolean {
-  const ua = request.headers.get('user-agent') ?? '';
-  const xRequestedWith = request.headers.get('x-requested-with') ?? '';
-  const secChUa = request.headers.get('sec-ch-ua') ?? '';
-  const isSentryCoreUA = /sentrycoreandroid/i.test(ua) || /sentrycore/i.test(ua);
-  const isSentryCorePackage =
-    /com\.voxtilabs\.sentrycore/i.test(xRequestedWith) ||
-    /sentrycore/i.test(xRequestedWith) ||
-    /sentrycore/i.test(secChUa);
-  const hasAppHeader =
-    request.headers.has('x-sentrycore-app') || request.cookies.has('sentrycore_native_app');
-  return isSentryCoreUA || isSentryCorePackage || hasAppHeader;
-}
 
 export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('sentrycore_access')?.value;
@@ -34,7 +22,7 @@ export async function middleware(request: NextRequest) {
 
   const role = await resolveSession(request, accessToken);
   if (role) {
-    if (role === 'GUARDIA' && !esClienteAndroidGuardia(request)) {
+    if (role === 'GUARDIA' && !peticionDeAppDelGuardia(request.headers)) {
       return clearSessionAndRedirect(request);
     }
 

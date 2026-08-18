@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """El loop del producto de punta a punta, contra staging desplegado.
 
+    SENTRYCORE_BASE=https://test-sentrycore.voxtilabs.cl \
+      SENTRYCORE_DEMO_PASSWORD='(desde el gestor de secretos)' \
+      python scripts/loop-e2e.py
+
+Las dos son OBLIGATORIAS: la clave demo dejo de vivir en el repositorio (#295).
+
 No comprueba que un endpoint responda 200: comprueba que un guardia pueda hacer
 su trabajo. Esa es la cadena que el CHECK roto de la URL tenia cortada.
 
@@ -20,9 +26,14 @@ from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = 'https://test-sentrycore.voxtilabs.cl'
+BASE = os.environ.get('SENTRYCORE_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', '')
+if not BASE or not CLAVE:
+    raise SystemExit(
+        'Faltan SENTRYCORE_BASE y/o SENTRYCORE_DEMO_PASSWORD. La clave demo no vive\n'
+        'en el repositorio (#295): pasala por entorno o desde el gestor de secretos.'
+    )
 API = BASE + '/api'
-CLAVE = 'DemoGuardia2026!'
 UA_APP = 'SentryCoreAndroid/1.0 (puente 1.3)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 

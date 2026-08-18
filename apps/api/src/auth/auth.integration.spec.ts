@@ -11,7 +11,8 @@ import type { MailService } from './mail.service';
 const adminUrl = process.env.DATABASE_TEST_URL;
 const appUrl = process.env.DATABASE_APP_TEST_URL;
 const redisUrl = process.env.REDIS_TEST_URL;
-const describeAuth = adminUrl && appUrl && redisUrl ? describe : describe.skip;
+const demoPassword = process.env.DEMO_PASSWORD;
+const describeAuth = adminUrl && appUrl && redisUrl && demoPassword ? describe : describe.skip;
 
 describeAuth('AuthService (integración)', () => {
   let admin: Client;
@@ -52,7 +53,7 @@ describeAuth('AuthService (integración)', () => {
   it('emite JWT tenant-aware y almacena el refresh únicamente como hash', async () => {
     const result = await auth.login({
       identity: 'guardia@demo-andina.test',
-      password: 'DemoGuardia2026!',
+      password: demoPassword!,
     });
     expect('requiresTenantSelection' in result).toBe(false);
     if ('requiresTenantSelection' in result) return;
@@ -106,7 +107,7 @@ describeAuth('AuthService (integración)', () => {
   it('rota el refresh token y vuelve inutilizable el anterior', async () => {
     const login = await auth.login({
       identity: 'guardia@demo-andina.test',
-      password: 'DemoGuardia2026!',
+      password: demoPassword!,
     });
     if ('requiresTenantSelection' in login) throw new Error('Login demo ambiguo');
 
@@ -129,7 +130,7 @@ describeAuth('AuthService (integración)', () => {
       await expect(
         auth.login({
           identity: 'guardia@demo-pacifico.test',
-          password: 'DemoGuardia2026!',
+          password: demoPassword!,
         }),
       ).rejects.toMatchObject({
         response: {
@@ -160,7 +161,7 @@ describeAuth('AuthService (integración)', () => {
     const first = await auth.login(
       {
         identity: 'guardia@demo-pacifico.test',
-        password: 'DemoGuardia2026!',
+        password: demoPassword!,
       },
       'test',
       'Firefox de prueba',
@@ -168,7 +169,7 @@ describeAuth('AuthService (integración)', () => {
     const second = await auth.login(
       {
         identity: 'guardia@demo-pacifico.test',
-        password: 'DemoGuardia2026!',
+        password: demoPassword!,
       },
       'test',
       'Android de prueba',
@@ -233,7 +234,7 @@ describeAuth('AuthService (integración)', () => {
       await expect(failFromChangingIps(3)).rejects.toMatchObject({ status: 429 });
       const firstLockTtl = await redis.ttl(lockKey);
       await expect(
-        auth.login({ identity, password: 'DemoGuardia2026!' }, '198.51.100.10'),
+        auth.login({ identity, password: demoPassword! }, '198.51.100.10'),
       ).rejects.toMatchObject({ status: 429 });
 
       await redis.del(lockKey);
@@ -282,7 +283,7 @@ describeAuth('AuthService (integración)', () => {
     try {
       const result = await auth.login({
         identity: 'guardia@demo-andina.test',
-        password: 'DemoGuardia2026!',
+        password: demoPassword!,
       });
       expect(result).toMatchObject({
         requiresTenantSelection: true,
