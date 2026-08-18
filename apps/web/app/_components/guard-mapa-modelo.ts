@@ -11,7 +11,7 @@
  * medio del Atlántico.
  */
 
-import { esCoordenadaValida, type PuntoMapa } from './mapa-modelo';
+import { esCoordenadaValida, type PuntoMapa, type TrazaMapa } from './mapa-modelo';
 import type { ItemLeyenda } from './mapa-leyenda';
 import type { VarianteMarca } from './mapa-modelo';
 import type { PuntoRuta } from './guard-shift-state';
@@ -72,6 +72,26 @@ export function marcasDeRuta(
     });
   }
   return marcas;
+}
+
+/**
+ * Traza de la ronda patrón: línea que conecta los puntos en el orden planificado
+ * (variante 'ruta' -> punteada en MapaBase).
+ *
+ * Requiere al menos dos puntos con coordenadas válidas para formar un recorrido.
+ */
+export function trazaDeRutaPatron(puntos: readonly PuntoRuta[]): TrazaMapa | null {
+  const ordenados = [...puntos].sort((a, b) => a.position - b.position);
+  const validos = ordenados.filter((p) => esCoordenadaValida(p.latitude, p.longitude));
+  if (validos.length < 2) return null;
+  return {
+    id: 'ruta-patron',
+    variante: 'ruta',
+    puntos: validos.map((p) => ({
+      lat: p.latitude as number,
+      lng: p.longitude as number,
+    })),
+  };
 }
 
 /** Leyenda con solo los estados que de verdad aparecen en el mapa. */

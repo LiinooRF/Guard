@@ -247,6 +247,63 @@ export class GeoService {
     const duracionMs =
       primero && ultimo ? ultimo.recordedAt.getTime() - primero.recordedAt.getTime() : 0;
 
+    let checkpointsRows: Array<{
+      id: string;
+      name: string;
+      position: number | string;
+      latitude: string | null;
+      longitude: string | null;
+      kind: string | null;
+      scanned: boolean;
+    }> = [];
+    try {
+      const resultado = await this.tenantContext.manager.query<
+        Array<{
+          id: string;
+          name: string;
+          position: number | string;
+          latitude: string | null;
+          longitude: string | null;
+          kind: string | null;
+          scanned: boolean;
+        }>
+      >(
+        `SELECT
+           c.id,
+           c.name,
+           COALESCE(rc.position, 0)::int AS position,
+           c.latitude,
+           c.longitude,
+           c.kind,
+           EXISTS(
+             SELECT 1 FROM scans sc
+             WHERE sc.tenant_id = p.tenant_id
+               AND sc.patrol_id = p.id
+               AND sc.checkpoint_id = c.id
+           ) AS scanned
+         FROM patrols p
+         JOIN routes r ON r.tenant_id = p.tenant_id AND r.id = p.route_id
+         JOIN route_checkpoints rc ON rc.tenant_id = p.tenant_id AND rc.route_id = p.route_id
+         JOIN checkpoints c ON c.tenant_id = rc.tenant_id AND c.id = rc.checkpoint_id
+         WHERE p.id = $1
+         ORDER BY rc.position`,
+        [patrolId],
+      );
+      if (Array.isArray(resultado)) checkpointsRows = resultado;
+    } catch {
+      checkpointsRows = [];
+    }
+
+    const checkpoints = checkpointsRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      position: Number(row.position),
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
+      scanned: Boolean(row.scanned),
+      isCritical: row.kind === 'acceso_critico',
+    }));
+
     return {
       patrolId,
       status: patrol.status,
@@ -261,6 +318,7 @@ export class GeoService {
       lastPointAt: ultimo?.recordedAt ?? null,
       retentionDays: reglas.gpsTrackRetentionDays,
       points,
+      checkpoints,
     };
   }
 

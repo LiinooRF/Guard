@@ -283,6 +283,62 @@ describe('GeoService — distancia y duración de la traza', () => {
     expect(traza.points[0]).toMatchObject({ latitude: -33.45, accuracyM: 8.5, batteryPct: 90 });
   });
 
+  it('devuelve los checkpoints de la ronda formateados con su estado y posición', async () => {
+    const checkpointsMock = [
+      {
+        id: 'cp-1',
+        name: 'Acceso Principal',
+        position: 1,
+        latitude: '-33.450000',
+        longitude: '-70.660000',
+        kind: 'acceso_critico',
+        scanned: true,
+      },
+      {
+        id: 'cp-2',
+        name: 'Bodega 1',
+        position: 2,
+        latitude: null,
+        longitude: null,
+        kind: 'normal',
+        scanned: false,
+      },
+    ];
+
+    const query = jest.fn()
+      .mockResolvedValueOnce([
+        { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'en_curso' },
+      ])
+      .mockResolvedValueOnce([{ present: true }])
+      .mockResolvedValueOnce(filas)
+      .mockResolvedValueOnce(checkpointsMock);
+
+    const traza = await servicio(query).patrolTrack('patrol-1', {
+      sub: 'supervisor-1',
+      role: 'SUPERVISOR',
+    });
+
+    expect(traza.checkpoints).toHaveLength(2);
+    expect(traza.checkpoints[0]).toEqual({
+      id: 'cp-1',
+      name: 'Acceso Principal',
+      position: 1,
+      latitude: -33.45,
+      longitude: -70.66,
+      scanned: true,
+      isCritical: true,
+    });
+    expect(traza.checkpoints[1]).toEqual({
+      id: 'cp-2',
+      name: 'Bodega 1',
+      position: 2,
+      latitude: null,
+      longitude: null,
+      scanned: false,
+      isCritical: false,
+    });
+  });
+
   /**
    * #77: un fix con 3 km de error en un subterraneo no puede sumar 3 km de
    * recorrido al informe. El punto se devuelve igual —explica el hueco— pero no
