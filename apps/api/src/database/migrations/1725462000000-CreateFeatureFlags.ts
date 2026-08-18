@@ -28,7 +28,7 @@ const TENANT_TABLES = ['tenant_feature_grants', 'tenant_feature_preferences'] as
  * El servidor valida en el endpoint, pero el endpoint depende de un decorador
  * bien puesto. Por eso la base tambien lo impide, en dos capas:
  *
- *   - El techo NO se escribe con SQL suelto. voxia_app queda con SELECT y sin
+ *   - El techo NO se escribe con SQL suelto. sentrycore_app queda con SELECT y sin
  *     INSERT/UPDATE/DELETE sobre `plan_feature_flags` y `tenant_feature_grants`;
  *     se escriben por funciones SECURITY DEFINER que exigen SUPERADMIN activo.
  *     El REVOKE explicito es obligatorio: el script de init hace
@@ -42,7 +42,7 @@ const TENANT_TABLES = ['tenant_feature_grants', 'tenant_feature_preferences'] as
  * comun a todas las empresas, no datos de ninguna. No hay nada que aislar.
  *
  * Supuesto heredado de platform_provision_tenant: el dueño del esquema —el rol
- * que corre las migraciones, separado de voxia_app— se salta RLS. Es lo que deja
+ * que corre las migraciones, separado de sentrycore_app— se salta RLS. Es lo que deja
  * que las funciones SECURITY DEFINER escriban tablas con FORCE ROW LEVEL
  * SECURITY sin contexto de tenant.
  */
@@ -109,7 +109,7 @@ export class CreateFeatureFlags1725462000000 implements MigrationInterface {
     }
 
     // La empresa LEE su licencia y no la escribe: sin politica de escritura, un
-    // INSERT o UPDATE de voxia_app queda denegado por RLS aunque alguien le
+    // INSERT o UPDATE de sentrycore_app queda denegado por RLS aunque alguien le
     // devuelva el privilegio por error. Falla cerrada: app_tenant_id() es NULL
     // sin contexto y NULL no iguala a nada.
     await queryRunner.query(`
@@ -361,26 +361,26 @@ export class CreateFeatureFlags1725462000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- La preferencia del ADMIN es lo unico que el tenant escribe.
-          GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_feature_preferences TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_feature_preferences TO sentrycore_app;
 
           -- El techo se lee desde el tenant y se escribe solo por las funciones
           -- con control de SUPERADMIN. El REVOKE no sobra: el script de init deja
           -- ALTER DEFAULT PRIVILEGES con los cuatro verbos, asi que estas tablas
           -- nacen escribibles y sin esto el GRANT SELECT no restringe nada.
-          GRANT SELECT ON plan_feature_flags TO voxia_app;
-          GRANT SELECT ON tenant_feature_grants TO voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON plan_feature_flags FROM voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON tenant_feature_grants FROM voxia_app;
+          GRANT SELECT ON plan_feature_flags TO sentrycore_app;
+          GRANT SELECT ON tenant_feature_grants TO sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON plan_feature_flags FROM sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON tenant_feature_grants FROM sentrycore_app;
 
           -- tenant_feature_entitlements queda SIN grant: la usa el trigger desde
           -- adentro, con los privilegios del dueño. Expuesta, dejaria consultar
           -- el paquete comercial de cualquier empresa por su uuid.
-          GRANT EXECUTE ON FUNCTION platform_set_plan_features(uuid, text, jsonb) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_set_tenant_features(uuid, uuid, jsonb) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_list_plan_features(uuid) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_tenant_features(uuid, uuid) TO voxia_app;
+          GRANT EXECUTE ON FUNCTION platform_set_plan_features(uuid, text, jsonb) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_set_tenant_features(uuid, uuid, jsonb) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_list_plan_features(uuid) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_tenant_features(uuid, uuid) TO sentrycore_app;
         END IF;
       END
       $$

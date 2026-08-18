@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassThrough } from 'node:stream';
-import type { ComplianceResult } from '@voxia/shared';
+import type { ComplianceResult } from '@sentrycore/shared';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { BrandingService } from '../branding/branding.service';

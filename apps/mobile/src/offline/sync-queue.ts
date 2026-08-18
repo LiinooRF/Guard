@@ -60,8 +60,8 @@ async function enviar(
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'X-Voxia-Request': 'mobile-background',
-      'X-Voxia-Client': 'mobile',
+      'X-SentryCore-Request': 'mobile-background',
+      'X-SentryCore-Client': 'mobile',
       Origin: portalOrigin,
     },
     body: JSON.stringify({ operations: operaciones }),
@@ -71,7 +71,7 @@ async function enviar(
   const refresco = await fetch(`${apiUrl}/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'X-Voxia-Client': 'mobile', Origin: portalOrigin },
+    headers: { 'X-SentryCore-Client': 'mobile', Origin: portalOrigin },
   });
   if (refresco.ok) respuesta = await pedido();
   return respuesta;

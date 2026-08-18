@@ -5,12 +5,12 @@ exportan desde ellos y **se commitean**: el build no los genera.
 
 ## Por qué el icono no es del cliente
 
-VoxIA Control es multi-tenant white-label, pero en Google Play hay **una sola
+SentryCore es multi-tenant white-label, pero en Google Play hay **una sola
 ficha y un solo APK**. El icono, el nombre y el splash son de la plataforma y no
 se pueden pintar por empresa: cuando la app arranca todavía no sabe a qué
 empresa pertenece quien la abrió — eso se resuelve después del login.
 
-La marca del cliente (`tenantBrandingSchema` de `@voxia/shared`) vive **dentro
+La marca del cliente (`tenantBrandingSchema` de `@sentrycore/shared`) vive **dentro
 del WebView**. Si comercial promete "la app con el logo del cliente", eso
 significa ficha propia + cuenta de desarrollador propia + revisión propia por
 cada cliente, con su verificación de identidad y sus semanas de calendario. No

@@ -45,8 +45,8 @@ def evaluar(ws, expresion, numero):
 
 PREGUNTAS = [
     ('url', 'location.href'),
-    ('¿existe el puente nativo?', 'typeof window.__voxiaPuente'),
-    ('version del protocolo', 'window.__voxiaPuente ? window.__voxiaPuente.major + "." + window.__voxiaPuente.minor : "sin puente"'),
+    ('¿existe el puente nativo?', 'typeof window.__sentrycorePuente'),
+    ('version del protocolo', 'window.__sentrycorePuente ? window.__sentrycorePuente.major + "." + window.__sentrycorePuente.minor : "sin puente"'),
     ('¿hay ReactNativeWebView?', 'typeof window.ReactNativeWebView'),
     ('inputs de archivo en la pantalla',
      'JSON.stringify([].slice.call(document.querySelectorAll("input[type=file]")).map(function(i){'
@@ -54,7 +54,7 @@ PREGUNTAS = [
     ('botones visibles',
      'JSON.stringify([].slice.call(document.querySelectorAll("button")).slice(0,12).map(function(b){'
      'return b.textContent.trim().slice(0,34);}))'),
-    ('errores registrados', 'JSON.stringify(window.__erroresVoxia || [])'),
+    ('errores registrados', 'JSON.stringify(window.__erroresSentryCore || [])'),
     ('texto de la pantalla',
      r'document.body.innerText.replace(/\s+/g," ").slice(0, 420)'),
 ]
@@ -68,9 +68,9 @@ print('inspeccionando: %s\n' % p['url'])
 # Origin que no autorizo (403 "Rejected an incoming WebSocket connection").
 ws = create_connection(p['webSocketDebuggerUrl'], timeout=25, suppress_origin=True)
 # Se capturan los errores que ocurran de aqui en adelante.
-evaluar(ws, 'window.__erroresVoxia = window.__erroresVoxia || []; '
-            'window.addEventListener("error", function(e){ window.__erroresVoxia.push(String(e.message)); }); '
-            'window.addEventListener("unhandledrejection", function(e){ window.__erroresVoxia.push("promesa: " + e.reason); }); '
+evaluar(ws, 'window.__erroresSentryCore = window.__erroresSentryCore || []; '
+            'window.addEventListener("error", function(e){ window.__erroresSentryCore.push(String(e.message)); }); '
+            'window.addEventListener("unhandledrejection", function(e){ window.__erroresSentryCore.push("promesa: " + e.reason); }); '
             '"ok"', 900)
 for i, (etiqueta, expresion) in enumerate(PREGUNTAS, start=1):
     print('%-34s %s' % (etiqueta + ':', evaluar(ws, expresion, i)))

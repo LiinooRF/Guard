@@ -46,7 +46,7 @@ type Cobertura =
   | { readonly via: 'servicio'; readonly donde: string; readonly nota: string }
   /** El valor no puede traer espacios en las puntas, asi que no hay nada que recortar. */
   | { readonly via: 'imposible'; readonly nota: string }
-  /** Se valida fuera de apps/api (esquema zod de @voxia/shared). */
+  /** Se valida fuera de apps/api (esquema zod de @sentrycore/shared). */
   | { readonly via: 'externo'; readonly donde: string; readonly nota: string };
 
 /**

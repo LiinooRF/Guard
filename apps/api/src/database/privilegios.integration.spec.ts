@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
  *
  * `privilegios.spec.ts` lee las migraciones y compara intencion con efecto; es
  * barato y corre siempre. Pero lee texto. Esto abre una conexion con
- * `voxia_app` (sin BYPASSRLS) y le pide justamente lo que no debe poder hacer.
+ * `sentrycore_app` (sin BYPASSRLS) y le pide justamente lo que no debe poder hacer.
  *
  * Existe porque la falla anterior era invisible desde el codigo: la aplicacion
  * nunca hacia `UPDATE platform_rules`, asi que ningun test lo tocaba, y el
@@ -18,7 +18,7 @@ const describeDatabase = appUrl ? describe : describe.skip;
 /** 42501 = insufficient_privilege. */
 const SIN_PRIVILEGIO = '42501';
 
-describeDatabase('privilegios efectivos de voxia_app', () => {
+describeDatabase('privilegios efectivos de sentrycore_app', () => {
   let dataSource: DataSource;
 
   beforeAll(async () => {

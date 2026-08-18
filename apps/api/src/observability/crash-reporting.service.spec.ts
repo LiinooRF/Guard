@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { DEFAULT_PATROL_RULES } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES } from '@sentrycore/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
@@ -20,7 +20,7 @@ const CONFIG: CrashReportingConfig = {
   driver: 'sentry',
   dsn: { publicKey: 'k', projectId: '1', envelopeUrl: 'https://sentry.local/api/1/envelope/' },
   environment: 'staging',
-  release: 'voxia-api@1.0.0',
+  release: 'sentrycore-api@1.0.0',
   timeoutMs: 20,
   maxPerUserHour: 20,
 };
@@ -128,7 +128,7 @@ describe('registrarCaidaDeApp', () => {
     });
     // El release apunta a la version de la APP: el stacktrace que hay que
     // mapear es el del telefono, no el de la API.
-    expect(evento.release).toBe('voxia-app@1.4.2');
+    expect(evento.release).toBe('sentrycore-app@1.4.2');
   });
 
   it('el mensaje y la pila salen enmascarados hacia la base y hacia el proveedor', async () => {
@@ -389,7 +389,7 @@ describe('reportarErrorDeServidor', () => {
     expect(evento.tags.http_route).toBe('GET /api/patrols/:id/scan');
     expect(evento.tags.source).toBe('api');
     expect(evento.tags.tenant_id).toBe(TENANT);
-    expect(evento.release).toBe('voxia-api@1.0.0');
+    expect(evento.release).toBe('sentrycore-api@1.0.0');
   });
 
   it('nunca lanza, aunque le pasen cualquier cosa', async () => {

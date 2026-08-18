@@ -186,7 +186,7 @@ describe('ConfigAuditService', () => {
         old_value: 50,
         new_value: 200,
         actor_id: 'sa1',
-        actor_label: 'Soporte VoxIA',
+        actor_label: 'Soporte SentryCore',
         support_access_id: 'ventana-1',
         changed_at: new Date('2026-07-02T10:00:00Z'),
         site_name: 'Bodega Sur',

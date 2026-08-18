@@ -375,13 +375,13 @@ function publicApiUrl() {
 
 async function loadGuardHome(): Promise<GuardHomeData> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return noAssignment();
 
   const internalApiUrl = process.env.API_INTERNAL_URL ?? publicApiUrl();
   try {
     const response = await fetch(`${internalApiUrl}/guard/home`, {
-      headers: { cookie: `voxia_access=${accessToken.value}` },
+      headers: { cookie: `sentrycore_access=${accessToken.value}` },
       cache: 'no-store',
     });
     if (!response.ok) return noAssignment();
@@ -396,14 +396,14 @@ async function loadGuardHome(): Promise<GuardHomeData> {
 
 async function loadTenantOverview(): Promise<TenantOverview | null> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return null;
 
   try {
     const response = await fetch(
       `${process.env.API_INTERNAL_URL ?? publicApiUrl()}/dashboard/tenant`,
       {
-        headers: { cookie: `voxia_access=${accessToken.value}` },
+        headers: { cookie: `sentrycore_access=${accessToken.value}` },
         cache: 'no-store',
       },
     );
@@ -416,13 +416,13 @@ async function loadTenantOverview(): Promise<TenantOverview | null> {
 
 async function authenticatedGet<T>(path: string, fallback: T): Promise<T> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return fallback;
   try {
     const response = await fetch(
       `${process.env.API_INTERNAL_URL ?? publicApiUrl()}${path}`,
       {
-        headers: { cookie: `voxia_access=${accessToken.value}` },
+        headers: { cookie: `sentrycore_access=${accessToken.value}` },
         cache: 'no-store',
       },
     );

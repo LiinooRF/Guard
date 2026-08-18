@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEFAULT_PATROL_RULES, patrolRulesSchema } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES, patrolRulesSchema } from '@sentrycore/shared';
 
 /**
  * Lo que un mock nunca va a cazar.
@@ -93,19 +93,19 @@ describe('migracion de la purga por retencion', () => {
     // El script de init deja ALTER DEFAULT PRIVILEGES con los cuatro verbos
     // sobre toda tabla nueva: sin estos REVOKE, un GRANT SELECT no acota nada.
     for (const tabla of ['retention_purge_runs', 'retention_tenant_sweeps']) {
-      expect(MIGRACION).toContain(`GRANT SELECT ON ${tabla} TO voxia_app`);
-      expect(MIGRACION).toContain(`REVOKE INSERT, UPDATE, DELETE ON ${tabla} FROM voxia_app`);
+      expect(MIGRACION).toContain(`GRANT SELECT ON ${tabla} TO sentrycore_app`);
+      expect(MIGRACION).toContain(`REVOKE INSERT, UPDATE, DELETE ON ${tabla} FROM sentrycore_app`);
       expect(MIGRACION).not.toMatch(new RegExp(`GRANT[^;]*(INSERT|UPDATE|DELETE)[^;]*ON ${tabla}`));
     }
   });
 
-  it('NO le da DELETE a voxia_app sobre ninguna tabla append-only', () => {
+  it('NO le da DELETE a sentrycore_app sobre ninguna tabla append-only', () => {
     // Es el corazon del carril: la purga existe justamente para no tener que
     // hacer esto. Si algun dia aparece, el libro de novedades y la evidencia
     // dejan de servir como prueba y nadie se entera hasta el juicio.
     for (const tabla of ['scan_photos', 'event_photos', 'field_events', 'audit_log']) {
       expect(MIGRACION).not.toMatch(new RegExp(`GRANT[^;]*DELETE[^;]*ON ${tabla}`));
-      expect(MIGRACION).not.toMatch(new RegExp(`DELETE ON ${tabla} TO voxia_app`));
+      expect(MIGRACION).not.toMatch(new RegExp(`DELETE ON ${tabla} TO sentrycore_app`));
     }
   });
 
@@ -130,9 +130,9 @@ describe('migracion de la purga por retencion', () => {
     }
   });
 
-  it('cada funcion revoca a PUBLIC y otorga EXECUTE solo a voxia_app', () => {
+  it('cada funcion revoca a PUBLIC y otorga EXECUTE solo a sentrycore_app', () => {
     expect(MIGRACION).toContain('REVOKE ALL ON FUNCTION ${firma} FROM PUBLIC');
-    expect(MIGRACION).toContain('GRANT EXECUTE ON FUNCTION ${firma} TO voxia_app');
+    expect(MIGRACION).toContain('GRANT EXECUTE ON FUNCTION ${firma} TO sentrycore_app');
     for (const firma of [
       'retencion_dias_efectivos(text, integer)',
       'retencion_tenants(integer)',

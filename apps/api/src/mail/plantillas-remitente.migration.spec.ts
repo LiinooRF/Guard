@@ -58,16 +58,16 @@ describe('migracion del remitente por tenant', () => {
     // init deja ALTER DEFAULT PRIVILEGES con los cuatro verbos sobre toda tabla
     // nueva. Es la trampa que ya costo un PR.
     expect(REMITENTE).toContain(
-      'REVOKE INSERT, UPDATE, DELETE ON tenant_mail_sender FROM voxia_app',
+      'REVOKE INSERT, UPDATE, DELETE ON tenant_mail_sender FROM sentrycore_app',
     );
     expect(REMITENTE).toContain(
-      'GRANT INSERT (tenant_id, reply_to, from_address) ON tenant_mail_sender TO voxia_app',
+      'GRANT INSERT (tenant_id, reply_to, from_address) ON tenant_mail_sender TO sentrycore_app',
     );
     expect(REMITENTE).toContain(
-      'GRANT UPDATE (reply_to, from_address, updated_at) ON tenant_mail_sender TO voxia_app',
+      'GRANT UPDATE (reply_to, from_address, updated_at) ON tenant_mail_sender TO sentrycore_app',
     );
     expect(REMITENTE).not.toMatch(/GRANT UPDATE \([^)]*from_address_verified_at/);
-    expect(REMITENTE).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+    expect(REMITENTE).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
   });
 
   it('cambiar la direccion borra la verificacion anterior, y lo hace la base', () => {

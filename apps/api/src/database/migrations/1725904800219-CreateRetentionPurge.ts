@@ -12,12 +12,12 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * el incumplimiento del principio de proporcionalidad (ver CLAUDE.md,
  * "rastrear a un trabajador tiene requisitos legales").
  *
- * QUIEN BORRA, Y POR QUE NO PUEDE SER voxia_app
+ * QUIEN BORRA, Y POR QUE NO PUEDE SER sentrycore_app
  * ---------------------------------------------
  * `scan_photos` y `event_photos` son APPEND-ONLY a nivel de PostgreSQL: el rol
  * de la aplicacion tiene GRANT SELECT, INSERT y REVOKE UPDATE, DELETE. Esa
  * propiedad es la que hace que la evidencia sirva como prueba en un juicio
- * laboral, y darle DELETE a voxia_app para poder purgar la destruiria: pasaria
+ * laboral, y darle DELETE a sentrycore_app para poder purgar la destruiria: pasaria
  * de "la aplicacion NO PUEDE borrar" a "la aplicacion promete no borrar", que
  * no es un control, es una intencion (mismo argumento con el que la migracion
  * de event_photos justifica su REVOKE).
@@ -25,7 +25,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * La salida es la que ya sanciono el proyecto en `report_dispatch_backlog` y en
  * `platform_purge_tenant`: funciones SECURITY DEFINER. Corren como el DUEÑO de
  * las tablas —el rol de migraciones, que es superusuario y por eso si se salta
- * RLS— y no como voxia_app, que sigue sin BYPASSRLS y sigue sin DELETE. Lo que
+ * RLS— y no como sentrycore_app, que sigue sin BYPASSRLS y sigue sin DELETE. Lo que
  * la aplicacion gana es EXECUTE sobre seis funciones estrechas, no un permiso
  * sobre las tablas.
  *
@@ -80,7 +80,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * -------------------
  * `retention_purge_runs` es la bitacora, y la escribe la MISMA funcion en la
  * MISMA transaccion que el DELETE: no hay forma de borrar sin dejar la fila ni
- * de dejar la fila sin haber borrado. voxia_app recibe SELECT y nada mas —ni
+ * de dejar la fila sin haber borrado. sentrycore_app recibe SELECT y nada mas —ni
  * siquiera INSERT—, asi que el ADMIN puede responder "que se borro de mi
  * empresa, cuando y con que ventana" y nadie desde la aplicacion puede maquillar
  * esa respuesta.
@@ -553,21 +553,21 @@ export class CreateRetentionPurge1725904800219 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- La bitacora de purgas se LEE y no se escribe desde la aplicacion. Ni
           -- siquiera INSERT: la escribe la funcion SECURITY DEFINER junto con el
           -- DELETE. El script de init deja ALTER DEFAULT PRIVILEGES con los
           -- cuatro verbos, asi que el REVOKE no es adorno.
-          GRANT SELECT ON retention_purge_runs TO voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON retention_purge_runs FROM voxia_app;
+          GRANT SELECT ON retention_purge_runs TO sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON retention_purge_runs FROM sentrycore_app;
 
           -- Idem con el cursor del barrido: lo escribe retencion_marcar_barrido,
           -- que es SECURITY DEFINER y exige no tener contexto de tenant. Con
           -- UPDATE directo, cualquier request podria atrasarle la marca a su
           -- propia empresa y sacarla de la rotacion — o sea, dejar de purgar sus
           -- datos sin que nadie lo note.
-          GRANT SELECT ON retention_tenant_sweeps TO voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON retention_tenant_sweeps FROM voxia_app;
+          GRANT SELECT ON retention_tenant_sweeps TO sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON retention_tenant_sweeps FROM sentrycore_app;
         END IF;
       END
       $$
@@ -575,7 +575,7 @@ export class CreateRetentionPurge1725904800219 implements MigrationInterface {
 
     // Nadie por defecto y EXECUTE explicito solo para el rol de la aplicacion, el
     // mismo criterio del resto de las funciones SECURITY DEFINER del proyecto. Es
-    // lo unico que voxia_app gana con esta migracion: sigue SIN DELETE sobre
+    // lo unico que sentrycore_app gana con esta migracion: sigue SIN DELETE sobre
     // scan_photos y sobre event_photos.
     const FIRMAS = [
       'retencion_dias_efectivos(text, integer)',
@@ -590,8 +590,8 @@ export class CreateRetentionPurge1725904800219 implements MigrationInterface {
       await queryRunner.query(`
         DO $$
         BEGIN
-          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-            GRANT EXECUTE ON FUNCTION ${firma} TO voxia_app;
+          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+            GRANT EXECUTE ON FUNCTION ${firma} TO sentrycore_app;
           END IF;
         END
         $$

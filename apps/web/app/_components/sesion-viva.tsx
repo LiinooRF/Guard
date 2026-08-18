@@ -14,7 +14,7 @@ import { useSessionRefresh } from './use-session-refresh';
  * `ensureFreshSession`, y solo cuando la cola de sincronización tenía algo que
  * enviar.
  *
- * O sea que a quien no estaba enviando nada se le vencía el `voxia_access` a los
+ * O sea que a quien no estaba enviando nada se le vencía el `sentrycore_access` a los
  * 15 minutos y la siguiente navegación lo echaba al login. Para un guardia en un
  * turno de 12 horas eso pasa decenas de veces: camina entre puntos sin nada que
  * sincronizar, y cuando llega al siguiente tiene que volver a escribir su clave

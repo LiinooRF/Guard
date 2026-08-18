@@ -80,7 +80,7 @@ export function crearLectorQr(puerto: PuertoQr): LectorQr {
         throw new ErrorEscaneo(
           'permiso-denegado',
           permiso === 'denegado-definitivo'
-            ? 'La cámara está bloqueada para VoxIA Control. Actívala en los ajustes del teléfono.'
+            ? 'La cámara está bloqueada para SentryCore. Actívala en los ajustes del teléfono.'
             : 'Sin permiso de cámara no se puede leer el código QR del punto.',
           permiso !== 'denegado-definitivo',
         );

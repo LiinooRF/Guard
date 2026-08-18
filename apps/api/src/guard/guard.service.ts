@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { computeCompliance, type CheckpointKind, type PatrolRules, type ScanAnomaly } from '@voxia/shared';
+import { computeCompliance, type CheckpointKind, type PatrolRules, type ScanAnomaly } from '@sentrycore/shared';
 import { randomUUID } from 'node:crypto';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -43,7 +43,7 @@ interface PatrolRow {
     // Criticidad del punto y override tri-estado de la foto. Sin estos dos
     // campos el telefono NO puede saber que el punto exige fotografiar la
     // puerta, que es el requisito del producto en los accesos criticos: la
-    // pantalla los pasa tal cual a isPhotoRequired() de @voxia/shared.
+    // pantalla los pasa tal cual a isPhotoRequired() de @sentrycore/shared.
     kind: CheckpointKind;
     /** null = hereda la regla; true/false la pisan en cualquier direccion. */
     requiresPhoto: boolean | null;
@@ -63,7 +63,7 @@ interface PatrolRow {
  *
  * Se mandan los ingredientes porque la ronda ocurre sin señal: el telefono
  * tiene que poder decidir cuando ya no puede preguntar, y lo hace llamando a
- * isPhotoRequired() de @voxia/shared — la misma funcion que usa el servidor.
+ * isPhotoRequired() de @sentrycore/shared — la misma funcion que usa el servidor.
  * Mandar un booleano por punto obligaria a recalcularlo en el telefono cada vez
  * que cambia algo, que es exactamente la regla reimplementada que hay que
  * evitar.
@@ -186,7 +186,7 @@ export class GuardService {
     // Van al final y opcionales: varios specs construyen el servicio por posicion.
     private readonly signatures?: DeviceSignatureService,
     // Resuelve el horario habil del recinto y la foto obligatoria de un punto.
-    // Es quien llama a isPhotoRequired() de @voxia/shared: la decision no se
+    // Es quien llama a isPhotoRequired() de @sentrycore/shared: la decision no se
     // reimplementa aca.
     private readonly evidence?: EvidenceService,
   ) {}
@@ -339,7 +339,7 @@ export class GuardService {
 
   /**
    * ¿Este punto exige foto AHORA? Lo resuelve EvidenceService con el horario
-   * real del recinto y isPhotoRequired() de @voxia/shared; aca no se recalcula
+   * real del recinto y isPhotoRequired() de @sentrycore/shared; aca no se recalcula
    * nada.
    *
    * `null` = no se pudo resolver, y entonces el telefono decide con la politica

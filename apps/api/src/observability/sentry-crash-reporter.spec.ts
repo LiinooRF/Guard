@@ -14,7 +14,7 @@ function evento(): CrashEvent {
     eventId: 'b'.repeat(32),
     level: 'error',
     occurredAt: new Date('2026-08-03T12:00:00.000Z'),
-    release: 'voxia-api@1.0.0',
+    release: 'sentrycore-api@1.0.0',
     environment: 'staging',
     errorName: 'QueryFailedError',
     errorMessage: 'la columna no existe',
@@ -110,7 +110,7 @@ describe('crearCrashReporter', () => {
     driver: 'off',
     dsn: null,
     environment: 'test',
-    release: 'voxia-api@test',
+    release: 'sentrycore-api@test',
     timeoutMs: 20,
     maxPerUserHour: 20,
   };

@@ -157,19 +157,19 @@ export class CreateMailDeliveries1725559220000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- DELETE existe solo para el purgado por retencion: la fila guarda el
           -- correo de una persona de contacto y no se conserva para siempre.
-          GRANT SELECT, INSERT, DELETE ON mail_deliveries TO voxia_app;
+          GRANT SELECT, INSERT, DELETE ON mail_deliveries TO sentrycore_app;
           -- El REVOKE va ANTES del GRANT por columna y no es decorativo:
           -- 01-app-role.sh deja un ALTER DEFAULT PRIVILEGES ... GRANT SELECT,
-          -- INSERT, UPDATE, DELETE ON TABLES TO voxia_app, asi que voxia_app
+          -- INSERT, UPDATE, DELETE ON TABLES TO sentrycore_app, asi que sentrycore_app
           -- nace con UPDATE sobre TODA la tabla en el mismo instante en que se
           -- crea. Sin quitarlo primero, el GRANT por columna solo sumaria un
           -- privilegio que ya existe y no acotaria nada. Ademas PostgreSQL
           -- revoca las columnas junto con la tabla, asi que el orden importa:
           -- al reves, el REVOKE se llevaria puesto el GRANT de abajo.
-          REVOKE UPDATE ON mail_deliveries FROM voxia_app;
+          REVOKE UPDATE ON mail_deliveries FROM sentrycore_app;
           -- UPDATE acotado por COLUMNA. Lo que cambia despues de encolar es el
           -- estado del envio y nada mas: destinatario, plantilla, ronda y hora
           -- de encolado quedan congelados, que es lo que hace que la fila sirva
@@ -182,7 +182,7 @@ export class CreateMailDeliveries1725559220000 implements MigrationInterface {
             sent_at,
             delivered_at,
             failed_at
-          ) ON mail_deliveries TO voxia_app;
+          ) ON mail_deliveries TO sentrycore_app;
         END IF;
       END
       $$

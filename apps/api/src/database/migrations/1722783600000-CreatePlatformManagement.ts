@@ -170,19 +170,19 @@ export class CreatePlatformManagement1722783600000 implements MigrationInterface
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           REVOKE ALL ON FUNCTION assert_platform_superadmin(uuid) FROM PUBLIC;
           REVOKE ALL ON FUNCTION platform_list_tenants(uuid) FROM PUBLIC;
           REVOKE ALL ON FUNCTION platform_create_tenant(
             uuid, uuid, text, text, text, text, uuid, citext, text, text, text
           ) FROM PUBLIC;
           REVOKE ALL ON FUNCTION platform_set_tenant_status(uuid, uuid, text) FROM PUBLIC;
-          GRANT EXECUTE ON FUNCTION assert_platform_superadmin(uuid) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO voxia_app;
+          GRANT EXECUTE ON FUNCTION assert_platform_superadmin(uuid) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO sentrycore_app;
           GRANT EXECUTE ON FUNCTION platform_create_tenant(
             uuid, uuid, text, text, text, text, uuid, citext, text, text, text
-          ) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_set_tenant_status(uuid, uuid, text) TO voxia_app;
+          ) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_set_tenant_status(uuid, uuid, text) TO sentrycore_app;
         END IF;
       END
       $$

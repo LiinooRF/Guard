@@ -4,7 +4,7 @@ import {
   ROLES,
   type Permission,
   type Role,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 import { AdminController } from '../admin/admin.controller';
 import { HorarioHabilController } from '../admin/horario-habil.controller';

@@ -36,7 +36,7 @@ export type {
  */
 
 const SIN_PUENTE =
-  'Esta pantalla escanea solo desde la app VoxIA Control instalada en el teléfono.';
+  'Esta pantalla escanea solo desde la app SentryCore instalada en el teléfono.';
 const NFC_APAGADO = 'El NFC está apagado. Actívalo en los ajustes del teléfono para escanear.';
 const SIN_RESPUESTA =
   'La app del teléfono no respondió. Ciérrala y vuelve a abrirla antes de seguir la ronda.';
@@ -47,7 +47,7 @@ const SIN_RESPUESTA =
  */
 const AJUSTES_UBICACION =
   'Tu ubicación está desactivada para esta app. Actívala en los ajustes del teléfono ' +
-  '(Aplicaciones → VoxIA Control → Permisos → Ubicación) para que tu recorrido se registre.';
+  '(Aplicaciones → SentryCore → Permisos → Ubicación) para que tu recorrido se registre.';
 
 /**
  * POST /geo/permission con la sesión del guardia (#275). Lanza si no es 2xx

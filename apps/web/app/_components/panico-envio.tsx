@@ -35,7 +35,7 @@ import { escribirJson, leerJson, nuevoUuid } from './guard-storage';
  * recibo.
  */
 
-const CLAVE_PANICOS = 'voxia.guard.panic.v1';
+const CLAVE_PANICOS = 'sentrycore.guard.panic.v1';
 
 /** Cuantas alertas terminadas se conservan para consulta. Las no entregadas NUNCA se podan. */
 const MAX_GUARDADAS = 20;

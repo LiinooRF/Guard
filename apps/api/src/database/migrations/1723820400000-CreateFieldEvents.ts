@@ -6,7 +6,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * El panico NO es una tabla aparte: es la criticidad maxima. Misma consulta,
  * misma bandeja, misma auditoria.
  *
- * Append-only DE VERDAD (#124): el GRANT de voxia_app es SOLO SELECT e INSERT.
+ * Append-only DE VERDAD (#124): el GRANT de sentrycore_app es SOLO SELECT e INSERT.
  * Sin UPDATE ni DELETE a nivel de PostgreSQL, ni la API comprometida ni un
  * admin incomodo pueden reescribir la historia. El libro de novedades termina
  * en juicios laborales: una correccion es una ENTRADA NUEVA que referencia a
@@ -67,10 +67,10 @@ export class CreateFieldEvents1723820400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- SOLO SELECT e INSERT, a proposito: append-only aplicado en la base.
-          GRANT SELECT, INSERT ON field_events TO voxia_app;
-          REVOKE UPDATE, DELETE ON field_events FROM voxia_app;
+          GRANT SELECT, INSERT ON field_events TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON field_events FROM sentrycore_app;
         END IF;
       END
       $$

@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';

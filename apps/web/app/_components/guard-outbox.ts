@@ -26,7 +26,7 @@ import { reflejarEnColaNativa } from './guard-native-outbox';
  * que reenviar la cola completa es seguro.
  */
 
-const CLAVE_COLA = 'voxia.guard.outbox.v1';
+const CLAVE_COLA = 'sentrycore.guard.outbox.v1';
 const ESPERA_BASE_MS = 2_000;
 const ESPERA_MAX_MS = 60_000;
 
@@ -337,7 +337,7 @@ function aplicarVeredictos(veredictos: readonly VeredictoSync[]): void {
 // -------------------------------------------------------------- envío directo
 
 /**
- * Llamada a la API con la sesión fresca. `voxia_access` dura 15 minutos y una
+ * Llamada a la API con la sesión fresca. `sentrycore_access` dura 15 minutos y una
  * ronda dura más: sin renovar antes, el escaneo del punto 5 se cae con 401.
  */
 export async function pedirApi(

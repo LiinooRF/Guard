@@ -8,14 +8,14 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * aislamiento por app_tenant_id() dejaria cada fila invisible para su unico
  * consumidor. Por eso va SIN RLS, con el mismo criterio que
  * platform_memberships (que tampoco lo tiene) y control de acceso por GRANT:
- * solo voxia_app, y sin DELETE — una solicitud no se borra, se cancela.
+ * solo sentrycore_app, y sin DELETE — una solicitud no se borra, se cancela.
  *
  * tenant_id NO lleva FK a tenants a proposito: esta fila es la prueba juridica
  * de que el borrado se pidio y se ejecuto, y debe sobrevivir al purge del
  * tenant al que apunta.
  *
  * Las funciones SECURITY DEFINER siguen el patron ya sancionado de
- * platform_list_tenants/platform_create_tenant: voxia_app sin contexto tenant
+ * platform_list_tenants/platform_create_tenant: sentrycore_app sin contexto tenant
  * no ve ninguna fila por RLS, asi que el cruce de tenants ocurre solo dentro
  * de funciones que exigen assert_platform_superadmin.
  */
@@ -164,15 +164,15 @@ export class CreateTenantDeletions1724166000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Sin DELETE: cancelar es un UPDATE de estado, el historial queda.
-          GRANT SELECT, INSERT, UPDATE ON tenant_deletions TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON tenant_deletions TO sentrycore_app;
           REVOKE ALL ON FUNCTION platform_export_tenant_table(uuid, uuid, text) FROM PUBLIC;
           REVOKE ALL ON FUNCTION platform_count_tenant_rows(uuid, uuid, text) FROM PUBLIC;
           REVOKE ALL ON FUNCTION platform_purge_tenant(uuid, uuid) FROM PUBLIC;
-          GRANT EXECUTE ON FUNCTION platform_export_tenant_table(uuid, uuid, text) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_count_tenant_rows(uuid, uuid, text) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_purge_tenant(uuid, uuid) TO voxia_app;
+          GRANT EXECUTE ON FUNCTION platform_export_tenant_table(uuid, uuid, text) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_count_tenant_rows(uuid, uuid, text) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_purge_tenant(uuid, uuid) TO sentrycore_app;
         END IF;
       END
       $$

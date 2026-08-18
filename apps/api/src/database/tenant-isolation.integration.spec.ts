@@ -37,7 +37,7 @@ describeDatabase('aislamiento RLS de todas las tablas tenant', () => {
 
   it('el rol de aplicacion no puede saltarse RLS', async () => {
     const { rows } = await admin.query(
-      `SELECT rolbypassrls AS bypass, rolsuper AS super FROM pg_roles WHERE rolname = 'voxia_app'`,
+      `SELECT rolbypassrls AS bypass, rolsuper AS super FROM pg_roles WHERE rolname = 'sentrycore_app'`,
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({ bypass: false, super: false });

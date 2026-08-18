@@ -1,4 +1,4 @@
-import { DEFAULT_PATROL_RULES, type PatrolRules } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES, type PatrolRules } from '@sentrycore/shared';
 
 import { SupervisorService } from './supervisor.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

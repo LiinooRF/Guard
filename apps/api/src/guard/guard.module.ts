@@ -21,7 +21,7 @@ import { BarridoVencidasProcessor } from './rondas-vencidas.barrido.processor';
 // registerScan/reportEvent en vez de reimplementar el flujo de escaneo.
 //
 // EvidenceModule entra para que el escaneo y la pantalla del turno resuelvan la
-// foto obligatoria del punto con isPhotoRequired() de @voxia/shared, que es lo
+// foto obligatoria del punto con isPhotoRequired() de @sentrycore/shared, que es lo
 // que EvidenceService ya sabia hacer y nadie llamaba. No hay ciclo: evidence
 // solo depende de database y rules.
 @Module({

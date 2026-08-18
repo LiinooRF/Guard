@@ -1,4 +1,4 @@
-import { computeCompliance, patrolRulesSchema } from '@voxia/shared';
+import { computeCompliance, patrolRulesSchema } from '@sentrycore/shared';
 
 import {
   construirInformeRonda,

@@ -1,4 +1,4 @@
-import { checkContrast } from '@voxia/shared';
+import { checkContrast } from '@sentrycore/shared';
 
 /**
  * Primitivas de dibujo compartidas por los informes en PDF (#17, #85).
@@ -25,7 +25,7 @@ export const PALETA = {
   alerta: '#b02a37',
 } as const;
 
-/** Etiquetas legibles de patrolStatusSchema (@voxia/shared). */
+/** Etiquetas legibles de patrolStatusSchema (@sentrycore/shared). */
 export const ESTADOS_RONDA: Record<string, string> = {
   pendiente: 'Pendiente',
   en_curso: 'En curso',

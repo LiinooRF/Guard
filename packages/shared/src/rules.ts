@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Reglas configurables de VoxIA Control.
+ * Reglas configurables de SentryCore.
  *
  * Las reglas que dio el cliente (umbral de 70%, foto obligatoria fuera de
  * horario) son EL DEFAULT DE UN CLIENTE, no la ley del producto. Esto es un

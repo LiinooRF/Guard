@@ -2,7 +2,7 @@ import { AuditService } from './audit.service';
 import { StatsService } from './stats.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 const ctx = (query: jest.Mock) => ({ manager: { query } }) as unknown as TenantContextService;
 const sinReglas = () =>

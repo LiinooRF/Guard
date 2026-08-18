@@ -1,4 +1,4 @@
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 import { planDeMuestreo } from './gps-rules';
 import type { ParametrosTraza } from './traza-analisis';

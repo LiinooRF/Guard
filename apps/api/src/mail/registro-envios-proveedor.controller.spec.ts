@@ -21,7 +21,7 @@ jest.mock('../database/database.module', () => ({ DatabaseModule: class Database
 const SECRETO ='secreto-de-pruebas-que-no-esta-en-ningun-entorno';
 const TENANT = '00000000-0000-4000-8000-000000000001';
 const REGISTRO = '00000000-0000-4000-8000-0000000000cc';
-const MESSAGE_ID = 'abc123@voxia.example';
+const MESSAGE_ID = 'abc123@sentrycore.example';
 const AHORA_SEG = 1_756_000_000;
 const AHORA_MS = AHORA_SEG * 1000;
 
@@ -245,7 +245,7 @@ describe('RegistroEnviosProveedorController · lotes y silencio', () => {
         ok: true,
         eventos: [
           { messageId: MESSAGE_ID, evento: 'entregado', ocurridoEn: new Date(AHORA_MS) },
-          { messageId: 'otro@voxia.example', evento: 'rebotado', ocurridoEn: new Date(AHORA_MS) },
+          { messageId: 'otro@sentrycore.example', evento: 'rebotado', ocurridoEn: new Date(AHORA_MS) },
         ],
       }),
     );

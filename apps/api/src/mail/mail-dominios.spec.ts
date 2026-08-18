@@ -136,10 +136,10 @@ describe('dominios no despachables', () => {
 
     it('la variable de entorno SUMA, no reemplaza', () => {
       const lista = resolverDominiosNoDespachables({
-        MAIL_BLOCKED_DOMAINS: 'demo-andina.cl, staging.voxia.cl',
+        MAIL_BLOCKED_DOMAINS: 'demo-andina.cl, staging.sentrycore.cl',
       });
       expect(esDespachable('a@demo-andina.cl', lista)).toBe(false);
-      expect(esDespachable('a@staging.voxia.cl', lista)).toBe(false);
+      expect(esDespachable('a@staging.sentrycore.cl', lista)).toBe(false);
       // Y los de norma siguen bloqueados.
       expect(esDespachable('a@demo-andina.test', lista)).toBe(false);
     });

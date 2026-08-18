@@ -163,7 +163,7 @@ function formatearHora(formato: Intl.DateTimeFormat, iso: string | undefined): s
 
 // --------------------------------------------------------- cuanto lleva atrasado
 
-const CLAVE_ATRASO = 'voxia.guard.sync.atraso.v1';
+const CLAVE_ATRASO = 'sentrycore.guard.sync.atraso.v1';
 
 interface AtrasoGuardado {
   pendientes: number;

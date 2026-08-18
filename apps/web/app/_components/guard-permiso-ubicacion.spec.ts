@@ -139,7 +139,7 @@ describe('el cableado: que esta vez SI lo llame alguien', () => {
   });
 
   it('el nombre del evento tiene el espacio de nombres del producto', () => {
-    expect(EVENTO_CONSENTIMIENTO_ACEPTADO).toMatch(/^voxia:/);
+    expect(EVENTO_CONSENTIMIENTO_ACEPTADO).toMatch(/^sentrycore:/);
   });
 });
 

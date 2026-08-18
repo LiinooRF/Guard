@@ -89,12 +89,12 @@ export class CreateSyncLog1724425200000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- UPDATE es solo para sumar attempts en un reenvio. Sin DELETE: la
           -- bitacora es la prueba de que la cola del guardia llego, y borrarla
           -- es exactamente lo que haria quien quiere tapar una ronda perdida.
-          GRANT SELECT, INSERT, UPDATE ON sync_operations TO voxia_app;
-          REVOKE DELETE ON sync_operations FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON sync_operations TO sentrycore_app;
+          REVOKE DELETE ON sync_operations FROM sentrycore_app;
         END IF;
       END
       $$

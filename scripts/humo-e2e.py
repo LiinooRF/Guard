@@ -3,10 +3,10 @@
 Prueba end-to-end contra un despliegue REAL. No mockea nada.
 
     python scripts/humo-e2e.py                       # contra staging
-    VOXIA_BASE=https://otro.dominio python scripts/humo-e2e.py
+    SENTRYCORE_BASE=https://otro.dominio python scripts/humo-e2e.py
 
-Variables: VOXIA_BASE (por defecto staging), VOXIA_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo) y VOXIA_HUMO_ESTRICTO
+Variables: SENTRYCORE_BASE (por defecto staging), SENTRYCORE_DEMO_PASSWORD (la misma
+DEMO_PASSWORD con que se sembraron las cuentas demo) y SENTRYCORE_HUMO_ESTRICTO
 (ver "lo que no se pudo probar").
 
 LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
@@ -22,7 +22,7 @@ diciendo "0 fallas". Por eso cada `omitido()` declara POR QUE no se pudo:
                      despliegue es asi": es cobertura perdida. Devuelve 1.
 
 Una omision sin clasificar cuenta como POR_LA_PRUEBA: falla cerrada, igual que
-las politicas de RLS. Y `VOXIA_HUMO_ESTRICTO=1` hace que hasta lo ambiental
+las politicas de RLS. Y `SENTRYCORE_HUMO_ESTRICTO=1` hace que hasta lo ambiental
 cuente — asi conviene correrla contra staging sembrado, donde no hay ninguna
 razon legitima para saltarse nada.
 
@@ -69,9 +69,9 @@ import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('VOXIA_BASE', 'https://test-sentrycore.voxtilabs.cl')
+BASE = os.environ.get('SENTRYCORE_BASE', 'https://test-sentrycore.voxtilabs.cl')
 API = BASE + '/api'
-CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', 'DemoGuardia2026!')
 
 # El recinto que la seccion 14 necesita NO asignado al supervisor. Nombre fijo y
 # no unico por corrida a proposito: la API no ofrece borrar recintos, asi que uno
@@ -92,7 +92,7 @@ UID_DESCARTABLE = '04E2EDEADBEEF0'
 # ambiental salga en rojo. Apagado por defecto porque esta misma prueba corre
 # contra despliegues con modulos apagados A PROPOSITO, y un rojo que todos saben
 # que no significa nada es como se pierde una prueba entera.
-ESTRICTO = os.environ.get('VOXIA_HUMO_ESTRICTO', '').strip().lower() in ('1', 'true', 'si')
+ESTRICTO = os.environ.get('SENTRYCORE_HUMO_ESTRICTO', '').strip().lower() in ('1', 'true', 'si')
 
 # Por que no se pudo probar. Es lo unico que decide si la corrida sigue en verde.
 POR_EL_DESPLIEGUE = 'despliegue'   # ese despliegue no da la condicion, y es legitimo
@@ -407,7 +407,7 @@ def png_minimo(relleno=0):
 
 
 def multipart(campo, nombre, contenido, tipo='image/png'):
-    lim = '----voxiae2e%s' % uuid.uuid4().hex
+    lim = '----sentrycoree2e%s' % uuid.uuid4().hex
     cuerpo = io.BytesIO()
     cuerpo.write(('--%s\r\n' % lim).encode())
     cuerpo.write(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n' % (campo, nombre)).encode())
@@ -904,7 +904,7 @@ try:
         s, publicado = admin.pedir('POST', '/consent/policies', {
             'version': version,
             'body': texto,
-            'privacyPolicyUrl': 'https://example.com/privacidad-voxia',
+            'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore',
         })
         check('el admin publica una version nueva del aviso', s in (200, 201),
               'HTTP %s %s' % (s, str(publicado)[:160]))
@@ -923,7 +923,7 @@ if politica_id:
 
     s, repetida = admin.pedir('POST', '/consent/policies', {
         'version': version, 'body': texto,
-        'privacyPolicyUrl': 'https://example.com/privacidad-voxia'})
+        'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'})
     check('publicar dos veces la misma version se rechaza', s == 409, 'HTTP %s' % s)
 
     s, detalle = admin.pedir('GET', '/consent/policies/%s' % politica_id)
@@ -962,12 +962,12 @@ else:
 
 s, _ = admin.pedir('POST', '/consent/policies', {
     'version': 'e2e-corto-%s' % uuid.uuid4().hex[:6], 'body': 'Se registra el GPS.',
-    'privacyPolicyUrl': 'https://example.com/privacidad-voxia'})
+    'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'})
 check('un aviso demasiado corto para informar de verdad se rechaza', s == 400, 'HTTP %s' % s)
 
 s, _ = admin.pedir('POST', '/consent/policies', {
     'version': 'e2e-http-%s' % uuid.uuid4().hex[:6], 'body': texto,
-    'privacyPolicyUrl': 'http://example.com/privacidad-voxia'})
+    'privacyPolicyUrl': 'http://example.com/privacidad-sentrycore'})
 check('una politica de privacidad que no es https se rechaza', s == 400, 'HTTP %s' % s)
 
 s, registro = admin.pedir('GET', '/consent/roster')
@@ -1626,7 +1626,7 @@ puertas = [
     ('el historial de avisos de una empresa', 'GET', '/consent/policies', None),
     ('publicar un aviso', 'POST', '/consent/policies',
      {'version': 'e2e-fuga-%s' % uuid.uuid4().hex[:8], 'body': texto,
-      'privacyPolicyUrl': 'https://example.com/privacidad-voxia'}),
+      'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'}),
     ('el registro de consentimiento de una empresa', 'GET', '/consent/roster', None),
     ('el informe de rastreo fuera de turno', 'GET',
      '/consent/off-shift-audit?from=2026-01-01&to=2026-12-31', None),
@@ -1771,7 +1771,7 @@ if toleradas:
     print()
     print('  Las %d de arriba no cuentan: ese despliegue no da la condicion. Contra staging'
           % len(toleradas))
-    print('  sembrado, donde SI se pueden probar todas, corre con VOXIA_HUMO_ESTRICTO=1.')
+    print('  sembrado, donde SI se pueden probar todas, corre con SENTRYCORE_HUMO_ESTRICTO=1.')
 print('=' * 72)
 
 # Una comprobacion que no se ejecuto no es una comprobacion que paso.

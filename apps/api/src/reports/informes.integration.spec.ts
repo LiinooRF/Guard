@@ -74,8 +74,8 @@ describeDatabase('camino de informes (esquema real)', () => {
       return new BrandingService(contexto).forDocuments();
     });
     expect(marca.displayName).not.toBe('');
-    // 'VoxIA Control' es el ultimo recurso: si sale eso, el tenant no se leyo.
-    expect(marca.displayName).not.toBe('VoxIA Control');
+    // 'SentryCore' es el ultimo recurso: si sale eso, el tenant no se leyo.
+    expect(marca.displayName).not.toBe('SentryCore');
   });
 
   it('la marca del tenant tambien se lee entera sin reventar', async () => {

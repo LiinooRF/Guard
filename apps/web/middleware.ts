@@ -9,8 +9,8 @@ const ROLE_PATHS = {
 } as const;
 
 export async function middleware(request: NextRequest) {
-  const accessToken = request.cookies.get('voxia_access')?.value;
-  const refreshToken = request.cookies.get('voxia_refresh')?.value;
+  const accessToken = request.cookies.get('sentrycore_access')?.value;
+  const refreshToken = request.cookies.get('sentrycore_refresh')?.value;
 
   if (!accessToken && refreshToken) {
     const refreshed = await refreshSession(request, refreshToken);
@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
   if (role) {
     if (
       role === 'GUARDIA' &&
-      !request.headers.get('user-agent')?.includes('VoxIAAndroid/')
+      !request.headers.get('user-agent')?.includes('SentryCoreAndroid/')
     ) {
       return clearSessionAndRedirect(request);
     }
@@ -54,7 +54,7 @@ async function resolveSession(
   try {
     const response = await fetch(`${apiUrl}/auth/session`, {
       headers: {
-        cookie: `voxia_access=${accessToken}`,
+        cookie: `sentrycore_access=${accessToken}`,
         'x-request-id': request.headers.get('x-request-id') ?? crypto.randomUUID(),
       },
       cache: 'no-store',
@@ -81,7 +81,7 @@ async function refreshSession(request: NextRequest, refreshToken: string) {
     const response = await fetch(`${apiUrl}/auth/refresh`, {
       method: 'POST',
       headers: {
-        cookie: `voxia_refresh=${refreshToken}`,
+        cookie: `sentrycore_refresh=${refreshToken}`,
         origin: new URL(webOrigin).origin,
       },
       cache: 'no-store',
@@ -90,7 +90,7 @@ async function refreshSession(request: NextRequest, refreshToken: string) {
 
     const redirect = NextResponse.redirect(request.nextUrl);
     const setCookie = response.headers.get('set-cookie');
-    for (const cookie of setCookie?.split(/, (?=voxia_)/) ?? []) {
+    for (const cookie of setCookie?.split(/, (?=sentrycore_)/) ?? []) {
       redirect.headers.append('set-cookie', cookie);
     }
     return redirect;
@@ -101,8 +101,8 @@ async function refreshSession(request: NextRequest, refreshToken: string) {
 
 function clearSessionAndRedirect(request: NextRequest) {
   const response = NextResponse.redirect(new URL('/', request.url));
-  response.cookies.delete('voxia_access');
-  response.cookies.delete('voxia_refresh');
+  response.cookies.delete('sentrycore_access');
+  response.cookies.delete('sentrycore_refresh');
   return response;
 }
 

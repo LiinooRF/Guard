@@ -1,4 +1,4 @@
-import { computeCompliance, type ComplianceResult, type ScanAnomaly } from '@voxia/shared';
+import { computeCompliance, type ComplianceResult, type ScanAnomaly } from '@sentrycore/shared';
 
 import { desvioDeTurno, type DesvioDeTurno } from './desvio-de-turno';
 import type { MarcaDocumento } from './pdf-primitivas';
@@ -282,7 +282,7 @@ export interface EntradaModelo {
 /**
  * Arma el modelo del informe.
  *
- * El cumplimiento se toma de computeCompliance() de @voxia/shared y NO se
+ * El cumplimiento se toma de computeCompliance() de @sentrycore/shared y NO se
  * recalcula: la tabla marca omitido exactamente lo que la funcion del dominio
  * declaro faltante, asi el porcentaje del encabezado nunca puede contradecir a
  * las filas que estan abajo.

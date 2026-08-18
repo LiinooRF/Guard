@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -382,7 +382,7 @@ describe('PatrolReportService.render · streaming y evidencia', () => {
   let raiz: string;
 
   beforeEach(async () => {
-    raiz = await mkdtemp(join(tmpdir(), 'voxia-informe-'));
+    raiz = await mkdtemp(join(tmpdir(), 'sentrycore-informe-'));
     await mkdir(join(raiz, 'tenant', 'patrol'), { recursive: true });
   });
 

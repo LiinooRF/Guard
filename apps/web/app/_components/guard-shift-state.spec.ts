@@ -2,14 +2,14 @@
  * La foto obligatoria del punto, vista desde el teléfono.
  *
  * Lo que se prueba acá es que la pantalla de terreno DECIDE con la función de
- * `@voxia/shared` y no con una regla propia, y que la deuda de evidencia
+ * `@sentrycore/shared` y no con una regla propia, y que la deuda de evidencia
  * —marcado sin foto— no se pierde ni se perdona sola.
  *
  * Es lógica pura: sin jsdom, sin testing-library. Lo que se renderiza se mira
  * en el navegador; lo que se decide, acá.
  */
 
-import { isPhotoRequired } from '@voxia/shared';
+import { isPhotoRequired } from '@sentrycore/shared';
 
 import {
   aplicarVeredictos,
@@ -72,7 +72,7 @@ describe('puntoExigeFoto', () => {
    * delegar. Si alguien reimplementa la decisión acá, este test lo agarra
    * porque compara contra la fuente, no contra un valor esperado escrito a mano.
    */
-  it('no reimplementa la regla: delega en isPhotoRequired() de @voxia/shared', () => {
+  it('no reimplementa la regla: delega en isPhotoRequired() de @sentrycore/shared', () => {
     const casos: Array<[PuntoRuta, PoliticaFoto]> = [
       [punto(), politica(true)],
       [punto(), politica(false)],

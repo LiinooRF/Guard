@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -431,7 +431,7 @@ describe('dibujarCuerpo · evidencia en línea', () => {
   let raiz: string;
 
   beforeEach(async () => {
-    raiz = await mkdtemp(join(tmpdir(), 'voxia-render-'));
+    raiz = await mkdtemp(join(tmpdir(), 'sentrycore-render-'));
     await mkdir(join(raiz, 'tenant', 'patrol'), { recursive: true });
   });
 
@@ -569,7 +569,7 @@ describe('renderizarInformeRonda · ninguna foto queda fuera del documento', () 
   let raiz: string;
 
   beforeEach(async () => {
-    raiz = await mkdtemp(join(tmpdir(), 'voxia-tope-'));
+    raiz = await mkdtemp(join(tmpdir(), 'sentrycore-tope-'));
     await mkdir(join(raiz, 'tenant', 'patrol'), { recursive: true });
   });
 

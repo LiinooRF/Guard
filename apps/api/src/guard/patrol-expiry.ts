@@ -1,4 +1,4 @@
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 /**
  * Cuando una ronda abierta se da por vencida. Modulo PURO.
