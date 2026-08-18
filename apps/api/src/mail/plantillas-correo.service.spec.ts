@@ -38,7 +38,7 @@ const LOGO_INCRUSTADO = {
 
 function servicio(): PlantillasCorreoService {
   const marcaService = {
-    remitenteDeLaPlataforma: () => 'VoxIA Control <no-reply@voxiacontrol.cl>',
+    remitenteDeLaPlataforma: () => 'SentryCore <no-reply@sentrycore.cl>',
   } as unknown as PlantillasMarcaService;
   return new PlantillasCorreoService(marcaService);
 }
@@ -68,7 +68,7 @@ describe('PlantillasCorreoService', () => {
       marca({ replyTo: 'contacto@andes.cl' }),
     );
     expect(armado.envelope).toEqual({
-      from: '"Seguridad Andes" <no-reply@voxiacontrol.cl>',
+      from: '"Seguridad Andes" <no-reply@sentrycore.cl>',
       replyTo: 'contacto@andes.cl',
     });
   });

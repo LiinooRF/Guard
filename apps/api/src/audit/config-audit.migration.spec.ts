@@ -59,18 +59,18 @@ describe('migracion de la auditoria de configuracion', () => {
   });
 
   it('la aplicacion puede leer el historial pero no escribirlo ni corregirlo', () => {
-    expect(MIGRACION).toContain('GRANT SELECT ON config_change_log TO voxia_app');
+    expect(MIGRACION).toContain('GRANT SELECT ON config_change_log TO sentrycore_app');
     // El REVOKE es obligatorio: el script de init deja ALTER DEFAULT PRIVILEGES
     // con los cuatro verbos, asi que la tabla nace escribible.
     expect(MIGRACION).toContain(
-      'REVOKE INSERT, UPDATE, DELETE ON config_change_log FROM voxia_app',
+      'REVOKE INSERT, UPDATE, DELETE ON config_change_log FROM sentrycore_app',
     );
     expect(MIGRACION).not.toMatch(/GRANT[^;]*(INSERT|UPDATE|DELETE)[^;]*ON config_change_log/);
   });
 
   it('el historial de plataforma no se lee ni con SELECT directo', () => {
-    expect(MIGRACION).toContain('REVOKE ALL ON platform_config_change_log FROM voxia_app');
-    expect(MIGRACION).not.toMatch(/GRANT[^;]*ON platform_config_change_log TO voxia_app/);
+    expect(MIGRACION).toContain('REVOKE ALL ON platform_config_change_log FROM sentrycore_app');
+    expect(MIGRACION).not.toMatch(/GRANT[^;]*ON platform_config_change_log TO sentrycore_app/);
     expect(MIGRACION).toContain('PERFORM public.assert_platform_superadmin(p_actor_id)');
   });
 

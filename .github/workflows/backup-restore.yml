@@ -83,7 +83,7 @@ jobs:
         run: shellcheck -s sh -S error docker/postgres/backup/*.sh
 
       - name: Construir la imagen del servicio de respaldo
-        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+        run: docker build -t sentrycore-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
 
       # Estas pruebas solo significan algo adentro de la imagen: prueban busybox
       # ash y la base de zonas horarias, que es lo que no existe en el portatil
@@ -93,11 +93,11 @@ jobs:
           docker run --rm \
             -e TZ=America/Santiago \
             -v "$PWD/docker/postgres/backup:/scripts:ro" \
-            voxia-backup:ci sh /scripts/pruebas-comun.sh
+            sentrycore-backup:ci sh /scripts/pruebas-comun.sh
 
       - name: La imagen trae lo que el respaldo necesita
         run: |
-          docker run --rm voxia-backup:ci sh -c 'pg_dump --version && rclone version | head -1'
+          docker run --rm sentrycore-backup:ci sh -c 'pg_dump --version && rclone version | head -1'
 
       # La prueba vale solo si respalda igual que el servicio. Si alguien cambia
       # el comando y no el otro, la prueba pasa a verificar otra cosa y nadie se
@@ -135,13 +135,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: voxia
+          POSTGRES_USER: sentrycore
           POSTGRES_PASSWORD: cambiar_en_ci
-          POSTGRES_DB: voxia
+          POSTGRES_DB: sentrycore
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-cmd "pg_isready -U sentrycore -d sentrycore"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -158,19 +158,19 @@ jobs:
           --health-retries 10
 
     env:
-      POSTGRES_USER: voxia
+      POSTGRES_USER: sentrycore
       POSTGRES_PASSWORD: cambiar_en_ci
-      POSTGRES_DB: voxia
-      DATABASE_APP_USER: voxia_app
+      POSTGRES_DB: sentrycore
+      DATABASE_APP_USER: sentrycore_app
       DATABASE_APP_PASSWORD: cambiar_app_en_ci
       # Las migraciones corren como dueño del esquema; la API nunca usa esta URL.
-      DATABASE_MIGRATION_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
-      DATABASE_ADMIN_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
-      DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
+      DATABASE_MIGRATION_URL: postgresql://sentrycore:cambiar_en_ci@localhost:5432/sentrycore
+      DATABASE_ADMIN_URL: postgresql://sentrycore:cambiar_en_ci@localhost:5432/sentrycore
+      DATABASE_URL: postgresql://sentrycore_app:cambiar_app_en_ci@localhost:5432/sentrycore
       REDIS_URL: redis://localhost:6379
       # Datos efimeros: la base del runner se destruye al terminar el job.
       DEMO_PASSWORD: ci-only-not-a-real-credential
-      BASE_VERIFICACION: voxia_verificacion_restore
+      BASE_VERIFICACION: sentrycore_verificacion_restore
 
     steps:
       - uses: actions/checkout@v6
@@ -187,7 +187,7 @@ jobs:
       # los service containers arrancan ANTES del checkout, asi que el repo
       # todavia no existe en el disco del runner. Se replica aca el rol que crea
       # ese script —sin BYPASSRLS— porque el dump trae los GRANT pero no los
-      # roles: sin voxia_app en el cluster destino, el restore falla.
+      # roles: sin sentrycore_app en el cluster destino, el restore falla.
       - name: Crear el rol de la aplicacion
         run: |
           PGPASSWORD="$POSTGRES_PASSWORD" \
@@ -203,12 +203,12 @@ jobs:
           SQL
 
       - name: Correr todas las migraciones
-        run: npm run db:migrate --workspace @voxia/api
+        run: npm run db:migrate --workspace @sentrycore/api
 
       # Sin datos, comparar origen contra destino seria comparar 0 con 0 y
       # pasaria sin probar nada. El script falla si el origen viene vacio.
       - name: Cargar el seed
-        run: npm run seed --workspace @voxia/api
+        run: npm run seed --workspace @sentrycore/api
 
       # Hace de volumen evidence_data. El respaldo de la base no cubre las
       # fotos, y una base restaurada que apunta a fotos que no existen entrega
@@ -226,7 +226,7 @@ jobs:
           echo "fotos de prueba: $(find "$RAIZ" -type f | wc -l)"
 
       - name: Construir la imagen del servicio de respaldo
-        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+        run: docker build -t sentrycore-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
 
       # EL respaldo, con el script del servicio. El "fuera del VPS" es aca un
       # directorio aparte: prueba el camino completo de rclone (copia, listado y
@@ -248,7 +248,7 @@ jobs:
             -e PGPASSWORD="$POSTGRES_PASSWORD" \
             -e PGDATABASE="$POSTGRES_DB" \
             -e BACKUP_REMOTE=/remoto \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
 
       # La fecha se calcula DENTRO del contenedor (comillas simples), no en la
@@ -265,7 +265,7 @@ jobs:
             -v "$RUNNER_TEMP/remoto:/remoto" \
             -e TZ=America/Santiago \
             -e BACKUP_REMOTE=/remoto \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh -c 'sh /scripts/verificar-copia-remota.sh "$(date +%F)"'
 
       # Se BAJA el dump desde el destino remoto y se restaura ESE archivo. Es la
@@ -295,13 +295,13 @@ jobs:
             -e RESUMEN_ARCHIVO=/salida/resumen.md \
             -e CONSERVAR=si \
             -e BASE_VERIFICACION="$BASE_VERIFICACION" \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh -c '
               set -eu
               FECHA=$(date +%F)
-              rclone copy "/remoto/postgres/voxia-$FECHA.dump" /bajado/
+              rclone copy "/remoto/postgres/sentrycore-$FECHA.dump" /bajado/
               ls -l /bajado
-              DUMP_EXISTENTE="/bajado/voxia-$FECHA.dump" \
+              DUMP_EXISTENTE="/bajado/sentrycore-$FECHA.dump" \
                 sh /scripts/verificar-restore.sh "$BASE_VERIFICACION"
             '
 
@@ -315,7 +315,7 @@ jobs:
             -v "$RUNNER_TEMP/remoto:/remoto:ro" \
             -v "$RUNNER_TEMP/evidencia-restaurada:/destino" \
             -e BACKUP_REMOTE=/remoto \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh /scripts/restaurar-evidencia.sh /destino
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/evidencia-restaurada"
           ( cd "$RUNNER_TEMP/evidencia" && find . -type f | sort | xargs -r sha256sum ) > "$RUNNER_TEMP/fotos-original.txt"
@@ -342,11 +342,11 @@ jobs:
         run: |
           set -eu
           for DIAS in 40 80 120 160 200; do
-            ARCHIVO="$RUNNER_TEMP/backups/voxia-$(date -u -d "-$DIAS days" +%F).dump"
+            ARCHIVO="$RUNNER_TEMP/backups/sentrycore-$(date -u -d "-$DIAS days" +%F).dump"
             echo "dump viejo de mentira" > "$ARCHIVO"
             touch -d "-$DIAS days" "$ARCHIVO"
           done
-          echo "antes: $(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | wc -l) dumps"
+          echo "antes: $(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'sentrycore-*.dump' | wc -l) dumps"
           docker run --rm --network host \
             -v "$PWD/docker/postgres/backup:/scripts:ro" \
             -v "$RUNNER_TEMP/backups:/backups" \
@@ -361,17 +361,17 @@ jobs:
             -e BACKUP_COPIAR_EVIDENCIA=no \
             -e BACKUP_RETENTION_DAYS=1 \
             -e BACKUP_MINIMO_LOCAL=3 \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
-          QUEDAN=$(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | wc -l)
-          find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'voxia-*.dump' | sort
+          QUEDAN=$(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'sentrycore-*.dump' | wc -l)
+          find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'sentrycore-*.dump' | sort
           if [ "$QUEDAN" -ne 3 ]; then
             echo "::error::la retencion dejo $QUEDAN dump(s) y el minimo declarado es 3"
             exit 1
           fi
           # Y el de hoy tiene que ser uno de los tres: un minimo que se cumple
           # conservando solo dumps viejos no sirve de nada.
-          if [ ! -f "$RUNNER_TEMP/backups/voxia-$(TZ=America/Santiago date +%F).dump" ]; then
+          if [ ! -f "$RUNNER_TEMP/backups/sentrycore-$(TZ=America/Santiago date +%F).dump" ]; then
             echo "::error::la retencion se llevo el dump de hoy"
             exit 1
           fi
@@ -379,20 +379,20 @@ jobs:
 
       - name: Compilar la API
         run: |
-          npm run build --workspace @voxia/shared
-          npm run build --workspace @voxia/api
+          npm run build --workspace @sentrycore/shared
+          npm run build --workspace @sentrycore/api
 
       # EL criterio que faltaba del issue: "el restore se ejecuto de punta a
       # punta y la app arranco contra el".
       #
-      # La API se conecta como voxia_app —el rol restringido, sin BYPASSRLS— a
+      # La API se conecta como sentrycore_app —el rol restringido, sin BYPASSRLS— a
       # la base RESTAURADA, no a la original. Si el restore hubiera perdido los
       # GRANT o las politicas, /ready o el login se caen aca.
       - name: Arrancar la API contra la base restaurada
         env:
           NODE_ENV: staging
           API_PORT: 3001
-          DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia_verificacion_restore
+          DATABASE_URL: postgresql://sentrycore_app:cambiar_app_en_ci@localhost:5432/sentrycore_verificacion_restore
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
           MAIL_DRIVER: mailpit
@@ -489,13 +489,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: voxia
+          POSTGRES_USER: sentrycore
           POSTGRES_PASSWORD: cambiar_en_ci
-          POSTGRES_DB: voxia
+          POSTGRES_DB: sentrycore
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-cmd "pg_isready -U sentrycore -d sentrycore"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -504,7 +504,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Construir la imagen del servicio de respaldo
-        run: docker build -t voxia-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
+        run: docker build -t sentrycore-backup:ci -f docker/postgres/backup/Dockerfile docker/postgres/backup
 
       # La clave se genera en el momento y se enmascara: no hay ninguna
       # credencial escrita en el repositorio, ni siquiera de mentira.
@@ -515,7 +515,7 @@ jobs:
           echo "::add-mask::$CLAVE"
           echo "MINIO_CLAVE=$CLAVE" >> "$GITHUB_ENV"
           docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=voxiaci \
+            -e MINIO_ROOT_USER=sentrycoreci \
             -e MINIO_ROOT_PASSWORD="$CLAVE" \
             minio/minio:latest server /data
           for _ in $(seq 1 40); do
@@ -550,17 +550,17 @@ jobs:
             -e TZ=America/Santiago \
             -e PGHOST=127.0.0.1 \
             -e PGPORT=5432 \
-            -e PGUSER=voxia \
+            -e PGUSER=sentrycore \
             -e PGPASSWORD=cambiar_en_ci \
-            -e PGDATABASE=voxia \
-            -e BACKUP_REMOTE=s3ci:voxia-respaldos \
+            -e PGDATABASE=sentrycore \
+            -e BACKUP_REMOTE=s3ci:sentrycore-respaldos \
             -e RCLONE_CONFIG_S3CI_TYPE=s3 \
             -e RCLONE_CONFIG_S3CI_PROVIDER=Minio \
             -e RCLONE_CONFIG_S3CI_ENDPOINT=http://127.0.0.1:9000 \
             -e RCLONE_CONFIG_S3CI_REGION=us-east-1 \
-            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=voxiaci \
+            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=sentrycoreci \
             -e RCLONE_CONFIG_S3CI_SECRET_ACCESS_KEY="$MINIO_CLAVE" \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
 
       - name: Comprobar el respaldo en el S3 y traer la evidencia de vuelta
@@ -572,15 +572,15 @@ jobs:
             -v "$RUNNER_TEMP/evidencia:/evidencia:ro" \
             -v "$RUNNER_TEMP/desde-s3:/destino" \
             -e TZ=America/Santiago \
-            -e BACKUP_REMOTE=s3ci:voxia-respaldos \
+            -e BACKUP_REMOTE=s3ci:sentrycore-respaldos \
             -e VERIFICAR_EVIDENCIA=si \
             -e RCLONE_CONFIG_S3CI_TYPE=s3 \
             -e RCLONE_CONFIG_S3CI_PROVIDER=Minio \
             -e RCLONE_CONFIG_S3CI_ENDPOINT=http://127.0.0.1:9000 \
             -e RCLONE_CONFIG_S3CI_REGION=us-east-1 \
-            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=voxiaci \
+            -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=sentrycoreci \
             -e RCLONE_CONFIG_S3CI_SECRET_ACCESS_KEY="$MINIO_CLAVE" \
-            voxia-backup:ci \
+            sentrycore-backup:ci \
             sh -c '
               set -eu
               sh /scripts/verificar-copia-remota.sh "$(date +%F)"

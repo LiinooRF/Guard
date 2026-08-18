@@ -1,7 +1,7 @@
 /**
  * Vista de envios de correo para soporte (#221) — panel del ADMIN.
  *
- * Componente de SERVIDOR. Lee la cookie `voxia_access` y pide todo por la red
+ * Componente de SERVIDOR. Lee la cookie `sentrycore_access` y pide todo por la red
  * interna, igual que `auditoria-panel.tsx` y `app/app/[role]/page.tsx`. Al
  * navegador no viaja ni un token ni una llamada a la API: llega HTML, y solo la
  * barra de filtros es interactiva.
@@ -95,7 +95,7 @@ function apiPublica() {
 
 async function pedir<T>(ruta: string, parametros?: URLSearchParams): Promise<Resultado<T>> {
   const almacen = await cookies();
-  const acceso = almacen.get('voxia_access');
+  const acceso = almacen.get('sentrycore_access');
   if (!acceso) return { estado: 'sin-sesion' };
 
   const consulta = parametros && [...parametros.keys()].length ? `?${parametros.toString()}` : '';
@@ -103,7 +103,7 @@ async function pedir<T>(ruta: string, parametros?: URLSearchParams): Promise<Res
     const respuesta = await fetch(
       `${process.env.API_INTERNAL_URL ?? apiPublica()}${ruta}${consulta}`,
       {
-        headers: { cookie: `voxia_access=${acceso.value}` },
+        headers: { cookie: `sentrycore_access=${acceso.value}` },
         cache: 'no-store',
       },
     );

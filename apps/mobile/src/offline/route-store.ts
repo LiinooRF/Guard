@@ -4,8 +4,8 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 
 import type { RutaOfflinePayload } from '../bridge/protocol';
 
-const DATABASE_NAME = 'voxia-operacion.db';
-const KEY_NAME = 'voxia.sqlcipher.key.v1';
+const DATABASE_NAME = 'sentrycore-operacion.db';
+const KEY_NAME = 'sentrycore.sqlcipher.key.v1';
 
 export interface RutaOfflineGuardada extends RutaOfflinePayload {
   readonly savedAt: string;

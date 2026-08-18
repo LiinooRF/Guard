@@ -16,7 +16,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * INMUTABLE UNA VEZ PUBLICADO. Un texto editable destruye la evidencia: si "v2"
  * puede cambiar despues de que 40 personas la aceptaron, decir "aceptaron v2" no
- * significa nada. Por eso voxia_app recibe UPDATE solo sobre retired_at (grant
+ * significa nada. Por eso sentrycore_app recibe UPDATE solo sobre retired_at (grant
  * por columna) y no recibe DELETE. Publicar una version nueva retira la anterior
  * y deja las dos en el historial.
  *
@@ -88,13 +88,13 @@ export class CreateConsentPolicies1725472800000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT ON consent_policies TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT ON consent_policies TO sentrycore_app;
           -- UPDATE acotado por COLUMNA: lo unico que cambia despues de publicar
           -- es el retiro. El texto, la version y la URL quedan congelados, que es
           -- lo que convierte la fila en prueba.
-          GRANT UPDATE (retired_at) ON consent_policies TO voxia_app;
-          REVOKE DELETE ON consent_policies FROM voxia_app;
+          GRANT UPDATE (retired_at) ON consent_policies TO sentrycore_app;
+          REVOKE DELETE ON consent_policies FROM sentrycore_app;
         END IF;
       END
       $$

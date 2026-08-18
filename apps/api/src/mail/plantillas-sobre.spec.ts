@@ -1,7 +1,7 @@
 import { direccionDeRemitente, nombreDeRemitente, type MarcaCorreo } from './plantillas-marca';
 import { construirSobre, nombreParaCabecera } from './plantillas-sobre';
 
-const PLATAFORMA = 'VoxIA Control <no-reply@voxiacontrol.cl>';
+const PLATAFORMA = 'SentryCore <no-reply@sentrycore.cl>';
 
 function marca(cambios: Partial<MarcaCorreo> = {}): MarcaCorreo {
   return {
@@ -22,13 +22,13 @@ function marca(cambios: Partial<MarcaCorreo> = {}): MarcaCorreo {
 describe('construirSobre', () => {
   it('pone el nombre del tenant sobre la direccion de la plataforma', () => {
     expect(construirSobre(marca(), PLATAFORMA)).toEqual({
-      from: '"Seguridad Andes" <no-reply@voxiacontrol.cl>',
+      from: '"Seguridad Andes" <no-reply@sentrycore.cl>',
     });
   });
 
   it('agrega el Reply-To de la empresa cuando esta configurado', () => {
     expect(construirSobre(marca({ replyTo: 'contacto@seguridadandes.cl' }), PLATAFORMA)).toEqual({
-      from: '"Seguridad Andes" <no-reply@voxiacontrol.cl>',
+      from: '"Seguridad Andes" <no-reply@sentrycore.cl>',
       replyTo: 'contacto@seguridadandes.cl',
     });
   });
@@ -37,7 +37,7 @@ describe('construirSobre', () => {
     // Es la proteccion contra suplantacion entre empresas del mismo SaaS: la
     // marca solo trae la direccion cuando la plataforma acredito el dominio.
     const sinVerificar = marca({ fromAddressVerificada: null });
-    expect(construirSobre(sinVerificar, PLATAFORMA).from).toContain('no-reply@voxiacontrol.cl');
+    expect(construirSobre(sinVerificar, PLATAFORMA).from).toContain('no-reply@sentrycore.cl');
   });
 
   it('usa la direccion propia una vez verificada', () => {
@@ -89,8 +89,8 @@ describe('nombreParaCabecera', () => {
 
 describe('lectura del remitente de la plataforma', () => {
   it('separa nombre y direccion', () => {
-    expect(nombreDeRemitente(PLATAFORMA)).toBe('VoxIA Control');
-    expect(direccionDeRemitente(PLATAFORMA)).toBe('no-reply@voxiacontrol.cl');
+    expect(nombreDeRemitente(PLATAFORMA)).toBe('SentryCore');
+    expect(direccionDeRemitente(PLATAFORMA)).toBe('no-reply@sentrycore.cl');
   });
 
   it('sin nombre usa la parte local del buzon', () => {
@@ -99,6 +99,6 @@ describe('lectura del remitente de la plataforma', () => {
   });
 
   it('tolera el nombre entre comillas', () => {
-    expect(nombreDeRemitente('"VoxIA Control" <no-reply@localhost>')).toBe('VoxIA Control');
+    expect(nombreDeRemitente('"SentryCore" <no-reply@localhost>')).toBe('SentryCore');
   });
 });

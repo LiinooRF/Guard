@@ -133,7 +133,7 @@ export default function App() {
    * No es hipotetico: en un Android 9 con Chrome 124 de proveedor de WebView, el
    * componente **no llega a inicializarse** —`NoClassDefFoundError:
    * android/webkit/PacProcessor`, una clase que existe desde Android 10— asi que
-   * `onLoadEnd` no dispara nunca y la app se queda en "Abriendo VoxIA Control..."
+   * `onLoadEnd` no dispara nunca y la app se queda en "Abriendo SentryCore..."
    * sin un solo mensaje. A un guardia con un telefono viejo le pasa lo mismo, y
    * lo unico que puede reportar es "no abre".
    *
@@ -224,7 +224,7 @@ export default function App() {
       <WebView
         ref={webView}
         source={{ uri: portal.href }}
-        applicationNameForUserAgent="VoxIAAndroid/0.1"
+        applicationNameForUserAgent="SentryCoreAndroid/0.1"
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
         onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
@@ -266,7 +266,7 @@ export default function App() {
       {loading && !failed ? (
         <View accessibilityRole="progressbar" style={styles.overlay}>
           <ActivityIndicator color="#2563eb" size="large" />
-          <Text style={styles.loadingText}>Abriendo VoxIA Control…</Text>
+          <Text style={styles.loadingText}>Abriendo SentryCore…</Text>
         </View>
       ) : null}
 

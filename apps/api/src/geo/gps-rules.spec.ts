@@ -4,7 +4,7 @@ import {
   patrolRulesSchema,
   resolveRules,
   type PatrolRules,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 import { MAX_PUNTOS_POR_LOTE, planDeMuestreo } from './gps-rules';
 

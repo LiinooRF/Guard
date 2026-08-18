@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoxIA Control">
-  <title>VoxIA Control — marca del splash</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="SentryCore">
+  <title>SentryCore — marca del splash</title>
   <!--
     Fondo transparente: el color lo pone `expo-splash-screen`
     (backgroundColor: #1f3b73). La marca va en blanco puro porque se dibuja
     sobre ese azul.
 
     Se muestra a 200 px de ancho (imageWidth en app.config.ts). No lleva texto:
-    a ese tamaño "VoxIA Control" queda ilegible, y el nombre ya esta debajo del
+    a ese tamaño "SentryCore" queda ilegible, y el nombre ya esta debajo del
     icono en el launcher.
   -->
   <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { canUsePlatform, ROLES, type Role } from '@voxia/shared';
+import { canUsePlatform, ROLES, type Role } from '@sentrycore/shared';
 
 import { AuditService } from '../audit/audit.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';

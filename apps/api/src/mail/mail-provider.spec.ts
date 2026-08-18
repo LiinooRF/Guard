@@ -9,7 +9,7 @@ describe.each([
     'smtp',
     (transport: MailTransport) =>
       new SmtpProvider({
-        from: 'VoxIA <no-reply@example.test>',
+        from: 'SentryCore <no-reply@example.test>',
         host: 'smtp.example.test',
         port: 587,
         secure: true,
@@ -20,7 +20,7 @@ describe.each([
     'mailpit',
     (transport: MailTransport) =>
       new MailpitProvider({
-        from: 'VoxIA <no-reply@localhost>',
+        from: 'SentryCore <no-reply@localhost>',
         host: 'localhost',
         port: 1025,
         transport,

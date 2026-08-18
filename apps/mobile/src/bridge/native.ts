@@ -130,12 +130,12 @@ function construirGuionPrevio(appVersion: string): string {
 
   return `
 (function () {
-  if (window.__voxiaPuente) { return; }
+  if (window.__sentrycorePuente) { return; }
   var meta = ${meta};
   var cola = [];
   var oyentes = [];
-  window.__voxiaPuente = {
-    protocolo: 'voxia.bridge',
+  window.__sentrycorePuente = {
+    protocolo: 'sentrycore.bridge',
     major: meta.major,
     minor: meta.minor,
     soportados: meta.soportados,
@@ -153,7 +153,7 @@ function construirGuionPrevio(appVersion: string): string {
       for (var i = 0; i < oyentes.length; i += 1) { oyentes[i](json); }
     }
   };
-  window.dispatchEvent(new Event('voxia:puente:listo'));
+  window.dispatchEvent(new Event('sentrycore:puente:listo'));
 })();
 true;
 `;
@@ -184,7 +184,7 @@ export function crearPuenteNativo(opciones: OpcionesPuente): PuenteNativo {
    */
 
   function enviar(mensaje: MensajeShell): void {
-    inyectar(`window.__voxiaPuente && window.__voxiaPuente.recibir(${comoLiteralJs(mensaje)}); true;`);
+    inyectar(`window.__sentrycorePuente && window.__sentrycorePuente.recibir(${comoLiteralJs(mensaje)}); true;`);
   }
 
   /**

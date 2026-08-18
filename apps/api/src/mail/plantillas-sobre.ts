@@ -21,7 +21,7 @@ import { direccionDeRemitente } from './plantillas-marca';
  * valida SPF ni DKIM, asi que se puede apuntar a donde quiera el tenant.
  *
  * Resultado que ve el cliente:
- *     De:        Seguridad Andes <avisos@voxiacontrol.cl>
+ *     De:        Seguridad Andes <avisos@sentrycore.cl>
  *     Responder: contacto@seguridadandes.cl
  * y no una sola linea con la marca del revendedor, que es lo que salia antes.
  */

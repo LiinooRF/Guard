@@ -20,7 +20,7 @@ export function csrfOriginProtection(allowedWebOrigin: string) {
     const origin = request.headers.origin;
     const isNativeRequest =
       !origin &&
-      request.headers['x-voxia-client'] === 'mobile' &&
+      request.headers['x-sentrycore-client'] === 'mobile' &&
       !request.headers.cookie;
 
     if (origin === expectedOrigin || isNativeRequest) {

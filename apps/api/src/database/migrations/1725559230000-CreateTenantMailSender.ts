@@ -36,7 +36,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *     plantillas-sobre.ts.
  *
  * El grant por COLUMNA es lo que hace que eso no dependa de que nadie se
- * equivoque en el codigo: voxia_app puede escribir `reply_to` y `from_address`,
+ * equivoque en el codigo: sentrycore_app puede escribir `reply_to` y `from_address`,
  * y NO puede escribir `from_address_verified_at`. Un admin no puede
  * auto-verificarse su dominio ni con SQL suelto.
  *
@@ -169,17 +169,17 @@ export class CreateTenantMailSender1725559230000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- El REVOKE va PRIMERO y no es decorativo: el script de init
           -- (docker/postgres/init/01-app-role.sh) deja ALTER DEFAULT PRIVILEGES
           -- con SELECT, INSERT, UPDATE y DELETE sobre toda tabla nueva. Sin
           -- revocar el permiso de tabla completa, un GRANT por columna no
           -- restringe absolutamente nada y la verificacion del dominio quedaria
           -- escribible por la aplicacion.
-          REVOKE INSERT, UPDATE, DELETE ON tenant_mail_sender FROM voxia_app;
-          GRANT SELECT ON tenant_mail_sender TO voxia_app;
-          GRANT INSERT (tenant_id, reply_to, from_address) ON tenant_mail_sender TO voxia_app;
-          GRANT UPDATE (reply_to, from_address, updated_at) ON tenant_mail_sender TO voxia_app;
+          REVOKE INSERT, UPDATE, DELETE ON tenant_mail_sender FROM sentrycore_app;
+          GRANT SELECT ON tenant_mail_sender TO sentrycore_app;
+          GRANT INSERT (tenant_id, reply_to, from_address) ON tenant_mail_sender TO sentrycore_app;
+          GRANT UPDATE (reply_to, from_address, updated_at) ON tenant_mail_sender TO sentrycore_app;
         END IF;
       END
       $$

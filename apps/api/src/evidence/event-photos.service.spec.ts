@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import { EventPhotosService } from './event-photos.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

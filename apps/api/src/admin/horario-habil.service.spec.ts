@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { EvidenceService } from '../evidence/evidence.service';

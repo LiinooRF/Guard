@@ -10,7 +10,7 @@
  * aca no hay ni un nombre de regla ni un rango escrito a mano.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RuleScope } from '@voxia/shared';
+import type { RuleScope } from '@sentrycore/shared';
 
 import { ReglasCampo } from './reglas-campo';
 import {

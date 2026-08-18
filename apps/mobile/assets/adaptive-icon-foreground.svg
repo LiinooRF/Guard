@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoxIA Control">
-  <title>VoxIA Control — capa frontal del icono adaptativo</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="SentryCore">
+  <title>SentryCore — capa frontal del icono adaptativo</title>
   <!--
     FONDO TRANSPARENTE A PROPOSITO: el color va en `adaptiveIcon.backgroundColor`
     (app.config.ts). Si esta capa trae fondo propio, el launcher recorta un

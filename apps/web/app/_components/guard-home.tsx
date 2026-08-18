@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import type { CheckpointKind } from '@voxia/shared';
+import type { CheckpointKind } from '@sentrycore/shared';
 
 import type { PoliticaFoto } from './guard-shift-state';
 import { useGuardBridge } from './use-guard-bridge';
@@ -26,7 +26,7 @@ export interface GuardHomeData {
   qrFallbackEnabled?: boolean;
   /**
    * Horario habil del recinto y reglas de foto. Viaja hasta GuardShift, que es
-   * quien decide punto a punto con isPhotoRequired() de @voxia/shared.
+   * quien decide punto a punto con isPhotoRequired() de @sentrycore/shared.
    */
   photoPolicy?: PoliticaFoto;
   patrol?: {
@@ -107,7 +107,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
       const response = await fetch(`${apiUrl}/guard/patrols/${patrol.id}/start`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'X-Voxia-Request': 'web' },
+        headers: { 'X-SentryCore-Request': 'web' },
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -123,6 +123,11 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
 
   return (
     <>
+      {puente.avisoUbicacion ? (
+        <p className="guardia-anuncio guardia-anuncio-alerta" role="alert">
+          {puente.avisoUbicacion}
+        </p>
+      ) : null}
       <section className="guard-focus-card" id="operacion">
         <div className="guard-status-row">
           <span className={`status-pill ${pending ? 'pending' : 'active'}`}>

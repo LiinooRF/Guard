@@ -16,7 +16,7 @@ import {
   RULE_VALUE_TYPES,
   type AnyRuleParameter,
   type PatrolRules,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 import type { z } from 'zod';
 
 const SHAPE = patrolRulesSchema.shape as Record<string, z.ZodTypeAny>;

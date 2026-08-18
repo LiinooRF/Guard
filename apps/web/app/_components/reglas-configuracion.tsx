@@ -56,13 +56,13 @@ export async function ReglasConfiguracion({ apiUrl }: { apiUrl?: string } = {}) 
  * reenviada a mano por la red interna, nunca leida desde el navegador.
  */
 async function pedir<T>(ruta: string, alternativa: T): Promise<T> {
-  const galleta = (await cookies()).get('voxia_access');
+  const galleta = (await cookies()).get('sentrycore_access');
   if (!galleta) return alternativa;
 
   const interna = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '/api';
   try {
     const respuesta = await fetch(`${interna}${ruta}`, {
-      headers: { cookie: `voxia_access=${galleta.value}` },
+      headers: { cookie: `sentrycore_access=${galleta.value}` },
       cache: 'no-store',
     });
     if (!respuesta.ok) return alternativa;

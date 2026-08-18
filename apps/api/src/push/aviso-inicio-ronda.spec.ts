@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DEFAULT_PATROL_RULES, PATROL_RULE_CATALOG, type PatrolRules } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES, PATROL_RULE_CATALOG, type PatrolRules } from '@sentrycore/shared';
 import type { Queue } from 'bullmq';
 import type { DataSource, QueryRunner } from 'typeorm';
 

@@ -11,7 +11,7 @@
  * ronda carga con señal; aca solo se bajan y se guardan.
  */
 
-const CACHE_TILES = 'voxia-tiles-v1';
+const CACHE_TILES = 'sentrycore-tiles-v1';
 
 // Plantilla de ruta de tile: .../{z}/{x}/{y}.ext — para decidir si una imagen
 // que no estaba en cache vale la pena guardarla al pasar por la red.

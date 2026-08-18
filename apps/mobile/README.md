@@ -1,4 +1,4 @@
-# App Android de VoxIA Control
+# App Android de SentryCore
 
 Shell nativo Expo para el guardia. Renderiza el portal mobile-first dentro de
 `react-native-webview`; lo que el WebView no expone —NFC, cámara y ubicación en
@@ -16,11 +16,11 @@ Android es la única plataforma. iOS está fuera de alcance.
    desarrollador.** Tarda días o semanas y no se acelera con más gente. Si se
    empieza cuando la app está lista, la app espera. Ver `docs/play-store.md`.
 2. **Decidir el `applicationId`.** Este repositorio usa
-   `com.voxtilabs.voxiacontrol`. Es **irreversible** una vez publicada la ficha:
+   `com.voxtilabs.sentrycore`. Es **irreversible** una vez publicada la ficha:
    cambiarlo después significa ficha nueva, instalaciones desde cero y migrar a
    los guardias a mano.
 
-   > El andamiaje original traía `cl.voxia.control`. El cambio es gratis hoy
+   > El andamiaje original traía `cl.sentrycore.control`. El cambio es gratis hoy
    > porque no hay nada publicado; mañana no. Si alguien prefiere el anterior,
    > es ahora.
 

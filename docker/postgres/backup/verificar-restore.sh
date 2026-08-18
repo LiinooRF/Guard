@@ -1,6 +1,6 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# Prueba de restore de VoxIA Control: dump -> restore -> VERIFICAR CONTENIDO.
+# Prueba de restore de SentryCore: dump -> restore -> VERIFICAR CONTENIDO.
 # Issue #24: "un backup que nunca se restauro no es un backup".
 #
 # Que hace, en orden:
@@ -31,16 +31,16 @@
 # Uso en el VPS (el compose ya monta esta carpeta en /scripts):
 #
 #   docker compose -f docker-compose.dokploy.yml exec postgres-backup \
-#     sh /scripts/verificar-restore.sh voxia_verificacion_restore
+#     sh /scripts/verificar-restore.sh sentrycore_verificacion_restore
 #
 # Uso en CI: .github/workflows/backup-restore.yml lo corre dentro de una imagen
 # postgres:17-alpine —la misma del servicio de backup— contra el Postgres del job.
 #
 # Entorno que espera:
 #   PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE  del DUEÑO de la base, los mismos
-#     que usa postgres-backup. voxia_app no sirve: no puede crear bases y RLS le
+#     que usa postgres-backup. sentrycore_app no sirve: no puede crear bases y RLS le
 #     cierra la lectura sin contexto de tenant, asi que el dump saldria vacio.
-#   DATABASE_APP_USER   rol de la aplicacion cuyos GRANT se comparan (voxia_app).
+#   DATABASE_APP_USER   rol de la aplicacion cuyos GRANT se comparan (sentrycore_app).
 #   DUMP_EXISTENTE      ruta a un dump YA HECHO. Con esto el script no toma uno
 #                       nuevo: restaura ESE archivo. Es la diferencia entre
 #                       probar "un dump hecho igual que el del servicio" y
@@ -63,8 +63,8 @@
 # ---------------------------------------------------------------------------
 set -eu
 
-DESTINO="${1:-voxia_verificacion_restore}"
-ROL_APP="${DATABASE_APP_USER:-voxia_app}"
+DESTINO="${1:-sentrycore_verificacion_restore}"
+ROL_APP="${DATABASE_APP_USER:-sentrycore_app}"
 UUID_PRUEBA='7f000000-0000-4000-8000-000000000001'
 RUTA_RESTORE="$(dirname "$0")/restore.sh"
 
@@ -263,7 +263,7 @@ if [ -n "${DUMP_EXISTENTE:-}" ]; then
   TAMANO_DUMP=$(du -h "$ARCHIVO" | cut -f1)
   echo "[1/3] usando un dump ya hecho: $ARCHIVO ($TAMANO_DUMP)"
 else
-  ARCHIVO="$TRABAJO/voxia-verificacion-$(date +%F).dump"
+  ARCHIVO="$TRABAJO/sentrycore-verificacion-$(date +%F).dump"
   ORIGEN_DUMP="pg_dump nuevo"
   INICIO_DUMP=$(date +%s)
   echo "[1/3] pg_dump de '$PGDATABASE'"

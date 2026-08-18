@@ -151,13 +151,13 @@ export class EnableTenantRls1722438000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          REVOKE CREATE ON SCHEMA public FROM voxia_app;
-          GRANT USAGE ON SCHEMA public TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          REVOKE CREATE ON SCHEMA public FROM sentrycore_app;
+          GRANT USAGE ON SCHEMA public TO sentrycore_app;
           GRANT SELECT, INSERT, UPDATE, DELETE
             ON tenants, users, memberships, support_access_log
-            TO voxia_app;
-          GRANT SELECT ON roles, permissions, role_permissions, platform_memberships TO voxia_app;
+            TO sentrycore_app;
+          GRANT SELECT ON roles, permissions, role_permissions, platform_memberships TO sentrycore_app;
         END IF;
       END
       $$

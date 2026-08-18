@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """El loop del producto de punta a punta, contra staging desplegado.
 
+    SENTRYCORE_BASE=https://test-sentrycore.voxtilabs.cl \
+      SENTRYCORE_DEMO_PASSWORD='(desde el gestor de secretos)' \
+      python scripts/loop-e2e.py
+
+Las dos son OBLIGATORIAS: la clave demo dejo de vivir en el repositorio (#295).
+
 No comprueba que un endpoint responda 200: comprueba que un guardia pueda hacer
 su trabajo. Esa es la cadena que el CHECK roto de la URL tenia cortada.
 
@@ -20,14 +26,15 @@ from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('VOXIA_BASE', '').strip().rstrip('/')
-CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', '')
+BASE = os.environ.get('SENTRYCORE_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', '')
 if not BASE or not CLAVE:
     raise SystemExit(
-        'define VOXIA_BASE y VOXIA_DEMO_PASSWORD por un canal seguro antes de ejecutar'
+        'Faltan SENTRYCORE_BASE y/o SENTRYCORE_DEMO_PASSWORD. La clave demo no vive\n'
+        'en el repositorio (#295): pasala por entorno o desde el gestor de secretos.'
     )
 API = BASE + '/api'
-UA_APP = 'VoxIAAndroid/1.0 (puente 1.3)'
+UA_APP = 'SentryCoreAndroid/1.0 (puente 1.3)'
 UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 
 fallas = []
@@ -44,7 +51,7 @@ def pedir(metodo, url, carga=None, galletas='', agente=UA_PC):
     datos = json.dumps(carga).encode() if carga is not None else None
     peticion = urllib.request.Request(url, data=datos, method=metodo)
     peticion.add_header('Origin', BASE)
-    peticion.add_header('X-Voxia-Request', 'web')
+    peticion.add_header('X-SentryCore-Request', 'web')
     peticion.add_header('User-Agent', agente)
     if datos is not None:
         peticion.add_header('Content-Type', 'application/json')

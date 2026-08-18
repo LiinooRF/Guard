@@ -15,7 +15,7 @@ import type {
   RuleGroup,
   RuleScope,
   RuleSource,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 /** Clave de una regla. Nunca se escribe literal en la web: siempre viene del catalogo. */
 export type ClaveRegla = keyof PatrolRules;

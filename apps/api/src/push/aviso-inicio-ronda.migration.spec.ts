@@ -93,9 +93,9 @@ describe('migracion del backlog de avisos de inicio (#43)', () => {
         'REVOKE ALL ON FUNCTION patrol_start_notice_backlog(integer, integer) FROM PUBLIC',
       );
       expect(SQL).toContain(
-        'GRANT EXECUTE ON FUNCTION patrol_start_notice_backlog(integer, integer) TO voxia_app',
+        'GRANT EXECUTE ON FUNCTION patrol_start_notice_backlog(integer, integer) TO sentrycore_app',
       );
-      expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+      expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
     });
 
     it('filtra por lo que hace que una ronda este POR comenzar', () => {

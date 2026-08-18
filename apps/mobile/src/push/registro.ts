@@ -15,7 +15,7 @@ import type { ProveedorPushNativo } from './proveedor';
  * autentica), asi que cae entre las dos y sin `Origin` responderia 403.
  * Declararlo es correcto ademas conceptualmente: esta peticion nace de la app
  * que hospeda ese portal y de ninguna otra. Se manda tambien
- * `x-voxia-client: mobile` para que quede identificada en el log.
+ * `x-sentrycore-client: mobile` para que quede identificada en el log.
  */
 
 /** Sin tope, un `fetch` en un subterraneo sin señal queda colgado para siempre. */
@@ -52,7 +52,7 @@ async function pedir(
       method: init.method,
       headers: {
         'content-type': 'application/json',
-        'x-voxia-client': 'mobile',
+        'x-sentrycore-client': 'mobile',
         Origin: opciones.portalOrigen,
       },
       ...(init.body === undefined ? {} : { body: init.body }),

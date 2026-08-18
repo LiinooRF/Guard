@@ -1,5 +1,5 @@
 <!--
-VoxIA Control — plantilla de PR.
+SentryCore — plantilla de PR.
 
 Somos 4 trabajando en paralelo sobre un monorepo. Lo unico que evita que nos
 pisemos es que cada PR diga que toca y contra que issue va.
