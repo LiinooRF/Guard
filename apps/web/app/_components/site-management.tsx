@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { HorarioHabilPanel } from './horario-habil-panel';
 import type { TenantSite } from './role-management';
 import { CoordinateMap } from './coordinate-map';
+import { marcasDePuntos } from './puntos-marcas';
 import { avisoSinCoordenadas } from './site-gps-aviso';
 import {
   CHECKPOINT_CSV_TEMPLATE,
@@ -303,6 +304,7 @@ export function SiteManagement({
                   tileUrl={mapTileUrl}
                   attribution={mapAttribution}
                   onPick={(lat, lng) => setCheckpointCoordinates([roundCoordinate(lat), roundCoordinate(lng)])}
+                  markers={marcasDePuntos(checkpoints)}
                 />
               </div>
               <CsvImporter value={csv} setValue={setCsv} onImport={() => void importCsv()} />
