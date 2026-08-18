@@ -342,6 +342,10 @@ export class ChecklistsService {
         continue;
       }
 
+      if (item.requiresPhoto && !respuesta.photoId) {
+        results.push(rechazo(respuesta.itemId, 'Este item exige foto'));
+        continue;
+      }
       if (item.requiresPhotoOnFail && interpretada.failed && !respuesta.photoId) {
         results.push(rechazo(respuesta.itemId, 'Este item exige foto cuando se marca falla'));
         continue;
