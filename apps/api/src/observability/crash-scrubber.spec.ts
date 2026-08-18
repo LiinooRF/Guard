@@ -34,7 +34,7 @@ describe('depurarTexto', () => {
   it.each([
     ['password=Correcta123', 'Correcta123'],
     ['token: aBcD1234EfGh5678', 'aBcD1234EfGh5678'],
-    ['cookie=voxia_sid=abc123def456', 'abc123def456'],
+    ['cookie=sentrycore_sid=abc123def456', 'abc123def456'],
     ['api_key: "clave-secreta-larga"', 'clave-secreta-larga'],
   ])('tapa el valor de %s', (entrada, secreto) => {
     const salida = depurarTexto(entrada);
@@ -83,7 +83,7 @@ describe('depurarTexto', () => {
   it('tapa el nombre de usuario del sistema en las rutas', () => {
     expect(depurarTexto('at /home/jperez/app/index.js:3:1')).toContain('/home/[usuario]');
     expect(depurarTexto('at /home/jperez/app/index.js:3:1')).not.toContain('jperez');
-    expect(depurarTexto('C:\\Users\\jperez\\voxia')).not.toContain('jperez');
+    expect(depurarTexto('C:\\Users\\jperez\\sentrycore')).not.toContain('jperez');
   });
 
   it('saca los caracteres de control: rompen el log de una linea por evento', () => {

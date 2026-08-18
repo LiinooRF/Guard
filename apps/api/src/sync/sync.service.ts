@@ -5,7 +5,7 @@ import {
   Logger,
   PayloadTooLargeException,
 } from '@nestjs/common';
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 import { plainToInstance, type ClassConstructor } from 'class-transformer';
 import { validate, type ValidationError } from 'class-validator';
 

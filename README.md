@@ -1,4 +1,4 @@
-# VoxIA Control
+# SentryCore
 
 SaaS multi-tenant white-label de **monitoreo de rondas de vigilancia con etiquetas NFC**.
 
@@ -17,7 +17,7 @@ lo único que impide que dos personas hagan lo mismo.
 > en un WebView, por qué la ruta "óptima" es un riesgo de seguridad, por qué las fotos no pueden venir
 > de la galería) y las cinco reglas que no se negocian. Sirve igual para personas y para agentes de IA.
 
-> **Nombre del producto vs nombre del repo.** El producto es **VoxIA Control**. El repositorio
+> **Nombre del producto vs nombre del repo.** El producto es **SentryCore**. El repositorio
 > todavía se llama `Guard`, que fue el nombre de trabajo inicial. Renombrarlo requiere permisos de
 > admin y está en la lista de pendientes al final de este archivo. `Guard` aparece solo en la URL de
 > clonado: dentro del código no queda ninguna referencia.
@@ -29,14 +29,14 @@ lo único que impide que dos personas hagan lo mismo.
 Requisitos: **Node 22+**, **Docker Desktop**, **git**.
 
 ```bash
-git clone https://github.com/4l4h3rg4/Guard.git voxia-control
-cd voxia-control
+git clone https://github.com/4l4h3rg4/Guard.git sentrycore
+cd sentrycore
 
 cp .env.example .env      # PowerShell: Copy-Item .env.example .env
 npm install
 
 npm run infra:up          # postgres + redis + mailpit
-npm run build             # compila @voxia/shared, que api y web importan
+npm run build             # compila @sentrycore/shared, que api y web importan
 
 npm run dev:api           # http://localhost:3001/health
 npm run dev:web           # http://localhost:3000
@@ -66,7 +66,7 @@ partir de los Dockerfiles, que son parte del issue #6.
 ## Estructura
 
 ```
-voxia-control/
+sentrycore/
 ├─ apps/
 │  ├─ api/          NestJS — la API que consumen web y móvil
 │  ├─ web/          Next.js — paneles de SUPERADMIN, ADMIN y SUPERVISOR
@@ -169,7 +169,7 @@ responda. Son dos cosas distintas y las dos últimas filas siguen abiertas.
 
 Lo siguiente no se puede hacer con acceso de `write`:
 
-- [ ] **Renombrar el repo de `Guard` a `voxia-control`.** GitHub deja redirecciones automáticas, así
+- [ ] **Renombrar el repo de `Guard` a `sentrycore`.** GitHub deja redirecciones automáticas, así
       que no rompe los clones existentes.
 - [ ] **Migrar el repo a una organización de GitHub.** Hoy vive en una cuenta personal: si esa cuenta
       se pierde o la persona se va, se va el producto. Una organización gratuita da repos privados

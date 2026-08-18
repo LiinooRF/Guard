@@ -17,7 +17,7 @@ describe('evidencia en disco', () => {
   let base: string;
 
   beforeEach(async () => {
-    base = await mkdtemp(join(tmpdir(), 'voxia-purga-'));
+    base = await mkdtemp(join(tmpdir(), 'sentrycore-purga-'));
   });
 
   async function crearFoto(rutaRelativa: string): Promise<void> {

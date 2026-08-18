@@ -1,4 +1,4 @@
-import { checkContrast, contrastRatio, MIN_CONTRAST_AA } from '@voxia/shared';
+import { checkContrast, contrastRatio, MIN_CONTRAST_AA } from '@sentrycore/shared';
 
 import { COLORES_DE_MARCA, COLORES_DE_TEXTO } from './marca-colores';
 

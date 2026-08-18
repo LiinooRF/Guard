@@ -19,7 +19,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { checkContrast, contrastRatio, MIN_CONTRAST_AA, type TenantBranding } from '@voxia/shared';
+import { checkContrast, contrastRatio, MIN_CONTRAST_AA, type TenantBranding } from '@sentrycore/shared';
 
 import { COLORES_DE_MARCA, COLORES_DE_TEXTO } from './marca-colores';
 import { aplicarColoresGuardados } from './marca-aplicacion';
@@ -150,7 +150,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
             <input
               type="text"
               maxLength={80}
-              placeholder="VoxIA Control"
+              placeholder="SentryCore"
               value={marca.commercialName ?? ''}
               onChange={(e) =>
                 setMarca({ ...marca, commercialName: e.target.value.trim() ? e.target.value : null })
@@ -170,7 +170,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={logoEnPantalla} alt="Logo actual" />
                 ) : (
-                  <span aria-hidden="true">{(marca.commercialName ?? 'VoxIA').slice(0, 1)}</span>
+                  <span aria-hidden="true">{(marca.commercialName ?? 'SentryCore').slice(0, 1)}</span>
                 )}
               </span>
               <label className="brand-file-button">
@@ -279,7 +279,7 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
             <input
               type="text"
               maxLength={80}
-              placeholder="VoxIA Control"
+              placeholder="SentryCore"
               value={marca.mailFromName ?? ''}
               onChange={(e) =>
                 setMarca({ ...marca, mailFromName: e.target.value.trim() ? e.target.value : null })
@@ -318,9 +318,9 @@ export function MarcaConfiguracion({ apiUrl }: { apiUrl: string }) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoEnPantalla} alt="" />
               ) : (
-                <i aria-hidden="true">{(marca.commercialName ?? 'VoxIA').slice(0, 1)}</i>
+                <i aria-hidden="true">{(marca.commercialName ?? 'SentryCore').slice(0, 1)}</i>
               )}
-              <strong>{marca.commercialName ?? 'VoxIA Control'}</strong>
+              <strong>{marca.commercialName ?? 'SentryCore'}</strong>
             </span>
             <span className="brand-preview-nav active" /><span className="brand-preview-nav" />
             <span className="brand-preview-nav short" />

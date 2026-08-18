@@ -41,7 +41,7 @@ decisión comercial y de privacidad de cada cliente.
 CRASH_REPORT_DRIVER=off            # off | sentry
 SENTRY_DSN=                        # https://<clave>@<host>/<idProyecto>
 SENTRY_ENVIRONMENT=                # por defecto, el NODE_ENV
-SENTRY_RELEASE=voxia-api@dev       # en produccion NO puede quedar en el valor de ejemplo
+SENTRY_RELEASE=sentrycore-api@dev       # en produccion NO puede quedar en el valor de ejemplo
 CRASH_REPORT_TIMEOUT_MS=2000
 CRASH_REPORT_MAX_PER_USER_HOUR=20
 ```

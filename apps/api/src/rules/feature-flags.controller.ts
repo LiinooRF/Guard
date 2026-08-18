@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
-import { DEFAULT_FEATURE_FLAGS } from '@voxia/shared';
+import { DEFAULT_FEATURE_FLAGS } from '@sentrycore/shared';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { Public } from '../auth/decorators/public.decorator';

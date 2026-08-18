@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
-import { hasPermission, ROLES, type Permission, type Role } from '@voxia/shared';
+import { hasPermission, ROLES, type Permission, type Role } from '@sentrycore/shared';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
@@ -64,8 +64,8 @@ export class AuthGuard implements CanActivate {
     try {
       payload = await this.jwt.verifyAsync<AuthenticatedUser>(token, {
         algorithms: ['HS256'],
-        issuer: 'voxia-api',
-        audience: 'voxia-clients',
+        issuer: 'sentrycore-api',
+        audience: 'sentrycore-clients',
       });
     } catch {
       throw new UnauthorizedException('Sesión inválida o expirada');
@@ -120,7 +120,7 @@ export class AuthGuard implements CanActivate {
   private extractToken(request: AuthenticatedRequest): string | undefined {
     const authorization = request.headers.authorization;
     if (authorization?.startsWith('Bearer ')) return authorization.slice(7);
-    return request.cookies?.voxia_access;
+    return request.cookies?.sentrycore_access;
   }
 
   private auditDenied(

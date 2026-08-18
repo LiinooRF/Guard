@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 import { createHash } from 'node:crypto';
 
 import { filasDe } from '../consent/sql-result';
@@ -28,7 +28,7 @@ const ALERTA_ESCALAMIENTO = {
     '"{{text}}"\n\n' +
     'Hora (servidor): {{at}}\n' +
     'Ubicación: {{location}}\n\n' +
-    'Acusa recibo en el panel de VoxIA Control. Mientras nadie lo haga, la ' +
+    'Acusa recibo en el panel de SentryCore. Mientras nadie lo haga, la ' +
     'alerta sube al siguiente nivel de la cadena.',
 } as const;
 

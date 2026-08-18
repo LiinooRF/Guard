@@ -44,7 +44,7 @@ describe('catalogo de plantillas de correo', () => {
     // y no la del revendedor. El nombre de la empresa entra por variable.
     const plantilla = construirPlantilla(clave, CON_TODO, true);
     const todo = `${plantilla.subject} ${plantilla.text} ${plantilla.html ?? ''}`;
-    expect(todo).not.toMatch(/voxia/i);
+    expect(todo).not.toMatch(/sentrycore/i);
     expect(todo).toContain(`{{${VAR_MARCA_NOMBRE}}}`);
   });
 

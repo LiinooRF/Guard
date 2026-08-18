@@ -6,7 +6,7 @@
  * El control lo decide `parametro.type` y los limites salen de `min`/`max`/
  * `options`/`maxItems` del catalogo. Este archivo no sabe que reglas existen.
  */
-import type { AnyRuleParameter } from '@voxia/shared';
+import type { AnyRuleParameter } from '@sentrycore/shared';
 
 import { deOrigen, formatearValor, mismoValor, type EstadoCampo } from './reglas-catalogo';
 

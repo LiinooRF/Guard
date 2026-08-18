@@ -2,7 +2,7 @@ import { WEBHOOK_VENTANA_SEGUNDOS } from './registro-envios.constants';
 import { cadenaCanonica, firmar, verificarFirma } from './registro-envios.firma';
 
 const SECRETO = 'secreto-de-pruebas-que-no-esta-en-ningun-entorno';
-const MESSAGE_ID = 'abc123@voxia.example';
+const MESSAGE_ID = 'abc123@sentrycore.example';
 const AHORA_SEG = 1_756_000_000;
 const AHORA_MS = AHORA_SEG * 1000;
 
@@ -52,7 +52,7 @@ describe('firma del webhook de estado de entrega', () => {
     const original = peticion();
 
     for (const alterada of [
-      { ...original, messageId: 'otro@voxia.example' },
+      { ...original, messageId: 'otro@sentrycore.example' },
       { ...original, evento: 'rebotado' },
       { ...original, timestamp: AHORA_SEG - 1 },
     ]) {

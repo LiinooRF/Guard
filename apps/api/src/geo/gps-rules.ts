@@ -1,4 +1,4 @@
-import type { PatrolRules } from '@voxia/shared';
+import type { PatrolRules } from '@sentrycore/shared';
 
 /**
  * Plan de muestreo del recorrido (#77).

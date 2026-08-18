@@ -21,8 +21,8 @@ import { AUTH_REDIS, authRedisProvider } from './redis.provider';
         secret: config.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
           algorithm: 'HS256',
-          issuer: 'voxia-api',
-          audience: 'voxia-clients',
+          issuer: 'sentrycore-api',
+          audience: 'sentrycore-clients',
         },
       }),
     }),

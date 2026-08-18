@@ -123,16 +123,16 @@ export class CreateGpsEnforcement1725462010000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Las dos se escriben con INSERT ... ON CONFLICT DO UPDATE, asi que
           -- necesitan INSERT y UPDATE. DELETE no: un reporte de permiso se
           -- reemplaza y una decision de arranque es evidencia. Lo que si borra
           -- es el CASCADE desde patrols, que corre por integridad referencial y
           -- no por privilegios de la aplicacion.
-          GRANT SELECT, INSERT, UPDATE ON gps_permission_reports TO voxia_app;
-          REVOKE DELETE ON gps_permission_reports FROM voxia_app;
-          GRANT SELECT, INSERT, UPDATE ON patrol_gps_gate TO voxia_app;
-          REVOKE DELETE ON patrol_gps_gate FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON gps_permission_reports TO sentrycore_app;
+          REVOKE DELETE ON gps_permission_reports FROM sentrycore_app;
+          GRANT SELECT, INSERT, UPDATE ON patrol_gps_gate TO sentrycore_app;
+          REVOKE DELETE ON patrol_gps_gate FROM sentrycore_app;
         END IF;
       END
       $$

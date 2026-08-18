@@ -191,15 +191,15 @@ export class CreateClockSkewAndLateScans1725462020000 implements MigrationInterf
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Una medicion no se edita ni se borra: o se hizo o no se hizo.
-          GRANT SELECT, INSERT ON device_clock_readings TO voxia_app;
-          REVOKE UPDATE, DELETE ON device_clock_readings FROM voxia_app;
+          GRANT SELECT, INSERT ON device_clock_readings TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON device_clock_readings FROM sentrycore_app;
           -- UPDATE es solo para dejar la revision del supervisor. Sin DELETE:
           -- borrar un escaneo atrasado es exactamente lo que haria quien quiere
           -- tapar una ronda que no se hizo.
-          GRANT SELECT, INSERT, UPDATE ON late_scans TO voxia_app;
-          REVOKE DELETE ON late_scans FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON late_scans TO sentrycore_app;
+          REVOKE DELETE ON late_scans FROM sentrycore_app;
         END IF;
       END
       $$

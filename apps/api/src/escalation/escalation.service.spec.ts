@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { MailQueueService } from '../mail/mail-queue.service';

@@ -19,7 +19,7 @@
  * distinta al hidratar.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { AnyRuleParameter } from '@voxia/shared';
+import type { AnyRuleParameter } from '@sentrycore/shared';
 
 import {
   accionesDeConfiguracion,

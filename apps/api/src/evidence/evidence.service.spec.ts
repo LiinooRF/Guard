@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import { EvidenceService, type FotoSubida } from './evidence.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -180,7 +180,7 @@ describe('EvidenceService.requiresPhoto', () => {
   });
 
   it('el override tri-estado del punto manda sobre horario y reglas', async () => {
-    // Semantica de isPhotoRequired() en @voxia/shared: el punto sobreescribe
+    // Semantica de isPhotoRequired() en @sentrycore/shared: el punto sobreescribe
     // la regla global en cualquier direccion, incluso fuera de horario.
     const manager = { query: jest.fn() };
     manager.query

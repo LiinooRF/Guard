@@ -448,10 +448,27 @@ describe('acciones', () => {
     // panel tiene que decirlo: cero filas no es lo mismo que no paso nada.
     expect(describirAccion('usuario.creado').registro).toBe('ausente');
     expect(describirAccion('reglas.modificadas').registro).toBe('completo');
-    expect(describirAccion('etiqueta.registrada').registro).toBe('parcial');
     expect(accionesSinRegistro().length).toBeGreaterThan(0);
     for (const ficha of accionesSinRegistro()) {
       expect(typeof ficha.nota).toBe('string');
+    }
+  });
+
+  /**
+   * #309 cableo `AuditService.record` en AdminService para las cuatro acciones
+   * de terreno, y en LOS DOS caminos (el del ADMIN y el nuevo del SUPERVISOR).
+   * `etiqueta.registrada` estaba en 'parcial' porque solo el QR de respaldo
+   * dejaba linea; ahora tambien la deja el alta de una etiqueta NFC.
+   *
+   * Si alguien revierte el cableo, esta prueba tiene que caerse: el falso
+   * negativo al reves —el panel afirmando que se registra algo que no se
+   * registra— es peor que el hueco que este archivo combate.
+   */
+  it('las acciones de terreno ya se registran, y el catalogo dejo de decir lo contrario', () => {
+    for (const codigo of ['punto.creado', 'punto.modificado', 'etiqueta.registrada', 'etiqueta.retirada']) {
+      const ficha = describirAccion(codigo);
+      expect(ficha.registro).toBe('completo');
+      expect(ficha.nota).toBeUndefined();
     }
   });
 

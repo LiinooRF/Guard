@@ -1,4 +1,4 @@
-# Contexto para agentes de IA — VoxIA Control
+# Contexto para agentes de IA — SentryCore
 
 Este archivo es el contexto que un agente de IA (Claude Code, Cursor, Copilot) debe leer **antes de
 tocar código**. Contiene las decisiones ya tomadas, las trampas del dominio y las reglas que no se
@@ -124,7 +124,7 @@ Es el requisito de seguridad número uno. Muchas empresas de **seguridad privada
 una fuga cruzada es un incidente grave, no un bug.
 
 El aislamiento se aplica en PostgreSQL (Row Level Security), no solo en el código, para que un `WHERE`
-olvidado no filtre datos. El usuario de aplicación (`voxia_app`) **no tiene `BYPASSRLS`** y el script
+olvidado no filtre datos. El usuario de aplicación (`sentrycore_app`) **no tiene `BYPASSRLS`** y el script
 de init falla el arranque si lo detectara.
 
 > **Trampa concreta**: usa `SET LOCAL app.tenant_id` dentro de transacción, nunca `SET`. Con `SET`, la
@@ -539,8 +539,8 @@ después de cada despliegue.
 
 Todo el código está. Lo que falta es de cuenta, no de programación:
 
-1. **Cuenta de Expo y `eas login`.** `app.config.ts` declara `slug: 'voxia-control'` y
-   `package: 'com.voxtilabs.voxiacontrol'`, pero no hay `projectId` ni `owner`: el primer
+1. **Cuenta de Expo y `eas login`.** `app.config.ts` declara `slug: 'sentrycore'` y
+   `package: 'com.voxtilabs.sentrycore'`, pero no hay `projectId` ni `owner`: el primer
    `eas build` los vincula.
 2. **Árbol limpio**, porque `eas.json` tiene `requireCommit: true`.
 3. `npm run build:preview` desde `apps/mobile` — APK de **release** con distribución interna, ya
@@ -556,5 +556,5 @@ probar la parte web —login, ver el turno, novedades, fotos—, y para eso est�
 
 ## Nombre del repo
 
-El producto es **VoxIA Control**. El repositorio todavía se llama `Guard` (nombre de trabajo inicial);
+El producto es **SentryCore**. El repositorio todavía se llama `Guard` (nombre de trabajo inicial);
 renombrarlo requiere permisos de admin. Dentro del código no queda ninguna referencia al nombre viejo.

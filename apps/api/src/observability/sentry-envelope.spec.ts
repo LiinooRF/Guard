@@ -9,7 +9,7 @@ function evento(cambios: Partial<CrashEvent> = {}): CrashEvent {
     eventId: 'a'.repeat(32),
     level: 'fatal',
     occurredAt: new Date('2026-08-03T12:00:00.000Z'),
-    release: 'voxia-app@1.4.2',
+    release: 'sentrycore-app@1.4.2',
     environment: 'staging',
     errorName: 'NfcBridgeError',
     errorMessage: 'no se pudo leer la etiqueta',
@@ -103,7 +103,7 @@ describe('construirEnvelope', () => {
     expect(cuerpo.tags.app_version).toBe('1.4.2');
     expect(cuerpo.contexts.device.model).toBe('Redmi 9A');
     expect(cuerpo.contexts.os).toEqual({ name: 'Android', version: '10' });
-    expect(cuerpo.release).toBe('voxia-app@1.4.2');
+    expect(cuerpo.release).toBe('sentrycore-app@1.4.2');
     expect(cuerpo.tags.tenant_id).toBe('3f0d8a1c-1111-4222-8333-444455556666');
   });
 

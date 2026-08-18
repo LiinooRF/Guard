@@ -35,7 +35,7 @@
  * `timezone` llega y no se usa: el mapa no muestra horas.
  */
 
-import type { GeoPoint } from '@voxia/shared';
+import type { GeoPoint } from '@sentrycore/shared';
 
 import { esCoordenadaValida, type PuntoMapa } from './mapa-modelo';
 

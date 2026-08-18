@@ -1,5 +1,5 @@
 import { Logger, NotFoundException } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { QueryFailedError } from 'typeorm';
 
 import { RulesService } from './rules.service';

@@ -25,7 +25,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * stack es postgres:17-alpine) porque justamente los nulos del alcance son
  * valores con significado, no "desconocido".
  *
- * LAS RESPUESTAS SON EVIDENCIA. El GRANT de voxia_app sobre checklist_responses
+ * LAS RESPUESTAS SON EVIDENCIA. El GRANT de sentrycore_app sobre checklist_responses
  * es SOLO SELECT e INSERT, igual que field_events (#124) y scan_photos (#13):
  * una falla reportada no se puede convertir despues en un "ok". El reenvio
  * offline es idempotente por (tenant, ronda, item), asi que reintentar no
@@ -153,17 +153,17 @@ export class CreateChecklists1724943600000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Sin DELETE: una plantilla no se borra, se desactiva. Sus items
           -- siguen siendo la pregunta que respondieron rondas ya cerradas.
-          GRANT SELECT, INSERT, UPDATE ON checklist_templates TO voxia_app;
-          REVOKE DELETE ON checklist_templates FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON checklist_templates TO sentrycore_app;
+          REVOKE DELETE ON checklist_templates FROM sentrycore_app;
           -- Los items si se reemplazan, pero solo mientras la plantilla no tenga
           -- respuestas; el FK RESTRICT es el respaldo de esa regla.
-          GRANT SELECT, INSERT, UPDATE, DELETE ON checklist_items TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON checklist_items TO sentrycore_app;
           -- Evidencia: se escribe una vez y no se reescribe.
-          GRANT SELECT, INSERT ON checklist_responses TO voxia_app;
-          REVOKE UPDATE, DELETE ON checklist_responses FROM voxia_app;
+          GRANT SELECT, INSERT ON checklist_responses TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON checklist_responses FROM sentrycore_app;
         END IF;
       END
       $$

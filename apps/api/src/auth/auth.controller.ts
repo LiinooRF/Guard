@@ -71,7 +71,7 @@ export class AuthController {
     @Req() request: Request & { cookies?: Record<string, string> },
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
-    await this.auth.logout(request.cookies?.voxia_refresh);
+    await this.auth.logout(request.cookies?.sentrycore_refresh);
     clearSessionCookies(response);
   }
 
@@ -82,7 +82,7 @@ export class AuthController {
     @Req() request: Request & { cookies?: Record<string, string> },
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.auth.refresh(request.cookies?.voxia_refresh);
+    const result = await this.auth.refresh(request.cookies?.sentrycore_refresh);
     setSessionCookies(response, result);
     return {
       accessToken: result.accessToken,

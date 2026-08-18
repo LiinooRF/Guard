@@ -133,17 +133,17 @@ describe('RegistroEnviosService · escritura', () => {
     );
 
     await servicio.registrarEnviado(jobDeCorreo(), {
-      messageId: '<abc@voxia.example>',
+      messageId: '<abc@sentrycore.example>',
       accepted: ['jefe@cliente.cl'],
       rejected: [],
     });
 
     const update = consultas.find((c) => c.sql.includes('UPDATE mail_deliveries'));
-    expect(update?.params).toEqual([JOB, '<abc@voxia.example>', 1]);
+    expect(update?.params).toEqual([JOB, '<abc@sentrycore.example>', 1]);
     expect(update?.sql).toContain("status = 'enviado'");
     // La correlacion se guarda con el id de la FILA, no con el del job: es lo
     // que el webhook necesita para actualizar sin adivinar el tenant.
-    expect(recordar).toHaveBeenCalledWith('<abc@voxia.example>', {
+    expect(recordar).toHaveBeenCalledWith('<abc@sentrycore.example>', {
       tenantId: TENANT,
       registroId: REGISTRO,
     });
@@ -157,7 +157,7 @@ describe('RegistroEnviosService · escritura', () => {
     );
 
     await servicio.registrarEnviado(jobDeCorreo(), {
-      messageId: '<abc@voxia.example>',
+      messageId: '<abc@sentrycore.example>',
       accepted: [],
       rejected: [],
     });
@@ -208,7 +208,7 @@ describe('RegistroEnviosService · estado del proveedor', () => {
 
     await expect(
       servicio.aplicarEventoProveedor({
-        messageId: 'abc@voxia.example',
+        messageId: 'abc@sentrycore.example',
         evento: 'entregado',
         ocurridoEn: new Date('2026-08-03T12:00:00.000Z'),
       }),
@@ -225,7 +225,7 @@ describe('RegistroEnviosService · estado del proveedor', () => {
 
     await expect(
       servicio.aplicarEventoProveedor({
-        messageId: 'abc@voxia.example',
+        messageId: 'abc@sentrycore.example',
         evento: 'entregado',
         ocurridoEn: new Date('2026-08-03T12:00:00.000Z'),
         motivo: null,
@@ -258,7 +258,7 @@ describe('RegistroEnviosService · estado del proveedor', () => {
 
     await expect(
       servicio.aplicarEventoProveedor({
-        messageId: 'abc@voxia.example',
+        messageId: 'abc@sentrycore.example',
         evento: 'entregado',
         ocurridoEn: new Date('2026-08-03T12:00:00.000Z'),
       }),

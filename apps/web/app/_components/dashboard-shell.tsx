@@ -41,7 +41,7 @@ export function DashboardShell({
           abierta sin enviar nada se queda sin sesion a los 15 minutos. */}
       <SesionViva />
       <aside className="sidebar">
-        <Brand compact nombre={marca?.commercialName} logoUri={marca?.logoUri} />
+        <Brand nombre={marca?.commercialName} logoUri={marca?.logoUri} />
         {streamlined ? (
           <div className="guard-nav-note">Solo verás la tarea que debes realizar ahora.</div>
         ) : (

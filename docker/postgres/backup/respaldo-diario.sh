@@ -1,6 +1,6 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# Servicio de respaldo diario de VoxIA Control (issue #24).
+# Servicio de respaldo diario de SentryCore (issue #24).
 #
 # Es el `command` del servicio `postgres-backup` de docker-compose.dokploy.yml.
 # Aca solo esta el RELOJ: el respaldo de verdad es respaldar-una-vez.sh, y se
@@ -70,7 +70,7 @@ respaldar() {
   return "$CODIGO"
 }
 
-if [ "$AL_ARRANCAR" = "si" ] && [ ! -f "$BACKUP_DIR/voxia-$(date +%F).dump" ]; then
+if [ "$AL_ARRANCAR" = "si" ] && [ ! -f "$BACKUP_DIR/sentrycore-$(date +%F).dump" ]; then
   registrar "todavia no hay dump de hoy: se respalda ahora sin esperar a las $HORA"
   respaldar || true
 fi

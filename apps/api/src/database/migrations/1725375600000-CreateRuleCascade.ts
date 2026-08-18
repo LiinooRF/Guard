@@ -24,7 +24,7 @@ const TENANT_TABLES = ['site_rules', 'checkpoint_rules'] as const;
  * dato que DEFAULT_PATROL_RULES en el codigo (que ya se publica en el endpoint
  * publico /api/rules/defaults). No lleva RLS porque no hay nada que aislar: no
  * contiene datos de ningun tenant. Lo que si tiene es control de escritura —
- * voxia_app recibe SELECT y nada mas, y el UPDATE pasa por platform_set_rules(),
+ * sentrycore_app recibe SELECT y nada mas, y el UPDATE pasa por platform_set_rules(),
  * que exige SUPERADMIN activo igual que el resto de las funciones de plataforma.
  * Asi, aunque un endpoint quedara mal decorado, un ADMIN de un tenant no puede
  * cambiarle los defaults a todo el SaaS.
@@ -124,14 +124,14 @@ export class CreateRuleCascade1725375600000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT, UPDATE, DELETE ON site_rules, checkpoint_rules TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT, UPDATE, DELETE ON site_rules, checkpoint_rules TO sentrycore_app;
 
           -- La plataforma se LEE desde cualquier request (la cascada la necesita)
           -- pero solo se escribe por la funcion con control de SUPERADMIN.
-          GRANT SELECT ON platform_rules TO voxia_app;
+          GRANT SELECT ON platform_rules TO sentrycore_app;
           REVOKE ALL ON FUNCTION platform_set_rules(uuid, jsonb) FROM PUBLIC;
-          GRANT EXECUTE ON FUNCTION platform_set_rules(uuid, jsonb) TO voxia_app;
+          GRANT EXECUTE ON FUNCTION platform_set_rules(uuid, jsonb) TO sentrycore_app;
         END IF;
       END
       $$

@@ -21,12 +21,12 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * en un worker, sin request y por lo tanto SIN tenant. No puede setear
  * `app.tenant_id` porque justamente lo que necesita saber es de que empresas hay
  * rondas por empezar. Con `patrols` y `tenants` bajo RLS con FORCE, una consulta
- * directa desde voxia_app devolveria cero filas siempre —la politica falla
+ * directa desde sentrycore_app devolveria cero filas siempre —la politica falla
  * cerrada, que es lo correcto— y el aviso no saldria nunca.
  *
  * Es SECURITY DEFINER, igual que `report_dispatch_backlog` y
  * `platform_list_tenants`: corre como el dueño de las tablas y no como
- * voxia_app, que sigue sin BYPASSRLS.
+ * sentrycore_app, que sigue sin BYPASSRLS.
  *
  * Y exige NO tener contexto de tenant. Es el unico cerrojo que el worker puede
  * cumplir (no tiene rol ni usuario) y cierra la funcion para cualquier request,
@@ -124,8 +124,8 @@ export class CreatePatrolStartNoticeBacklog1725998400000 implements MigrationInt
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION patrol_start_notice_backlog(integer, integer) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION patrol_start_notice_backlog(integer, integer) TO sentrycore_app;
         END IF;
       END
       $$

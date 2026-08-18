@@ -63,7 +63,7 @@ import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Layer, Map as MapaLeaflet } from 'leaflet';
 
-import type { GeoPoint } from '@voxia/shared';
+import type { GeoPoint } from '@sentrycore/shared';
 
 import { MapaAtribucion, MapaAviso } from './mapa-atribucion';
 import { COLOR_MARCA, COLOR_TRAZA } from './mapa-colores';

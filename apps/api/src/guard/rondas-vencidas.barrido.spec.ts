@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import type { DataSource } from 'typeorm';
 
 import type { RulesService } from '../rules/rules.service';

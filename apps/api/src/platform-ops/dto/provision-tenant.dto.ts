@@ -81,7 +81,7 @@ export class ProvisionTenantDto {
 
   /**
    * Desviaciones respecto de los defaults de patrolRulesSchema. Se valida con
-   * el schema de @voxia/shared en el servicio, no con decoradores: duplicar el
+   * el schema de @sentrycore/shared en el servicio, no con decoradores: duplicar el
    * contrato en class-validator lo desincronizaria de web y movil (mismo
    * criterio que UpdateTenantRulesPipe).
    */

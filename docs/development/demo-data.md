@@ -19,7 +19,7 @@ local `DATABASE_ADMIN_URL`. La API nunca utiliza esa conexión. El comando falla
 `NODE_ENV=production`.
 
 ```bash
-DEMO_PASSWORD='una-clave-solo-local' npm run seed --workspace @voxia/api
+DEMO_PASSWORD='una-clave-solo-local' npm run seed --workspace @sentrycore/api
 ```
 
 ## Retirarlos antes de staging o producción
@@ -28,7 +28,7 @@ La limpieza usa deliberadamente la conexión administrativa, exige confirmación
 se niega a ejecutarse en producción:
 
 ```bash
-CONFIRM_REMOVE_DEMO=true npm run seed:remove --workspace @voxia/api
+CONFIRM_REMOVE_DEMO=true npm run seed:remove --workspace @sentrycore/api
 ```
 
 El comando elimina ambos tenants, sus rondas, recintos, rutas y membresías mediante

@@ -1,8 +1,8 @@
 {
-  "name": "@voxia/web",
+  "name": "@sentrycore/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Panel web de VoxIA Control (Next.js) — SUPERADMIN, ADMIN y SUPERVISOR",
+  "description": "Panel web de SentryCore (Next.js) — SUPERADMIN, ADMIN y SUPERVISOR",
   "scripts": {
     "dev": "cross-env NEXT_DIST_DIR=.next-dev next dev -p 3000",
     "build": "next build",
@@ -11,7 +11,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "@voxia/shared": "*",
+    "@sentrycore/shared": "*",
     "jose": "^6.2.5",
     "leaflet": "^1.9.4",
     "next": "^15.1.0",

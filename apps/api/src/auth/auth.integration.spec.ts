@@ -36,8 +36,8 @@ describeAuth('AuthService (integración)', () => {
         secret: 'secreto-de-prueba-con-mas-de-32-caracteres',
         signOptions: {
           algorithm: 'HS256',
-          issuer: 'voxia-api',
-          audience: 'voxia-clients',
+          issuer: 'sentrycore-api',
+          audience: 'sentrycore-clients',
         },
       }),
       redis,
@@ -61,8 +61,8 @@ describeAuth('AuthService (integración)', () => {
       secret: 'secreto-de-prueba-con-mas-de-32-caracteres',
     }).verifyAsync(result.accessToken, {
       algorithms: ['HS256'],
-      issuer: 'voxia-api',
-      audience: 'voxia-clients',
+      issuer: 'sentrycore-api',
+      audience: 'sentrycore-clients',
     });
     expect(payload).toMatchObject({
       sub: 'a0000000-0000-4000-8000-000000000002',

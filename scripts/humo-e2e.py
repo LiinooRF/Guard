@@ -3,10 +3,10 @@
 Prueba end-to-end contra un despliegue REAL. No mockea nada.
 
     python scripts/humo-e2e.py                       # contra staging
-    VOXIA_BASE=https://otro.dominio python scripts/humo-e2e.py
+    SENTRYCORE_BASE=https://otro.dominio python scripts/humo-e2e.py
 
-Variables: VOXIA_BASE (por defecto staging), VOXIA_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo) y VOXIA_HUMO_ESTRICTO
+Variables: SENTRYCORE_BASE (por defecto staging), SENTRYCORE_DEMO_PASSWORD (la misma
+DEMO_PASSWORD con que se sembraron las cuentas demo) y SENTRYCORE_HUMO_ESTRICTO
 (ver "lo que no se pudo probar").
 
 LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
@@ -22,7 +22,7 @@ diciendo "0 fallas". Por eso cada `omitido()` declara POR QUE no se pudo:
                      despliegue es asi": es cobertura perdida. Devuelve 1.
 
 Una omision sin clasificar cuenta como POR_LA_PRUEBA: falla cerrada, igual que
-las politicas de RLS. Y `VOXIA_HUMO_ESTRICTO=1` hace que hasta lo ambiental
+las politicas de RLS. Y `SENTRYCORE_HUMO_ESTRICTO=1` hace que hasta lo ambiental
 cuente — asi conviene correrla contra staging sembrado, donde no hay ninguna
 razon legitima para saltarse nada.
 
@@ -58,15 +58,20 @@ ALCANCE REAL DE LO QUE ESCRIBE, dicho sin adornos:
   - La seccion 14 necesita un recinto que el supervisor no tenga asignado. Se lo
     fabrica ella misma con un nombre fijo (RECINTO_DESCARTABLE) y lo deja
     desactivado: se reusa entre corridas, asi que no se acumula uno por corrida.
+  - La seccion 14b necesita ademas un PUNTO y una ETIQUETA dentro de ese recinto
+    ajeno, para probar las rutas que no llevan el recinto en la URL. Los crea el
+    ADMIN con nombre y UID fijos (PUNTO_DESCARTABLE, UID_DESCARTABLE), el punto
+    queda desactivado y la etiqueta se conserva para reusarla en la corrida
+    siguiente. Ninguno de los dos es dato de operacion.
 """
 import os
 import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('VOXIA_BASE', 'https://test-sentrycore.voxtilabs.cl')
+BASE = os.environ.get('SENTRYCORE_BASE', 'https://test-sentrycore.voxtilabs.cl')
 API = BASE + '/api'
-CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', 'DemoGuardia2026!')
 
 # El recinto que la seccion 14 necesita NO asignado al supervisor. Nombre fijo y
 # no unico por corrida a proposito: la API no ofrece borrar recintos, asi que uno
@@ -74,12 +79,20 @@ CLAVE = os.environ.get('VOXIA_DEMO_PASSWORD', 'DemoGuardia2026!')
 # sumo uno, se reusa y queda desactivado.
 RECINTO_DESCARTABLE = 'Recinto descartable de la prueba e2e (no operativo)'
 
+# Un punto y una etiqueta DENTRO de ese recinto ajeno, para poder probar las
+# rutas que no llevan el recinto en la URL (#309). Mismo criterio de nombre fijo
+# y reuso: no hay endpoint para borrar un punto, asi que uno por corrida seria un
+# cadaver por corrida. Los crea el ADMIN, nunca el supervisor: el supervisor no
+# tiene que poder tocarlos, que es justo lo que se comprueba.
+PUNTO_DESCARTABLE = 'Punto descartable de la prueba e2e (recinto no asignado)'
+UID_DESCARTABLE = '04E2EDEADBEEF0'
+
 # Con todo sembrado y todos los modulos encendidos —staging— no hay ninguna
 # razon legitima para saltarse una comprobacion, y ahi conviene que hasta lo
 # ambiental salga en rojo. Apagado por defecto porque esta misma prueba corre
 # contra despliegues con modulos apagados A PROPOSITO, y un rojo que todos saben
 # que no significa nada es como se pierde una prueba entera.
-ESTRICTO = os.environ.get('VOXIA_HUMO_ESTRICTO', '').strip().lower() in ('1', 'true', 'si')
+ESTRICTO = os.environ.get('SENTRYCORE_HUMO_ESTRICTO', '').strip().lower() in ('1', 'true', 'si')
 
 # Por que no se pudo probar. Es lo unico que decide si la corrida sigue en verde.
 POR_EL_DESPLIEGUE = 'despliegue'   # ese despliegue no da la condicion, y es legitimo
@@ -394,7 +407,7 @@ def png_minimo(relleno=0):
 
 
 def multipart(campo, nombre, contenido, tipo='image/png'):
-    lim = '----voxiae2e%s' % uuid.uuid4().hex
+    lim = '----sentrycoree2e%s' % uuid.uuid4().hex
     cuerpo = io.BytesIO()
     cuerpo.write(('--%s\r\n' % lim).encode())
     cuerpo.write(('Content-Disposition: form-data; name="%s"; filename="%s"\r\n' % (campo, nombre)).encode())
@@ -891,7 +904,7 @@ try:
         s, publicado = admin.pedir('POST', '/consent/policies', {
             'version': version,
             'body': texto,
-            'privacyPolicyUrl': 'https://example.com/privacidad-voxia',
+            'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore',
         })
         check('el admin publica una version nueva del aviso', s in (200, 201),
               'HTTP %s %s' % (s, str(publicado)[:160]))
@@ -910,7 +923,7 @@ if politica_id:
 
     s, repetida = admin.pedir('POST', '/consent/policies', {
         'version': version, 'body': texto,
-        'privacyPolicyUrl': 'https://example.com/privacidad-voxia'})
+        'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'})
     check('publicar dos veces la misma version se rechaza', s == 409, 'HTTP %s' % s)
 
     s, detalle = admin.pedir('GET', '/consent/policies/%s' % politica_id)
@@ -949,12 +962,12 @@ else:
 
 s, _ = admin.pedir('POST', '/consent/policies', {
     'version': 'e2e-corto-%s' % uuid.uuid4().hex[:6], 'body': 'Se registra el GPS.',
-    'privacyPolicyUrl': 'https://example.com/privacidad-voxia'})
+    'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'})
 check('un aviso demasiado corto para informar de verdad se rechaza', s == 400, 'HTTP %s' % s)
 
 s, _ = admin.pedir('POST', '/consent/policies', {
     'version': 'e2e-http-%s' % uuid.uuid4().hex[:6], 'body': texto,
-    'privacyPolicyUrl': 'http://example.com/privacidad-voxia'})
+    'privacyPolicyUrl': 'http://example.com/privacidad-sentrycore'})
 check('una politica de privacidad que no es https se rechaza', s == 400, 'HTTP %s' % s)
 
 s, registro = admin.pedir('GET', '/consent/roster')
@@ -1366,6 +1379,230 @@ check('el ADMIN tampoco: sus recintos no son "asignados"', s == 403, 'HTTP %s' %
 
 print()
 print('=' * 72)
+print('14b. EL SUPERVISOR DA DE ALTA PUNTOS Y VINCULA ETIQUETAS NFC (#309)')
+print('=' * 72)
+# El permiso nuevo `checkpoints:manage` abre la puerta; el alcance por recinto lo
+# decide `supervisor_sites`, y eso ningun mock lo ve. Se prueban las dos mitades
+# con el mismo par de recintos que la seccion 14 ya dejo armado: el ASIGNADO
+# (2xx) y el DESCARTABLE sin asignar (403).
+PUNTOS_SUP = '/checkpoints/supervisor'
+mio = next((r.get('id') for r in asignados), None)
+
+if not mio:
+    omitido(['el supervisor lista los puntos de un recinto suyo',
+             'el supervisor crea un punto en un recinto suyo',
+             'el supervisor vincula una etiqueta NFC al punto que creo',
+             'el supervisor lista las etiquetas de ese punto',
+             'el supervisor edita el punto que creo',
+             'el supervisor retira la etiqueta que vinculo',
+             'la etiqueta retirada deja de estar activa en el punto',
+             'el supervisor da de baja el punto que creo'],
+            'el supervisor no tiene ningun recinto asignado', POR_EL_DESPLIEGUE)
+    punto_nuevo = None
+else:
+    s, puntos_mios = supervisor.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el supervisor lista los puntos de un recinto suyo',
+          s == 200 and isinstance(puntos_mios, list), 'HTTP %s %s' % (s, str(puntos_mios)[:120]))
+
+    # Nombre unico por corrida: un punto es dato de operacion y la API no ofrece
+    # borrarlo, asi que se crea, se comprueba y se deja DESACTIVADO al final —
+    # igual que el recinto descartable de la seccion 14.
+    nombre_punto = 'Punto e2e %s' % uuid.uuid4().hex[:8]
+    uid_nfc = '04' + uuid.uuid4().hex[:6].upper()
+    s, creado = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio), {
+        'name': nombre_punto,
+        'description': 'Creado por la prueba de humo; se deja desactivado',
+        'suggestedOrder': 999,
+    })
+    punto_nuevo = cuerpo_dict(creado).get('id') if s in (200, 201) else None
+    check('el supervisor crea un punto en un recinto suyo',
+          s in (200, 201) and punto_nuevo, 'HTTP %s %s' % (s, str(creado)[:140]))
+
+if punto_nuevo:
+    try:
+        # SIN `tech`: la ruta del supervisor no lo acepta a proposito (#309). Su
+        # DTO solo lleva el uid y el servidor fija 'nfc', porque un QR con UID
+        # elegido por el llamador se imprime y se pega en la garita.
+        s, etiqueta = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo),
+                                       {'uid': uid_nfc})
+        tag_propia = cuerpo_dict(etiqueta).get('id') if s in (200, 201) else None
+        check('el supervisor vincula una etiqueta NFC al punto que creo',
+              s in (200, 201) and tag_propia,
+              'HTTP %s %s' % (s, str(etiqueta)[:140]))
+
+        s, sus_tags = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_nuevo))
+        check('el supervisor lista las etiquetas de ese punto',
+              s == 200 and any(t.get('uid', '').upper() == uid_nfc for t in
+                               (sus_tags if isinstance(sus_tags, list) else [])),
+              'HTTP %s %s' % (s, str(sus_tags)[:160]))
+
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_nuevo),
+                                {'name': nombre_punto + ' (editado)'})
+        check('el supervisor edita el punto que creo', s == 200, 'HTTP %s' % s)
+
+        # Los dos campos que gobiernan isPhotoRequired() no estan en su DTO, y
+        # `forbidNonWhitelisted` los convierte en 400. Que el formulario no los
+        # muestre NO es lo que los cierra: esto lo es.
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_nuevo),
+                                {'kind': 'normal'})
+        check('  pero no puede degradar la criticidad: apagaria la foto obligatoria',
+              s == 400, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio),
+                                {'name': 'Punto con foto forzada', 'requiresPhoto': False})
+        check('  ni crear un punto apagando la exigencia de foto', s == 400, 'HTTP %s' % s)
+
+        # El DELETE de etiqueta no se llamaba NUNCA contra la base: una etiqueta
+        # que se despega de la pared y se reemplaza es la operacion mas comun de
+        # este modulo, y estaba verificada solo con mocks.
+        if tag_propia:
+            s, _ = supervisor.pedir('DELETE', '%s/tags/%s' % (PUNTOS_SUP, tag_propia))
+            check('el supervisor retira la etiqueta que vinculo', s in (200, 204),
+                  'HTTP %s' % s)
+            s, quedan = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP,
+                                                                           punto_nuevo))
+            activas = [t for t in (quedan if isinstance(quedan, list) else [])
+                       if t.get('uid', '').upper() == uid_nfc and t.get('active')]
+            check('  y la etiqueta retirada deja de estar activa en el punto',
+                  s == 200 and not activas, 'HTTP %s %s' % (s, str(quedan)[:160]))
+        else:
+            omitido(['el supervisor retira la etiqueta que vinculo',
+                     'la etiqueta retirada deja de estar activa en el punto'],
+                    'la etiqueta no se llego a crear', POR_LA_PRUEBA)
+    finally:
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s/active' % (PUNTOS_SUP, punto_nuevo),
+                                {'isActive': False})
+        check('el supervisor da de baja el punto que creo (y la prueba no deja basura activa)',
+              s == 200, 'HTTP %s' % s)
+
+# La otra mitad: el recinto que NO tiene asignado. El 403 lo pone
+# supervisor_sites, no el rol — el rol ya paso el guard.
+if not ajeno:
+    omitido(['el supervisor no lista los puntos de un recinto ajeno',
+             'ni crea un punto ahi',
+             'ni importa una tanda por CSV ahi'],
+            'no se pudo disponer de un recinto sin asignar', POR_LA_PRUEBA)
+else:
+    s, _ = supervisor.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, ajeno))
+    check('el supervisor no lista los puntos de un recinto ajeno', s == 403, 'HTTP %s' % s)
+    s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, ajeno),
+                            {'name': 'Punto que no deberia existir'})
+    check('  ni crea un punto ahi', s == 403, 'HTTP %s' % s)
+    s, _ = supervisor.pedir('POST', '%s/sites/%s/checkpoints/import' % (PUNTOS_SUP, ajeno),
+                            {'checkpoints': [{'name': 'Fila que no deberia entrar'}]})
+    check('  ni importa una tanda por CSV ahi', s == 403, 'HTTP %s' % s)
+
+# LAS RUTAS POR ID, QUE SON EL CORAZON DEL ISSUE.
+#
+# Todo lo de arriba lleva el `siteId` en la URL, asi que el alcance se comprueba
+# leyendo un parametro. En estas cinco NO: el recinto hay que deducirlo del punto
+# o de la etiqueta, y ahi es donde un guard olvidado no se nota mirando la firma.
+# Hasta aca esas rutas se probaban solo contra el recinto PROPIO —o sea, el 2xx—
+# y el 403 quedaba verificado unicamente con mocks: exactamente el patron que ya
+# metio dos bugs a staging con CI en verde (ver CLAUDE.md, "como verificar tu
+# trabajo").
+#
+# Para probarlas hace falta un punto que exista en un recinto que el supervisor
+# NO tenga asignado, y eso el supervisor no lo puede fabricar por definicion. Lo
+# crea el ADMIN en el recinto descartable, con nombre fijo para reusarlo entre
+# corridas, y queda desactivado al final.
+ALCANCE_POR_ID = [
+    'el supervisor no edita un punto de un recinto ajeno',
+    'ni lo da de baja',
+    'ni lista las etiquetas de ese punto',
+    'ni le vincula una etiqueta NFC',
+    'ni retira una etiqueta de ese punto',
+    'y la etiqueta ajena sigue vinculada y activa despues del intento',
+]
+if not ajeno:
+    omitido(ALCANCE_POR_ID, 'no se pudo disponer de un recinto sin asignar', POR_LA_PRUEBA)
+else:
+    s, puntos_ajenos = admin.pedir('GET', '/admin/sites/%s/checkpoints' % ajeno)
+    lista_ajena = puntos_ajenos if isinstance(puntos_ajenos, list) else []
+    punto_ajeno = next((p.get('id') for p in lista_ajena
+                        if p.get('name') == PUNTO_DESCARTABLE), None)
+    if punto_ajeno is None:
+        s, punto_admin = admin.pedir('POST', '/admin/sites/%s/checkpoints' % ajeno, {
+            'name': PUNTO_DESCARTABLE,
+            'description': 'Creado por la prueba de humo para medir el alcance por recinto',
+            'suggestedOrder': 999,
+        })
+        punto_ajeno = cuerpo_dict(punto_admin).get('id') if s in (200, 201) else None
+        check('el ADMIN fabrica un punto en el recinto que el supervisor no tiene asignado',
+              s in (200, 201) and punto_ajeno, 'HTTP %s %s' % (s, str(punto_admin)[:140]))
+    else:
+        check('el ADMIN fabrica un punto en el recinto que el supervisor no tiene asignado',
+              True, 'reusa el de una corrida anterior')
+
+    tag_ajena = None
+    if punto_ajeno:
+        s, tags_ajenas = admin.pedir('GET', '/admin/checkpoints/%s/tags' % punto_ajeno)
+        tag_ajena = next((t.get('id') for t in (tags_ajenas if isinstance(tags_ajenas, list)
+                                                else []) if t.get('active')), None)
+        if tag_ajena is None:
+            s, tag_admin = admin.pedir('POST', '/admin/checkpoints/%s/tags' % punto_ajeno,
+                                       {'uid': UID_DESCARTABLE, 'tech': 'nfc'})
+            tag_ajena = cuerpo_dict(tag_admin).get('id') if s in (200, 201) else None
+            check('  y le pega una etiqueta NFC, que es lo que el supervisor no debe poder retirar',
+                  s in (200, 201) and tag_ajena, 'HTTP %s %s' % (s, str(tag_admin)[:140]))
+        else:
+            check('  y le pega una etiqueta NFC, que es lo que el supervisor no debe poder retirar',
+                  True, 'reusa la de una corrida anterior')
+
+    if not punto_ajeno:
+        omitido(ALCANCE_POR_ID,
+                'el ADMIN no pudo fabricar el punto en el recinto sin asignar', POR_LA_PRUEBA)
+    else:
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s' % (PUNTOS_SUP, punto_ajeno),
+                                {'name': 'Renombrado por quien no supervisa este recinto'})
+        check('el supervisor no edita un punto de un recinto ajeno', s == 403, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('PATCH', '%s/checkpoints/%s/active' % (PUNTOS_SUP, punto_ajeno),
+                                {'isActive': False})
+        check('  ni lo da de baja', s == 403, 'HTTP %s' % s)
+        s, _ = supervisor.pedir('GET', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno))
+        check('  ni lista las etiquetas de ese punto', s == 403, 'HTTP %s' % s)
+        # Tambien sin `tech`: con el campo, el 400 de validacion llegaba ANTES que
+        # el 403 y esta comprobacion dejaba de medir la autorizacion, que es lo suyo.
+        s, _ = supervisor.pedir('POST', '%s/checkpoints/%s/tags' % (PUNTOS_SUP, punto_ajeno),
+                                {'uid': '04' + uuid.uuid4().hex[:6].upper()})
+        check('  ni le vincula una etiqueta NFC', s == 403, 'HTTP %s' % s)
+
+        if tag_ajena:
+            s, _ = supervisor.pedir('DELETE', '%s/tags/%s' % (PUNTOS_SUP, tag_ajena))
+            check('  ni retira una etiqueta de ese punto', s == 403, 'HTTP %s' % s)
+            # Que el 403 no sea un "no existe" disfrazado: la etiqueta tiene que
+            # seguir viva. Un DELETE que borra y despues devuelve 403 pasaria la
+            # comprobacion de arriba y habria perdido la etiqueta igual.
+            s, sigue = admin.pedir('GET', '/admin/checkpoints/%s/tags' % punto_ajeno)
+            check('  y la etiqueta ajena sigue vinculada y activa despues del intento',
+                  s == 200 and any(t.get('id') == tag_ajena and t.get('active')
+                                   for t in (sigue if isinstance(sigue, list) else [])),
+                  'HTTP %s %s' % (s, str(sigue)[:160]))
+        else:
+            omitido(['ni retira una etiqueta de ese punto',
+                     'y la etiqueta ajena sigue vinculada y activa despues del intento'],
+                    'el ADMIN no pudo dejar una etiqueta en el punto descartable', POR_LA_PRUEBA)
+
+        # El punto es del ADMIN y del recinto no operativo: queda desactivado,
+        # igual que el recinto que lo contiene. La etiqueta se conserva a
+        # proposito — se reusa en la proxima corrida y evita crear una por vez.
+        admin.pedir('PATCH', '/admin/checkpoints/%s/active' % punto_ajeno, {'isActive': False})
+
+# El permiso es del SUPERVISOR y de nadie mas: el ADMIN entra por /admin/... y el
+# GUARDIA no entra. Y el supervisor sigue SIN poder asignarse recintos, que es la
+# puerta que convertiria este permiso en acceso a la empresa entera.
+if mio:
+    s, _ = admin.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el ADMIN no entra por la puerta del supervisor: la suya es /admin/...', s == 403,
+          'HTTP %s' % s)
+    s, _ = guardia.pedir('GET', '%s/sites/%s/checkpoints' % (PUNTOS_SUP, mio))
+    check('el GUARDIA tampoco entra a administrar puntos', s == 403, 'HTTP %s' % s)
+if ajeno:
+    s, _ = supervisor.pedir('PATCH', '/admin/users/%s/sites/%s' % (uuid.uuid4(), ajeno),
+                            {'assigned': True})
+    check('el supervisor NO puede asignarse un recinto a si mismo', s == 403, 'HTTP %s' % s)
+
+print()
+print('=' * 72)
 print('15a. CIERRE POR ROL — el GUARDIA no entra a nada de administracion')
 print('=' * 72)
 # QUE PRUEBA ESTA LISTA Y QUE NO.
@@ -1389,7 +1626,7 @@ puertas = [
     ('el historial de avisos de una empresa', 'GET', '/consent/policies', None),
     ('publicar un aviso', 'POST', '/consent/policies',
      {'version': 'e2e-fuga-%s' % uuid.uuid4().hex[:8], 'body': texto,
-      'privacyPolicyUrl': 'https://example.com/privacidad-voxia'}),
+      'privacyPolicyUrl': 'https://example.com/privacidad-sentrycore'}),
     ('el registro de consentimiento de una empresa', 'GET', '/consent/roster', None),
     ('el informe de rastreo fuera de turno', 'GET',
      '/consent/off-shift-audit?from=2026-01-01&to=2026-12-31', None),
@@ -1534,7 +1771,7 @@ if toleradas:
     print()
     print('  Las %d de arriba no cuentan: ese despliegue no da la condicion. Contra staging'
           % len(toleradas))
-    print('  sembrado, donde SI se pueden probar todas, corre con VOXIA_HUMO_ESTRICTO=1.')
+    print('  sembrado, donde SI se pueden probar todas, corre con SENTRYCORE_HUMO_ESTRICTO=1.')
 print('=' * 72)
 
 # Una comprobacion que no se ejecuto no es una comprobacion que paso.

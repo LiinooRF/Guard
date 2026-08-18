@@ -19,7 +19,7 @@
  * `reglas-panel.tsx` (#83) y de ahi se reusan sus funciones puras en vez de
  * copiarlas.
  */
-import type { AnyRuleParameter, FeatureFlags, RuleScope } from '@voxia/shared';
+import type { AnyRuleParameter, FeatureFlags, RuleScope } from '@sentrycore/shared';
 
 import {
   mismoValor,
@@ -42,8 +42,8 @@ export type ClaveModulo = keyof FeatureFlags;
  * Ficha de un modulo tal como la devuelve GET /api/features/catalog.
  *
  * El tipo original (`FeatureModule`) vive hoy en apps/api y no en
- * @voxia/shared, asi que la web no lo puede importar y declara la forma
- * estructural. Mover esa ficha a @voxia/shared borraria esta duplicacion: esta
+ * @sentrycore/shared, asi que la web no lo puede importar y declara la forma
+ * estructural. Mover esa ficha a @sentrycore/shared borraria esta duplicacion: esta
  * anotado en INTEGRACION.md.
  */
 export interface FichaModulo {

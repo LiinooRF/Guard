@@ -6,7 +6,7 @@ import {
   type PatrolRules,
   type RuleOverridesByScope,
   type RuleScope,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 import { QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../audit/audit.service';

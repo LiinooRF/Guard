@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
-import { tenantBrandingSchema } from '@voxia/shared';
+import { tenantBrandingSchema } from '@sentrycore/shared';
 
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';

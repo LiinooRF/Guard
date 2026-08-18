@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { PatrolRules } from './rules';
 
 /**
- * Entidades del dominio de VoxIA Control.
+ * Entidades del dominio de SentryCore.
  *
  * El mundo fisico que el sistema monitorea:
  *

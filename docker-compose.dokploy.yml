@@ -1,4 +1,4 @@
-# Stack de VoxIA Control para desplegar EN DOKPLOY.
+# Stack de SentryCore para desplegar EN DOKPLOY.
 #
 # Por que existe este archivo y no reusamos docker-compose.production.yml:
 # aquel trae su propio Traefik en los puertos 80 y 443, que es exactamente
@@ -26,7 +26,7 @@ services:
       DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # CRITICO: aca vive 01-app-role.sh, que crea voxia_app sin BYPASSRLS y
+      # CRITICO: aca vive 01-app-role.sh, que crea sentrycore_app sin BYPASSRLS y
       # aborta el arranque si el rol quedara con ese privilegio. Una base creada
       # sin este montaje pierde la unica verificacion del aislamiento entre
       # empresas. No lo quites.
@@ -53,7 +53,7 @@ services:
       # tzdata viene en la imagen; sin TZ el "04:00" seria UTC.
       TZ: America/Santiago
       PGHOST: postgres
-      # Dueño de la base, no voxia_app: el rol de la app no ve nada sin
+      # Dueño de la base, no sentrycore_app: el rol de la app no ve nada sin
       # contexto de tenant (RLS falla cerrada) y el dump saldria vacio.
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
@@ -75,7 +75,7 @@ services:
           echo "[backup] proximo dump en $$espera segundos"
           sleep "$$espera"
           fecha=$$(date +%F)
-          destino=/backups/voxia-$$fecha.dump
+          destino=/backups/sentrycore-$$fecha.dump
           inicio=$$(date +%s)
           echo "[backup] inicio pg_dump $$fecha"
           if pg_dump -Fc -f "$$destino.part" "$$PGDATABASE"; then
@@ -85,7 +85,7 @@ services:
             rm -f "$$destino.part"
             echo "[backup] ERROR: pg_dump fallo; queda el dump anterior y se reintenta a las 04:00 siguientes" >&2
           fi
-          find /backups -name 'voxia-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+          find /backups -name 'sentrycore-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
         done
     volumes:
       - backup_data:/backups
