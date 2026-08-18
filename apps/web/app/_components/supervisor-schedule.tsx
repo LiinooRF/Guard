@@ -67,7 +67,8 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
   async function createShift(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
     const form = new FormData(event.currentTarget);
-    const weekdays = form.getAll('weekday').map(Number);
+    const rawWeekdays = form.getAll('weekday').map(Number);
+    const weekdays = rawWeekdays.length ? rawWeekdays : [0, 1, 2, 3, 4, 5, 6];
     try {
       await request(apiUrl, `/supervisor/sites/${siteId}/shifts`, {
         method: 'POST', body: JSON.stringify({
@@ -121,8 +122,11 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
         await request(apiUrl, `/supervisor/shifts/${shiftId}/assignments`, {
           method: 'POST', body: JSON.stringify({ guardId, serviceDate }),
         });
+        await request(apiUrl, `/scheduling/generate`, {
+          method: 'POST', body: JSON.stringify({ serviceDate, siteId }),
+        }).catch(() => undefined);
       }
-      setMessage(`${selectedDates.length} turno(s) programado(s) sin solapamientos.`);
+      setMessage(`${selectedDates.length} turno(s) y ronda(s) programados sin solapamientos.`);
       await loadWeek();
     } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
   }

@@ -365,14 +365,27 @@ export function AdminManagement({
     setMessage(`${result.revokedSessions} sesión(es) cerrada(s) para ${user.givenName}.`);
   }
 
-  async function assign(supervisor: TenantUser, siteId: string) {
-    const assigned = !supervisor.siteIds.includes(siteId);
+  async function assign(user: TenantUser, siteId: string) {
+    const assigned = !user.siteIds.includes(siteId);
     const response = await apiRequest(
-      `${apiUrl}/admin/users/${supervisor.id}/sites/${siteId}`,
+      `${apiUrl}/admin/users/${user.id}/sites/${siteId}`,
       'PATCH',
       { assigned },
     );
     if (!response.ok) return setMessage(await responseMessage(response));
+    startTransition(() => router.refresh());
+  }
+
+  async function toggleAllSites(user: TenantUser, activeSites: TenantSite[]) {
+    const allAssigned = activeSites.every((site) => user.siteIds.includes(site.id));
+    const targetState = !allAssigned;
+    for (const site of activeSites) {
+      if (user.siteIds.includes(site.id) !== targetState) {
+        await apiRequest(`${apiUrl}/admin/users/${user.id}/sites/${site.id}`, 'PATCH', {
+          assigned: targetState,
+        });
+      }
+    }
     startTransition(() => router.refresh());
   }
 
@@ -458,8 +471,25 @@ export function AdminManagement({
                   <button className="secondary-button" onClick={() => toggleUser(user)} disabled={pending}>{user.isActive ? 'Desactivar' : 'Activar'}</button>
                 </div>
               ) : null}
-              {user.role === 'SUPERVISOR' && (
+              {(user.role === 'SUPERVISOR' || user.role === 'GUARDIA') && (
                 <div className="site-assignment">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <small style={{ fontWeight: 600, color: '#475569' }}>
+                      {user.role === 'GUARDIA' ? 'Recintos asignados al guardia:' : 'Recintos supervisados:'}
+                    </small>
+                    {sites.filter((s) => s.isActive).length > 1 ? (
+                      <button
+                        type="button"
+                        style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '0.25rem', cursor: 'pointer' }}
+                        onClick={() => void toggleAllSites(user, sites.filter((s) => s.isActive))}
+                        disabled={pending}
+                      >
+                        {sites.filter((s) => s.isActive).every((site) => user.siteIds.includes(site.id))
+                          ? 'Desmarcar todos'
+                          : 'Asignar todos los recintos'}
+                      </button>
+                    ) : null}
+                  </div>
                   {sites.filter((site) => site.isActive).map((site) => (
                     <label key={site.id}>
                       <input type="checkbox" checked={user.siteIds.includes(site.id)} onChange={() => assign(user, site.id)} />

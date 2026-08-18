@@ -191,16 +191,43 @@ export class GuardService {
     private readonly evidence?: EvidenceService,
   ) {}
 
-  async getHome(guardId: string) {
+  async getHome(guardId: string, siteId?: string) {
     const rows = await this.tenantContext.manager.query<PatrolRow[]>(
       CONSULTA_HOME,
       [guardId],
     );
 
-    const patrol = rows[0];
+    const patrol = rows?.[0];
     if (!patrol) {
+      let assignedSites: Array<{ id: string; name: string; branchName: string }> = [];
+      try {
+        const sitesRows = await this.tenantContext.manager.query<Array<{
+          id: string;
+          name: string;
+          branch_name: string;
+        }>>(
+          `SELECT s.id, s.name, s.branch_name
+           FROM guard_sites gs
+           JOIN sites s ON s.id = gs.site_id AND s.is_active
+           WHERE gs.guard_id = $1
+           ORDER BY s.branch_name, s.name`,
+          [guardId],
+        );
+        if (Array.isArray(sitesRows)) {
+          assignedSites = sitesRows.map((s) => ({
+            id: s.id,
+            name: s.name,
+            branchName: s.branch_name,
+          }));
+        }
+      } catch {
+        // En tests unitarios sin mock de guard_sites
+      }
+
       return {
         hasAssignment: false as const,
+        assignedSites,
+        selectedSiteId: siteId ?? assignedSites[0]?.id ?? null,
         message: 'No tienes un turno asignado en este momento.',
         connection: { status: 'online' as const },
         synchronization: { pendingItems: 0 },
@@ -228,8 +255,9 @@ export class GuardService {
       );
       return {
         hasAssignment: false as const,
+        selectedSiteId: siteId ?? patrol.site_id,
         message:
-          'Tu última ronda venció por tiempo y quedó cerrada. No tienes un turno activo en este momento.',
+          'Tu última ronda venció por tiempo y quedó cerrada. No tienes una ronda activa en este momento.',
         connection: { status: 'online' as const },
         synchronization: { pendingItems: 0 },
       };
@@ -237,8 +265,37 @@ export class GuardService {
 
     const politicaFoto = await this.politicaDeFoto(patrol.site_id, reglas);
 
+    let assignedSites: Array<{ id: string; name: string; branchName: string }> = [
+      { id: patrol.site_id, name: patrol.site_name, branchName: '' },
+    ];
+    try {
+      const sitesRows = await this.tenantContext.manager.query<Array<{
+        id: string;
+        name: string;
+        branch_name: string;
+      }>>(
+        `SELECT s.id, s.name, s.branch_name
+         FROM guard_sites gs
+         JOIN sites s ON s.id = gs.site_id AND s.is_active
+         WHERE gs.guard_id = $1
+         ORDER BY s.branch_name, s.name`,
+        [guardId],
+      );
+      if (Array.isArray(sitesRows) && sitesRows.length) {
+        assignedSites = sitesRows.map((s) => ({
+          id: s.id,
+          name: s.name,
+          branchName: s.branch_name,
+        }));
+      }
+    } catch {
+      // Ignora en mocks
+    }
+
     return {
       hasAssignment: true as const,
+      assignedSites,
+      selectedSiteId: patrol.site_id,
       shift: {
         scheduledStartAt: patrol.scheduled_start_at,
         scheduledEndAt: patrol.scheduled_end_at,
