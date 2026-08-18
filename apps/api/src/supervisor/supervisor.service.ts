@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { argon2id, hash } from 'argon2';
 import { QueryFailedError } from 'typeorm';
 
 import { normalizarUidNfc } from '../admin/uid-nfc';
@@ -549,8 +550,12 @@ export class SupervisorService {
       given_name: string;
       family_name: string;
       nfc_card_uid: string | null;
+      tiene_pin: boolean;
     }>>(
-      `SELECT u.id, u.given_name, u.family_name, u.nfc_card_uid
+      // Se devuelve SI tiene PIN, nunca el hash: el supervisor necesita saber
+      // a quien le falta configurarlo, no leer el secreto de nadie.
+      `SELECT u.id, u.given_name, u.family_name, u.nfc_card_uid,
+              (u.nfc_pin_hash IS NOT NULL) AS tiene_pin
        FROM memberships m
        JOIN users u ON u.id = m.user_id
        WHERE m.role_key = 'GUARDIA' AND u.is_active
@@ -560,13 +565,14 @@ export class SupervisorService {
       id: guard.id,
       name: `${guard.given_name} ${guard.family_name}`.trim(),
       nfcCardUid: guard.nfc_card_uid ?? null,
+      tienePin: guard.tiene_pin === true,
     }));
   }
 
   async assignGuardNfcCard(
     guardId: string,
     supervisorId: string,
-    input: { nfcCardUid?: string | null },
+    input: { nfcCardUid?: string | null; nfcPin?: string | null },
   ) {
     const guards = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT u.id
@@ -586,16 +592,39 @@ export class SupervisorService {
     }
 
     const normalizedUid = input.nfcCardUid ? normalizarUidNfc(input.nfcCardUid) : null;
+
+    /*
+     * El PIN es OPCIONAL y de segundo factor: la tarjeta se clona, el PIN no
+     * viaja en ella. Tres estados distintos, y la diferencia importa:
+     *
+     * - `undefined`  -> no se toca. Asignar una tarjeta no puede borrar en
+     *                   silencio el PIN que el guardia ya tenia.
+     * - `null` o ''  -> se QUITA. La empresa que prioriza velocidad en la
+     *                   garita vuelve al login de solo tarjeta.
+     * - '1234'       -> se guarda HASHEADO, nunca en claro.
+     */
+    const tocaElPin = input.nfcPin !== undefined;
+    const pinHash = input.nfcPin
+      ? await hash(input.nfcPin, { type: argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 })
+      : null;
+
     try {
       await this.tenantContext.manager.query(
         `UPDATE users
          SET nfc_card_uid = $2,
              nfc_card_assigned_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE NULL END,
+             nfc_pin_hash = CASE WHEN $3 THEN $4 ELSE nfc_pin_hash END,
+             nfc_pin_updated_at = CASE
+               WHEN $3 AND $4 IS NOT NULL THEN now()
+               WHEN $3 THEN NULL
+               ELSE nfc_pin_updated_at
+             END,
              updated_at = now()
          WHERE id = $1`,
-        [guardId, normalizedUid],
+        [guardId, normalizedUid, tocaElPin, pinHash],
       );
-      return { id: guardId, nfcCardUid: normalizedUid };
+      // NUNCA se devuelve el hash ni el PIN: solo si quedo configurado o no.
+      return { id: guardId, nfcCardUid: normalizedUid, tienePin: tocaElPin ? pinHash !== null : undefined };
     } catch (error) {
       if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
         throw new ConflictException('La tarjeta NFC ya esta asignada a otro usuario');

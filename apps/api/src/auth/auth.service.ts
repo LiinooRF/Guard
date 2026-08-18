@@ -254,6 +254,44 @@ export class AuthService {
       }
       throw new UnauthorizedException('Credenciales inválidas');
     }
+    /*
+     * PIN OPCIONAL — el segundo factor del login por tarjeta.
+     *
+     * La tarjeta sola es "algo que se tiene", y un UID NFC se clona con
+     * cualquier telefono: quien la consigue entra como ese guardia. El PIN es
+     * "algo que se sabe" y no viaja en la tarjeta.
+     *
+     * Es opcional POR DISEÑO: la empresa que prioriza velocidad en la garita lo
+     * deja vacio y el login sigue siendo solo tarjeta, exactamente como antes.
+     * Con `nfc_pin_hash` en NULL este bloque no hace nada.
+     *
+     * Se verifica ANTES de `clearFailedLogin` y un PIN errado cuenta como
+     * intento fallido: si no, se podria probar a fuerza bruta sin gastar nunca
+     * el bloqueo que ya protege al resto del login.
+     */
+    const pinHash = guardRows.find((row) => row.nfc_pin_hash)?.nfc_pin_hash ?? null;
+    if (pinHash) {
+      // Que falte el PIN no es un fallo: es el estado en que el portal tiene
+      // que pedirlo. Por eso no gasta intento.
+      if (!input.pin) {
+        throw new UnauthorizedException({
+          code: 'NFC_PIN_REQUIRED',
+          message: 'Esta tarjeta necesita PIN. Ingresalo para continuar.',
+        });
+      }
+      const coincide = await verify(pinHash, input.pin).catch(() => false);
+      if (!coincide) {
+        const locked = await this.recordFailedLogin(identityHash, ipHash, policy);
+        if (locked) {
+          throw new HttpException(
+            'Demasiados intentos. Espera antes de volver a intentarlo.',
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        throw new UnauthorizedException('Credenciales inválidas');
+      }
+    }
+
     await this.clearFailedLogin(identityHash);
 
     const activeRows = guardRows.filter(

@@ -12,6 +12,8 @@ export interface AuthIdentityRow {
   window_seconds: number;
   base_lock_seconds: number;
   max_lock_seconds: number;
+  /** Hash argon2id del PIN del login por tarjeta. NULL = ese guardia no usa PIN. */
+  nfc_pin_hash: string | null;
 }
 
 export interface TenantChoice {

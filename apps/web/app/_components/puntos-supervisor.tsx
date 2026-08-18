@@ -6,6 +6,14 @@ import { CoordinateMap } from './coordinate-map';
 import { marcasDePuntos } from './puntos-marcas';
 import { avisoSinCoordenadas } from './site-gps-aviso';
 
+interface GuardiaDelRecinto {
+  id: string;
+  name: string;
+  nfcCardUid: string | null;
+  /** Solo SI tiene PIN configurado. El hash no sale nunca del servidor. */
+  tienePin: boolean;
+}
+
 interface RecintoAsignado {
   id: string;
   name: string;
@@ -73,6 +81,7 @@ export function PuntosSupervisor({
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
   const [puntos, setPuntos] = useState<Punto[]>([]);
   const [etiquetas, setEtiquetas] = useState<Record<string, Etiqueta[]>>({});
+  const [guardias, setGuardias] = useState<GuardiaDelRecinto[]>([]);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [coordenadas, setCoordenadas] = useState<Coordenadas>([null, null]);
@@ -101,6 +110,8 @@ export function PuntosSupervisor({
       if (!respuesta.ok) return setMensaje(await textoDeError(respuesta));
       setPuntos((await respuesta.json()) as Punto[]);
       setEtiquetas({});
+      const conGuardias = await fetch(`${apiUrl}/supervisor/sites/${siteId}/guards`, opciones());
+      setGuardias(conGuardias.ok ? ((await conGuardias.json()) as GuardiaDelRecinto[]) : []);
     },
     [apiUrl],
   );
@@ -169,6 +180,36 @@ export function PuntosSupervisor({
       punto.isActive
         ? 'Punto dado de baja: deja de contar para el cumplimiento de las rondas.'
         : 'Punto reactivado.',
+    );
+    if (seleccionado) await cargarPuntos(seleccionado);
+  }
+
+  /**
+   * Pone o quita el PIN del login por tarjeta de un guardia.
+   *
+   * OPCIONAL a proposito: dejar el campo vacio y guardar lo QUITA, y ese
+   * guardia vuelve a entrar solo con la tarjeta. La empresa que prioriza
+   * velocidad en la garita puede no usarlo; la que quiera cubrir el riesgo de
+   * que un UID se clona —con cualquier telefono— se lo configura.
+   *
+   * El PIN viaja una sola vez y se guarda hasheado: el servidor nunca lo
+   * devuelve, solo dice si el guardia tiene uno.
+   */
+  async function guardarPin(evento: FormEvent<HTMLFormElement>, guardia: GuardiaDelRecinto) {
+    evento.preventDefault();
+    const form = evento.currentTarget;
+    const pin = new FormData(form).get('pin')?.toString().trim() ?? '';
+    const respuesta = await enviar(
+      `${apiUrl}/supervisor/guards/${guardia.id}/nfc-card`,
+      'POST',
+      { nfcCardUid: guardia.nfcCardUid, nfcPin: pin === '' ? null : pin },
+    );
+    if (!respuesta.ok) return setMensaje(await textoDeError(respuesta));
+    form.reset();
+    setMensaje(
+      pin === ''
+        ? `${guardia.name} vuelve a entrar solo con su tarjeta.`
+        : `PIN guardado para ${guardia.name}. Su tarjeta ya no alcanza sola.`,
     );
     if (seleccionado) await cargarPuntos(seleccionado);
   }
@@ -302,6 +343,48 @@ export function PuntosSupervisor({
               markers={marcasDePuntos(puntos)}
             />
           </div>
+
+          <section className="management-card management-wide">
+            <div className="card-heading">
+              <div>
+                <span className="eyebrow">Acceso</span>
+                <h3>PIN de los guardias</h3>
+              </div>
+            </div>
+            <p className="form-note">
+              El PIN es <strong>opcional y recomendado</strong>. Sin PIN, la tarjeta sola abre la
+              sesión: un UID se copia con cualquier teléfono, así que quien consiga la tarjeta entra
+              como ese guardia. Con PIN, hace falta además algo que solo él sabe. Deja el campo
+              vacío y guarda para quitárselo.
+            </p>
+            <div className="checkpoint-admin-list">
+              {guardias.length === 0 ? (
+                <p className="dashboard-empty">No hay guardias activos en este recinto.</p>
+              ) : guardias.map((guardia) => (
+                <form key={guardia.id} className="management-form" onSubmit={(e) => guardarPin(e, guardia)}>
+                  <span>
+                    <strong>{guardia.name}</strong>
+                    <small>
+                      {guardia.nfcCardUid ? `Tarjeta ${guardia.nfcCardUid}` : 'Sin tarjeta asignada'}
+                      {' · '}
+                      {guardia.tienePin ? 'con PIN' : 'sin PIN'}
+                    </small>
+                  </span>
+                  <label>
+                    PIN (4 a 8 dígitos, vacío = sin PIN)
+                    <input
+                      name="pin"
+                      inputMode="numeric"
+                      pattern="[0-9]{4,8}"
+                      maxLength={8}
+                      placeholder={guardia.tienePin ? 'Tiene PIN. Escribe uno nuevo o guarda vacío para quitarlo' : 'Ej: 4821'}
+                    />
+                  </label>
+                  <button className="primary-button">Guardar PIN</button>
+                </form>
+              ))}
+            </div>
+          </section>
 
           <section className="management-card management-wide">
             <div className="card-heading">

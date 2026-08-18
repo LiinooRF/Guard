@@ -10,6 +10,15 @@ export class NfcLoginDto {
   })
   cardUid!: string;
 
+  /**
+   * PIN OPCIONAL. Solo hace falta si el supervisor se lo configuro a ese
+   * guardia; si no tiene, el login sigue siendo solo la tarjeta.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9]{4,8}$/, { message: 'El PIN debe tener entre 4 y 8 digitos.' })
+  pin?: string;
+
   @IsOptional()
   @IsUUID()
   tenantId?: string;
