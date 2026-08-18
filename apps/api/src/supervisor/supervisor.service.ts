@@ -45,6 +45,32 @@ interface PuntoSnapshot {
   is_anchor: boolean;
 }
 
+/*
+ * POR QUE LLEVAN `::text` Y `::boolean` EXPLICITOS, que parecen ruido:
+ *
+ * Un parametro ligado que solo aparece dentro de `IS NOT NULL` o como
+ * condicion de un `CASE` no le da a PostgreSQL de donde deducir su tipo, y el
+ * servidor responde `42P08 could not determine data type of parameter`. La
+ * sentencia es valida escrita con literales —en `psql` pasa sin quejarse— y
+ * revienta solo por el protocolo extendido, que es justamente el que usa la
+ * aplicacion. Asignar una tarjeta NFC dio 500 en produccion por esto.
+ *
+ * Van como constante, y no dentro del metodo, porque
+ * `parametros-tipados.integration.spec.ts` ejecuta ESTA MISMA cadena contra
+ * PostgreSQL de verdad. Un mock no puede ver este error.
+ */
+export const SQL_ASIGNAR_TARJETA_NFC_SUPERVISOR = `UPDATE users
+   SET nfc_card_uid = $2::text,
+       nfc_card_assigned_at = CASE WHEN $2::text IS NOT NULL THEN now() ELSE NULL END,
+       nfc_pin_hash = CASE WHEN $3::boolean THEN $4::text ELSE nfc_pin_hash END,
+       nfc_pin_updated_at = CASE
+         WHEN $3::boolean AND $4::text IS NOT NULL THEN now()
+         WHEN $3::boolean THEN NULL
+         ELSE nfc_pin_updated_at
+       END,
+       updated_at = now()
+   WHERE id = $1`;
+
 @Injectable()
 export class SupervisorService {
   constructor(
@@ -610,17 +636,7 @@ export class SupervisorService {
 
     try {
       await this.tenantContext.manager.query(
-        `UPDATE users
-         SET nfc_card_uid = $2,
-             nfc_card_assigned_at = CASE WHEN $2 IS NOT NULL THEN now() ELSE NULL END,
-             nfc_pin_hash = CASE WHEN $3 THEN $4 ELSE nfc_pin_hash END,
-             nfc_pin_updated_at = CASE
-               WHEN $3 AND $4 IS NOT NULL THEN now()
-               WHEN $3 THEN NULL
-               ELSE nfc_pin_updated_at
-             END,
-             updated_at = now()
-         WHERE id = $1`,
+        SQL_ASIGNAR_TARJETA_NFC_SUPERVISOR,
         [guardId, normalizedUid, tocaElPin, pinHash],
       );
       // NUNCA se devuelve el hash ni el PIN: solo si quedo configurado o no.
