@@ -83,8 +83,13 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
    * ronda funciona igual.
    */
   useEffect(() => {
+    // Recien cuando el shell saludo: antes de eso `pedirPermiso` rechaza con
+    // 'sin-puente' y el catch se lo traga, que fue exactamente lo que paso la
+    // primera vez que se probo esto en el telefono —el dialogo no aparecia y
+    // no habia ningun error a la vista—.
+    if (puente.fase !== 'listo') return;
     void puente.pedirPermiso('notificaciones', true).catch(() => undefined);
-  }, [puente]);
+  }, [puente, puente.fase]);
 
   useEffect(() => {
     if (!data.hasAssignment || !data.patrol || !data.shift) return;
