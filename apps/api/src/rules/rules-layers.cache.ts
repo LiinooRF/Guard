@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { RuleScope } from '@voxia/shared';
+import type { RuleScope } from '@sentrycore/shared';
 
 /**
  * SLA tecnico de propagacion entre replicas.
