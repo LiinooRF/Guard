@@ -51,6 +51,7 @@ import {
   type Indicador,
   type LineaBitacora,
 } from './pdf-primitivas';
+import { dibujarMapaRecorrido } from './mapa-recorrido.renderer';
 
 /**
  * Dibujo del informe de ronda en PDF (#85, rediseñado como bitacora en #308).
@@ -259,6 +260,15 @@ export async function dibujarCuerpo(
   opciones: OpcionesRender,
 ): Promise<ResultadoCuerpo> {
   dibujarPortada(doc, modelo, logo, opciones);
+
+  // El recorrido va DESPUES de la portada y ANTES del detalle: primero se ve
+  // por donde anduvo el guardia, y recien despues el minuto a minuto. `null` es
+  // "esta seccion no va" (tenant con `reportIncludeMap` apagado, o informe
+  // liviano de correo); un mapa con `hayDatos` en false SI se dibuja, porque
+  // explicarle al lector que no hubo posiciones vale mas que una pagina muda.
+  if (modelo.mapa) {
+    dibujarMapaRecorrido(doc, modelo.mapa);
+  }
 
   if (opciones.bitacora === false) {
     // Sin bitacora el informe vuelve a ser la pila de tablas de siempre. Es lo

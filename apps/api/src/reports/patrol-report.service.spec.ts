@@ -10,6 +10,7 @@ import type { TenantContextService } from '../database/tenant-context/tenant-con
 import type { FeatureFlagsService } from '../rules/feature-flags.service';
 import type { RulesService } from '../rules/rules.service';
 import { PatrolReportService } from './patrol-report.service';
+import type { MapaRecorridoService } from './mapa-recorrido.service';
 
 /**
  * Tests del servicio completo: consultas, marca, permisos y el render real
@@ -152,6 +153,8 @@ function armarServicio(
     photoAppendix?: boolean;
     /** Reglas de forma del informe (#308): bitacora, fotos en linea, etc. */
     reglasInforme?: Record<string, unknown>;
+    /** El recorrido dibujado (#79); null = el informe sale sin esa seccion. */
+    mapa?: unknown;
   } = {},
 ) {
   const manager = fakeManager(fixture);
@@ -175,14 +178,20 @@ function armarServicio(
     getOrThrow: jest.fn().mockReturnValue(extras.raiz ?? '/vol/evidencia'),
   } as unknown as ConfigService;
 
+  // Sin mapa por defecto: las pruebas existentes miden el informe de siempre.
+  const mapaRecorrido = {
+    construir: jest.fn().mockResolvedValue(extras.mapa ?? null),
+  } as unknown as MapaRecorridoService;
+
   const service = new PatrolReportService(
     { manager } as unknown as TenantContextService,
     rules,
     branding,
     features,
+    mapaRecorrido,
     config,
   );
-  return { service, manager, rules, branding, features };
+  return { service, manager, rules, branding, features, mapaRecorrido };
 }
 
 /** Recoge lo que el servicio escribe en el stream, como haria la respuesta HTTP. */

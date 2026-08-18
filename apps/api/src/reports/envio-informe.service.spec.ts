@@ -80,6 +80,7 @@ const MODELO: InformeRonda = {
   evidencias: [],
   anexo: [],
   incluyeAnexo: false,
+  mapa: null,
 };
 
 function modeloCon(pct: number, omitidos: string[] = []): InformeRonda {

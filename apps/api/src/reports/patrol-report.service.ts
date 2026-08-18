@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { FeatureFlagsService } from '../rules/feature-flags.service';
+import { MapaRecorridoService } from './mapa-recorrido.service';
 import { RulesService } from '../rules/rules.service';
 import {
   construirInformeRonda,
@@ -184,6 +185,7 @@ export class PatrolReportService {
     private readonly rules: RulesService,
     private readonly branding: BrandingService,
     private readonly features: FeatureFlagsService,
+    private readonly mapaRecorrido: MapaRecorridoService,
     config: ConfigService,
   ) {
     this.raizEvidencia = config.getOrThrow<string>('EVIDENCE_PATH');
@@ -277,7 +279,8 @@ export class PatrolReportService {
       this.branding.forDocuments(),
     ]);
 
-    return construirInformeRonda({
+
+    const modelo = construirInformeRonda({
       ronda,
       puntos,
       scans,
@@ -297,6 +300,17 @@ export class PatrolReportService {
       incluirAnexo,
       criticidadesDestacadas: reglas.escalationCriticalities,
     });
+
+    // El recorrido (#79) se arma DESPUES del modelo porque necesita los puntos ya
+    // resueltos (`FilaPunto`), no las filas crudas: el mapa ubica cada marca por
+    // su numero de punto. Solo va cuando el informe lleva anexo — el liviano del
+    // correo se manda sin mapa por lo mismo que sin fotos, que es pesar poco.
+    // `construir` devuelve null si el tenant apago la regla `reportIncludeMap`.
+    const mapa = incluirAnexo
+      ? await this.mapaRecorrido.construir(patrolId, modelo.puntos, { requester })
+      : null;
+
+    return { ...modelo, mapa };
   }
 
   /** Dibuja el informe ya resuelto sobre el destino que decida el llamador. */
