@@ -2,6 +2,7 @@ import { computeCompliance, type ComplianceResult, type ScanAnomaly } from '@vox
 
 import { desvioDeTurno, type DesvioDeTurno } from './desvio-de-turno';
 import type { MarcaDocumento } from './pdf-primitivas';
+import type { MapaRecorrido } from './mapa-recorrido.model';
 
 /**
  * Composicion del informe de ronda: filas crudas de la base -> modelo listo
@@ -252,6 +253,13 @@ export interface InformeRonda {
   readonly anexo: readonly FotoAnexo[];
   /** false cuando el informe se genera liviano para adjuntarlo a un correo. */
   readonly incluyeAnexo: boolean;
+  /**
+   * El recorrido dibujado (#79). `null` cuando el tenant apago `reportIncludeMap`
+   * o cuando el informe se arma sin mapa (el liviano del correo). Un mapa con
+   * `hayDatos` en false NO es lo mismo: ese se dibuja igual, para explicarle al
+   * lector por que no se pudo trazar.
+   */
+  readonly mapa: MapaRecorrido | null;
 }
 
 export interface EntradaModelo {
@@ -265,6 +273,8 @@ export interface EntradaModelo {
   readonly marca: MarcaDocumento;
   readonly umbral: number;
   readonly incluirAnexo?: boolean;
+  /** El recorrido ya construido, o null si esta seccion no va (#79). */
+  readonly mapa?: MapaRecorrido | null;
   /** Criticidades que se destacan visualmente; viene de las reglas del tenant. */
   readonly criticidadesDestacadas?: readonly string[];
 }
@@ -365,6 +375,7 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
     evidencias,
     anexo: incluirAnexo ? evidencias : [],
     incluyeAnexo: incluirAnexo,
+    mapa: entrada.mapa ?? null,
   };
 }
 
