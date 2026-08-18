@@ -501,6 +501,26 @@ describe('GuardService.registerScan', () => {
     );
   });
 
+  it('resuelve el punto de control pasando el UID normalizado en la query ($3)', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'scan-id' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await service.registerScan('patrol-id', 'guard-id', dto({ uid: '04:a1:b2:c3:d4:e5:f6', method: 'nfc' }));
+
+    const queryCall = manager.query.mock.calls[1];
+    expect(queryCall[0]).toContain('UPPER(REGEXP_REPLACE(tag.uid');
+    expect(queryCall[1]).toEqual(['04:a1:b2:c3:d4:e5:f6', 'route-id', '04A1B2C3D4E5F6']);
+  });
+
   it('cerrar bajo el umbral alerta al admin, directo (#64)', async () => {
     const manager = { query: jest.fn() };
     manager.query

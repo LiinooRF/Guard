@@ -748,12 +748,14 @@ export class AdminService {
     }
     let tagId: string | null = null;
     if (input.tagUid?.trim()) {
+      const cleanUid = normalizarUidDeEtiqueta(input.tagUid, 'nfc');
+      const finalUid = cleanUid.length >= 4 ? cleanUid : input.tagUid.trim();
       tagId = randomUUID();
       try {
         await this.tenantContext.manager.query(
           `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
            VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
-          [tagId, checkpointId, input.tagUid.trim()],
+          [tagId, checkpointId, finalUid],
         );
       } catch (error) {
         if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
@@ -780,7 +782,11 @@ export class AdminService {
   ) {
     const recinto = await this.ensureSite(siteId);
     const tagUids = checkpoints
-      .map((checkpoint) => checkpoint.tagUid?.trim().toLowerCase())
+      .map((checkpoint) => {
+        if (!checkpoint.tagUid?.trim()) return null;
+        const clean = normalizarUidDeEtiqueta(checkpoint.tagUid, 'nfc');
+        return (clean.length >= 4 ? clean : checkpoint.tagUid.trim()).toLowerCase();
+      })
       .filter((uid): uid is string => Boolean(uid));
     if (new Set(tagUids).size !== tagUids.length) {
       throw new BadRequestException('El CSV repite una etiqueta NFC');
@@ -808,13 +814,15 @@ export class AdminService {
         ],
       );
       let tagId: string | null = null;
-      if (checkpoint.tagUid) {
+      if (checkpoint.tagUid?.trim()) {
+        const cleanUid = normalizarUidDeEtiqueta(checkpoint.tagUid, 'nfc');
+        const finalUid = cleanUid.length >= 4 ? cleanUid : checkpoint.tagUid.trim();
         tagId = randomUUID();
         try {
           await this.tenantContext.manager.query(
             `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
              VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
-            [tagId, id, checkpoint.tagUid.trim()],
+            [tagId, id, finalUid],
           );
         } catch (error) {
           if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
@@ -1156,7 +1164,10 @@ export class AdminService {
        JOIN checkpoints checkpoint
          ON checkpoint.id = tag.checkpoint_id AND checkpoint.is_active
        JOIN sites site ON site.id = checkpoint.site_id AND site.is_active
-       WHERE tag.uid IN ($1, $2) AND tag.is_active`,
+       WHERE (
+          tag.uid IN ($1, $2)
+          OR (tag.tech = 'nfc' AND UPPER(REGEXP_REPLACE(tag.uid, '[^0-9A-Fa-f]', '', 'g')) = $2)
+        ) AND tag.is_active`,
       // Dos formas porque aqui no se sabe la tecnologia: el texto tal cual (un
       // QR, `VXQ-...`) y el mismo texto normalizado como UID de NFC. Asi el
       // instalador puede pegar `04:aa:bb:cc` o `04AABBCC` y resuelve igual.

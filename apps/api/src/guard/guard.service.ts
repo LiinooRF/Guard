@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { computeCompliance, type CheckpointKind, type PatrolRules, type ScanAnomaly } from '@sentrycore/shared';
 import { randomUUID } from 'node:crypto';
 
+import { normalizarUidNfc } from '../admin/uid-nfc';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EscalationService } from '../escalation/escalation.service';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -659,6 +660,9 @@ export class GuardService {
       );
     }
 
+    const rawUid = input.uid.trim();
+    const normalizedNfcUid = normalizarUidNfc(rawUid);
+
     const resolved = await this.tenantContext.manager.query<Array<{
       tag_id: string;
       checkpoint_id: string;
@@ -674,8 +678,12 @@ export class GuardService {
        JOIN checkpoints c ON c.id = tag.checkpoint_id
        LEFT JOIN route_checkpoints rc
          ON rc.route_id = $2 AND rc.checkpoint_id = c.id
-       WHERE tag.uid = $1 AND tag.is_active`,
-      [input.uid.trim(), patrol.route_id],
+       WHERE (
+         tag.uid = $1
+         OR tag.uid = $3
+         OR (tag.tech = 'nfc' AND UPPER(REGEXP_REPLACE(tag.uid, '[^0-9A-Fa-f]', '', 'g')) = $3)
+       ) AND tag.is_active`,
+      [rawUid, patrol.route_id, normalizedNfcUid],
     );
     const target = resolved[0];
     if (!target) throw new NotFoundException('La etiqueta no resuelve a ningún punto');
