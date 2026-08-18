@@ -9,7 +9,7 @@
  * real entre punto y punto, no solo dónde se tocó una etiqueta.
  */
 
-import { esCoordenadaValida, type TrazaMapa } from './mapa-modelo';
+import { esCoordenadaValida, type PuntoMapa, type TrazaMapa } from './mapa-modelo';
 
 export interface PuntoTrack {
   recordedAt: string;
@@ -19,9 +19,20 @@ export interface PuntoTrack {
   batteryPct: number | null;
 }
 
+export interface CheckpointTrack {
+  id: string;
+  name: string;
+  position: number;
+  latitude: number | null;
+  longitude: number | null;
+  scanned?: boolean;
+  isCritical?: boolean;
+}
+
 export interface RespuestaTrack {
   patrolId: string;
   points: PuntoTrack[];
+  checkpoints?: CheckpointTrack[];
   totalDistanceM?: number;
   durationMin?: number;
 }
@@ -38,6 +49,45 @@ export function trazaDeRecorrido(puntos: readonly PuntoTrack[]): TrazaMapa | nul
     id: 'recorrido',
     variante: 'recorrido',
     puntos: validos.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+  };
+}
+
+/**
+ * Marcas de los puntos de control de la ronda para superponer sobre el mapa.
+ */
+export function marcasDeCheckpoints(checkpoints: readonly CheckpointTrack[]): PuntoMapa[] {
+  const marcas: PuntoMapa[] = [];
+  const ordenados = [...checkpoints].sort((a, b) => a.position - b.position);
+  for (const c of ordenados) {
+    if (!esCoordenadaValida(c.latitude, c.longitude)) continue;
+    marcas.push({
+      id: c.id,
+      lat: c.latitude as number,
+      lng: c.longitude as number,
+      titulo: c.name,
+      numero: c.position,
+      detalle: c.scanned ? 'Cumplido' : 'Pendiente',
+      variante: c.scanned ? 'fin' : c.isCritical ? 'alerta' : 'punto',
+    });
+  }
+  return marcas;
+}
+
+/**
+ * Traza de la ronda patrón: línea que conecta los checkpoints de la ruta en su
+ * orden planificado (variante 'ruta' -> punteada).
+ */
+export function trazaDePatronCheckpoints(checkpoints: readonly CheckpointTrack[]): TrazaMapa | null {
+  const ordenados = [...checkpoints].sort((a, b) => a.position - b.position);
+  const validos = ordenados.filter((c) => esCoordenadaValida(c.latitude, c.longitude));
+  if (validos.length < 2) return null;
+  return {
+    id: 'ruta-patron',
+    variante: 'ruta',
+    puntos: validos.map((c) => ({
+      lat: c.latitude as number,
+      lng: c.longitude as number,
+    })),
   };
 }
 
