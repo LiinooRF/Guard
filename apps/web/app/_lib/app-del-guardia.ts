@@ -23,6 +23,19 @@
  * sin poder trabajar.
  */
 
+/**
+ * Paquetes de la app, para la cabecera `X-Requested-With`.
+ *
+ * Android la pone el SISTEMA cuando el WebView navega, no la pagina, asi que
+ * sirve de refuerzo cuando el user-agent llega recortado por un proveedor de
+ * WebView. Misma regla que las marcas: la lista solo crece, porque el paquete
+ * viejo sigue instalado en telefonos que nadie actualizo.
+ */
+export const PAQUETES_APP_GUARDIA = [
+  'com.voxtilabs.sentrycore',
+  'com.voxtilabs.voxiacontrol',
+] as const;
+
 /** Marcas aceptadas, de la más nueva a la más vieja. Solo se agregan. */
 export const MARCAS_APP_GUARDIA = ['SentryCoreAndroid/', 'VoxIAAndroid/'] as const;
 
@@ -30,4 +43,22 @@ export const MARCAS_APP_GUARDIA = ['SentryCoreAndroid/', 'VoxIAAndroid/'] as con
 export function esAppDelGuardia(userAgent: string | null | undefined): boolean {
   if (!userAgent) return false;
   return MARCAS_APP_GUARDIA.some((marca) => userAgent.includes(marca));
+}
+
+/**
+ * La misma pregunta del lado del servidor, mirando ademas `X-Requested-With`.
+ *
+ * SOLO se aceptan señales que ponga el sistema o la app: el user-agent y el
+ * paquete. Una cabecera inventada por nosotros —o peor, una cookie— la puede
+ * poner cualquiera desde la consola del navegador con una linea, y el carril
+ * del guardia dejaria de ser el carril de la app: seria "el de quien sepa
+ * escribir document.cookie". Que el user-agent tambien se pueda falsificar no
+ * es motivo para agregar una puerta que se abre sin herramientas.
+ */
+export function peticionDeAppDelGuardia(cabeceras: {
+  get(nombre: string): string | null;
+}): boolean {
+  if (esAppDelGuardia(cabeceras.get('user-agent'))) return true;
+  const paquete = (cabeceras.get('x-requested-with') ?? '').trim().toLowerCase();
+  return PAQUETES_APP_GUARDIA.some((esperado) => paquete === esperado);
 }

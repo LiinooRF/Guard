@@ -15,7 +15,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { MARCAS_APP_GUARDIA, esAppDelGuardia } from './app-del-guardia';
+import {
+  MARCAS_APP_GUARDIA,
+  PAQUETES_APP_GUARDIA,
+  esAppDelGuardia,
+  peticionDeAppDelGuardia,
+} from './app-del-guardia';
 
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; moto g35 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36';
 
@@ -57,9 +62,50 @@ describe('las dos puertas del carril del guardia usan la misma comprobación', (
   it.each([
     ['middleware.ts', join(__dirname, '..', '..', 'middleware.ts')],
     ['login-screen.tsx', join(__dirname, '..', '_components', 'login-screen.tsx')],
-  ])('%s llama a esAppDelGuardia y no compara la marca a mano', (_nombre, ruta) => {
+  ])('%s decide con este modulo y no compara la marca a mano', (_nombre, ruta) => {
     const fuente = readFileSync(ruta, 'utf8');
-    expect(fuente).toMatch(/esAppDelGuardia\(/);
+    // Cualquiera de las dos puertas sirve —el servidor mira ademas el paquete—,
+    // lo que no puede es volver a comparar la cadena por su cuenta.
+    expect(fuente).toMatch(/(esAppDelGuardia|peticionDeAppDelGuardia)\(/);
     expect(fuente).not.toMatch(/includes\('SentryCoreAndroid\//);
+    expect(fuente).not.toMatch(/test\(navigator\.userAgent\)/);
+  });
+});
+
+describe('peticionDeAppDelGuardia', () => {
+  const cabeceras = (mapa: Record<string, string>) => ({
+    get: (nombre: string) => mapa[nombre.toLowerCase()] ?? null,
+  });
+
+  it('acepta por user-agent, con la marca actual y con la vieja', () => {
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': `${ANDROID} SentryCoreAndroid/0.1` }))).toBe(true);
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': `${ANDROID} VoxIAAndroid/0.1` }))).toBe(true);
+  });
+
+  it('acepta por el paquete que pone Android cuando el user-agent llega recortado', () => {
+    for (const paquete of PAQUETES_APP_GUARDIA) {
+      expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID, 'x-requested-with': paquete }))).toBe(true);
+    }
+  });
+
+  it('rechaza un navegador comun', () => {
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID }))).toBe(false);
+    expect(peticionDeAppDelGuardia(cabeceras({}))).toBe(false);
+  });
+
+  /*
+   * Lo que NO puede abrir la puerta. Una cabecera propia o una cookie las pone
+   * cualquiera desde la consola del navegador con una linea; si valieran, el
+   * carril del guardia dejaria de ser el de la app. Tampoco vale un paquete que
+   * apenas CONTENGA el nombre: `com.otra.sentrycore.falsa` no es la app.
+   */
+  it('no se abre con una cabecera o cookie que cualquiera puede escribir', () => {
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID, 'x-sentrycore-app': '1' }))).toBe(false);
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID, cookie: 'sentrycore_native_app=1' }))).toBe(false);
+  });
+
+  it('exige el paquete exacto, no que lo contenga', () => {
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID, 'x-requested-with': 'com.otra.sentrycore.falsa' }))).toBe(false);
+    expect(peticionDeAppDelGuardia(cabeceras({ 'user-agent': ANDROID, 'x-requested-with': 'sentrycore' }))).toBe(false);
   });
 });
