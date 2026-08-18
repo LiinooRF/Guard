@@ -34,6 +34,7 @@ const punto = (numero: number, parcial: Partial<FilaPunto> = {}): FilaPunto => (
   escaneadoEn: new Date('2026-07-30T23:00:00-04:00'),
   metodo: 'nfc',
   anomalias: [],
+  instrucciones: null,
   ...parcial,
 });
 

@@ -1,5 +1,5 @@
 import { ForbiddenException, Logger } from '@nestjs/common';
-import { DEFAULT_PATROL_RULES } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES } from '@sentrycore/shared';
 import { QueryFailedError, type DataSource } from 'typeorm';
 
 import { PlatformRulesService } from './platform-rules.service';

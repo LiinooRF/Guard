@@ -26,13 +26,13 @@ describe('csrfOriginProtection', () => {
 
   it('acepta al cliente nativo sin cookies ambientales', () => {
     expect(
-      invoke({ headers: { 'x-voxia-client': 'mobile' } }),
+      invoke({ headers: { 'x-sentrycore-client': 'mobile' } }),
     ).toHaveBeenCalledWith();
   });
 
   it('no permite usar la excepción móvil cuando existen cookies', () => {
     const next = invoke({
-      headers: { 'x-voxia-client': 'mobile', cookie: 'voxia_access=token' },
+      headers: { 'x-sentrycore-client': 'mobile', cookie: 'sentrycore_access=token' },
     });
     expect(next.mock.calls[0]?.[0]).toMatchObject({ status: 403 });
   });

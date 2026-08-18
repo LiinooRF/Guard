@@ -5,7 +5,7 @@ import {
   PATROL_RULE_CATALOG,
   type PatrolRules,
   type RuleScope,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 export type UpdateRulesDto = Partial<PatrolRules>;
 
@@ -15,7 +15,7 @@ const updateRulesSchema = patrolRulesSchema.partial().strict();
 
 /**
  * Pipe zod manual en vez de class-validator: el DTO de reglas ES el schema
- * compartido de @voxia/shared; duplicarlo en decoradores lo desincronizaria
+ * compartido de @sentrycore/shared; duplicarlo en decoradores lo desincronizaria
  * del contrato que consumen web y movil.
  *
  * Recibe el nivel de la cascada porque no toda regla se configura en todo nivel

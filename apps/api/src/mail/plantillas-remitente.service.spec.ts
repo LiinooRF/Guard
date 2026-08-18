@@ -24,7 +24,7 @@ import { PlantillasRemitenteService } from './plantillas-remitente.service';
  * plantillas-remitente.migration.spec.ts: aca se prueba el COMPORTAMIENTO.
  */
 
-const PLATAFORMA = 'VoxIA Control <no-reply@voxiacontrol.cl>';
+const PLATAFORMA = 'SentryCore <no-reply@sentrycore.cl>';
 const VERIFICADA = '2026-07-30T12:00:00.000Z';
 
 function marcaDePrueba(cambios: Partial<MarcaCorreo> = {}): MarcaCorreo {
@@ -93,7 +93,7 @@ describe('PlantillasRemitenteService', () => {
       expect(remitente.fromAddressVerifiedAt).toBeNull();
       // El nombre visible ya es el de la empresa; la direccion es la del relay.
       expect(remitente.efectivo).toEqual({
-        from: '"Seguridad Andes" <no-reply@voxiacontrol.cl>',
+        from: '"Seguridad Andes" <no-reply@sentrycore.cl>',
         replyTo: null,
       });
     });
@@ -131,7 +131,7 @@ describe('PlantillasRemitenteService', () => {
       expect(remitente.avisos[0]).toContain('avisos@seguridadandes.cl');
       // El From efectivo sigue siendo el de la plataforma: es justamente lo que
       // el aviso le esta explicando al admin.
-      expect(remitente.efectivo.from).toContain('no-reply@voxiacontrol.cl');
+      expect(remitente.efectivo.from).toContain('no-reply@sentrycore.cl');
     });
 
     it('la direccion ya verificada no deja aviso y sale en el From', async () => {
@@ -167,7 +167,7 @@ describe('PlantillasRemitenteService', () => {
       // la plataforma en vez de lanzar.
       const { servicio } = armar([fila()], {
         esDeLaPlataforma: true,
-        nombreRemitente: 'VoxIA Control',
+        nombreRemitente: 'SentryCore',
         replyTo: null,
       });
 
@@ -261,7 +261,7 @@ describe('PlantillasRemitenteService', () => {
 
       expect(guardado.replyTo).toBeNull();
       expect(guardado.fromAddressVerifiedAt).toBeNull();
-      expect(guardado.efectivo.from).toContain('no-reply@voxiacontrol.cl');
+      expect(guardado.efectivo.from).toContain('no-reply@sentrycore.cl');
     });
   });
 });

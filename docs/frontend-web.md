@@ -9,7 +9,7 @@
 
 ## 1. Qué es el producto, en dos párrafos
 
-**VoxIA Control** es un SaaS multi-tenant de monitoreo de rondas de vigilancia. Un guardia recorre
+**SentryCore** es un SaaS multi-tenant de monitoreo de rondas de vigilancia. Un guardia recorre
 puntos de control físicos; en cada uno hay una etiqueta NFC pegada que toca con el teléfono, y eso
 queda registrado con hora y GPS. En los accesos críticos además fotografía el estado de la puerta. Al
 escanear el último punto, **la ronda se cierra sola** y se envía el informe; si el cumplimiento baja
@@ -33,7 +33,7 @@ de este carril.
 Puedes probar todo lo que existe en el ambiente de pruebas:
 
 - **https://test-sentrycore.voxtilabs.cl** — el panel
-- **https://test-sentrycore.voxtilabs.cl/correo** — bandeja de correo de pruebas (usuario `voxia`)
+- **https://test-sentrycore.voxtilabs.cl/correo** — bandeja de correo de pruebas (usuario `sentrycore`)
 - Requiere estar en el **tailnet** del equipo. El VPS no está abierto a internet a propósito.
 
 **Cuentas demo** (clave para todas: la que el equipo comparte por el grupo, `DemoGuardia2026!` en
@@ -68,8 +68,8 @@ sin romperse, no asumir que todo recinto es visible.
 El login ya está resuelto; **no lo reimplementes**. Cómo funciona:
 
 1. `POST /api/auth/login` con `{ identity, password }` y `credentials: 'include'`.
-2. El servidor responde con el usuario **y setea dos cookies `HttpOnly`**: `voxia_access` (15 min) y
-   `voxia_refresh` (30 días). El JavaScript **no puede leerlas, y eso es deliberado**.
+2. El servidor responde con el usuario **y setea dos cookies `HttpOnly`**: `sentrycore_access` (15 min) y
+   `sentrycore_refresh` (30 días). El JavaScript **no puede leerlas, y eso es deliberado**.
 3. `apps/web/middleware.ts` valida la sesión en cada navegación llamando a la API por la red interna
    y redirige al rol correcto (`/app/admin`, `/app/supervisor`, `/app/superadmin`).
 4. Toda llamada a la API desde el navegador va con **`credentials: 'include'`**. Si se te olvida, el
@@ -183,6 +183,39 @@ GET   /supervisor/live                                 patrols:monitor
       → rondas pendientes/en curso de los recintos asignados, progreso, último escaneo y
         posición más reciente solo cuando la regla GPS efectiva está activa
 ```
+
+#### Puntos de control y etiquetas NFC — `/checkpoints/supervisor` (#309)
+
+Primer segmento distinto de `/admin` y de `/supervisor` a propósito: así ninguna
+ruta puede quedar tapada por otra según el orden de registro. Las ocho piden
+`checkpoints:manage` y comprueban `supervisor_sites` **en el servidor**; el id
+del supervisor sale del token, nunca de la URL.
+
+```
+GET    /checkpoints/supervisor/sites/:siteId/checkpoints
+POST   /checkpoints/supervisor/sites/:siteId/checkpoints  {name, description?, kind?,
+                                          suggestedOrder?, latitude?, longitude?,
+                                          instructions?, tagUid?}
+POST   /checkpoints/supervisor/sites/:siteId/checkpoints/import {checkpoints:[...]}
+PATCH  /checkpoints/supervisor/checkpoints/:checkpointId        {campos parciales, SIN kind}
+PATCH  /checkpoints/supervisor/checkpoints/:checkpointId/active {isActive}
+GET    /checkpoints/supervisor/checkpoints/:checkpointId/tags
+POST   /checkpoints/supervisor/checkpoints/:checkpointId/tags   {uid, tech?}
+DELETE /checkpoints/supervisor/tags/:tagId
+```
+
+Códigos: **404** = el punto no existe, o es de otra empresa (RLS lo tapa antes y
+no se revela que exista). **403** = existe en tu empresa pero su recinto no está
+entre los tuyos. **400** = mandaste `requiresPhoto`, `kind` al editar o `siteId`
+en el cuerpo: no están en el DTO y `forbidNonWhitelisted` los rechaza.
+
+Los recintos para el selector salen de `GET /supervisor/sites`, que ya devuelve
+solo los asignados. **`GET /admin/sites` no sirve acá** y no es un detalle de la
+pantalla sino del permiso.
+
+Lo que sigue siendo solo del `ADMIN`: el CRUD de recintos, el horario hábil y los
+feriados, `PATCH /admin/checkpoints/:id/photo`, `GET /admin/tags/resolve` y el QR
+de respaldo. Ver `docs/autorizacion.md` para el porqué de cada uno.
 
 El tablero consulta `/supervisor/live` cada 5 segundos (también al volver a una pestaña visible),
 por debajo del límite de 10 segundos del producto. `pollAfterMs` viene en la respuesta para dejar
@@ -331,7 +364,7 @@ GET /guard/home           patrols:execute         ← solo GUARDIA (móvil)
   (una tabla real consumiendo endpoints) **antes de inventar tu propio patrón**.
 - **Estilos en `apps/web/app/globals.css` con clases planas.** No hay Tailwind ni librería de
   componentes, y no la agregues sin acordarlo con el equipo: el bundle importa (ver punto 8).
-- Tipos compartidos con el backend: **`@voxia/shared`** (roles, permisos, reglas, entidades del
+- Tipos compartidos con el backend: **`@sentrycore/shared`** (roles, permisos, reglas, entidades del
   dominio). Si necesitas un tipo que ya vive ahí, impórtalo — no lo redeclares.
 - `npm run typecheck` y `npm run build` tienen que pasar. `tsconfig` está en modo estricto con
   `noUncheckedIndexedAccess`: indexar un arreglo devuelve `T | undefined` y hay que manejarlo.

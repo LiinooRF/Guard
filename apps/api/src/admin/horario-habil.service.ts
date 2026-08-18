@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { isPhotoRequired } from '@voxia/shared';
+import { isPhotoRequired } from '@sentrycore/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { EvidenceService } from '../evidence/evidence.service';
@@ -36,7 +36,7 @@ interface PuntoEvaluado {
  * exige foto en cada punto"— hay que poder DEMOSTRARLO, y demostrarlo contra el
  * codigo que corre en terreno, no contra una copia de la regla escrita en el
  * navegador. Por eso este servicio no reimplementa nada: llama a
- * EvidenceService.isWithinBusinessHours() y a isPhotoRequired() de @voxia/shared,
+ * EvidenceService.isWithinBusinessHours() y a isPhotoRequired() de @sentrycore/shared,
  * que son exactamente los que decide el flujo de escaneo, y resuelve la cascada
  * de reglas con el MISMO contexto que EvidenceService.requiresPhoto(): recinto
  * para todos, y ademas el punto para los que tienen reglas propias.

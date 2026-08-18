@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import type { AuditService } from '../audit/audit.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

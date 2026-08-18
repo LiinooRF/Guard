@@ -1,3 +1,4 @@
+import type { AuditService } from '../audit/audit.service';
 import type { AuthService } from '../auth/auth.service';
 import type { MailService } from '../auth/mail.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -7,6 +8,7 @@ const service = (query: jest.Mock) => new AdminService(
   { manager: { query } } as unknown as TenantContextService,
   { revokeAllSessions: jest.fn() } as unknown as AuthService,
   {} as MailService,
+  { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
 );
 
 describe('AdminService catálogo de recintos (#101)', () => {

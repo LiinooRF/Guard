@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoxIA Control">
-  <title>VoxIA Control</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="SentryCore">
+  <title>SentryCore</title>
   <!-- Sin transparencia y sin bordes redondeados: Google Play recorta la mascara
        del launcher por su cuenta, y el icono de 512x512 de la ficha se rechaza
        si trae canal alfa. -->

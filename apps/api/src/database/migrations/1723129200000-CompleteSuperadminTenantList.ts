@@ -85,8 +85,8 @@ export class CompleteSuperadminTenantList1723129200000 implements MigrationInter
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO sentrycore_app;
         END IF;
       END
       $$
@@ -149,8 +149,8 @@ export class CompleteSuperadminTenantList1723129200000 implements MigrationInter
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO sentrycore_app;
         END IF;
       END
       $$
@@ -191,7 +191,7 @@ export class CompleteSuperadminTenantList1723129200000 implements MigrationInter
       $$
     `);
     await queryRunner.query(`REVOKE ALL ON FUNCTION authenticate_identity(text) FROM PUBLIC`);
-    await queryRunner.query(`GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO voxia_app`);
+    await queryRunner.query(`GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO sentrycore_app`);
 
     await queryRunner.query(`DROP FUNCTION platform_list_tenants(uuid)`);
     await queryRunner.query(`
@@ -216,7 +216,7 @@ export class CompleteSuperadminTenantList1723129200000 implements MigrationInter
       $$
     `);
     await queryRunner.query(`REVOKE ALL ON FUNCTION platform_list_tenants(uuid) FROM PUBLIC`);
-    await queryRunner.query(`GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO voxia_app`);
+    await queryRunner.query(`GRANT EXECUTE ON FUNCTION platform_list_tenants(uuid) TO sentrycore_app`);
     await queryRunner.query(`ALTER TABLE tenants DROP CONSTRAINT tenants_plan_key_fkey`);
     await queryRunner.query(`DROP TABLE subscription_plans`);
   }

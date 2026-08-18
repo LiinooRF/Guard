@@ -130,12 +130,12 @@ export class CreateLoginSecurityPolicy1723388400000 implements MigrationInterfac
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT, UPDATE ON tenant_auth_policies TO voxia_app;
-          GRANT SELECT ON security_events TO voxia_app;
-          REVOKE INSERT, UPDATE, DELETE ON security_events FROM voxia_app;
-          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION record_login_lock(uuid, uuid, text) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT, UPDATE ON tenant_auth_policies TO sentrycore_app;
+          GRANT SELECT ON security_events TO sentrycore_app;
+          REVOKE INSERT, UPDATE, DELETE ON security_events FROM sentrycore_app;
+          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION record_login_lock(uuid, uuid, text) TO sentrycore_app;
         END IF;
       END
       $$
@@ -180,6 +180,6 @@ export class CreateLoginSecurityPolicy1723388400000 implements MigrationInterfac
       $$
     `);
     await queryRunner.query(`REVOKE ALL ON FUNCTION authenticate_identity(text) FROM PUBLIC`);
-    await queryRunner.query(`GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO voxia_app`);
+    await queryRunner.query(`GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO sentrycore_app`);
   }
 }

@@ -1,13 +1,13 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# Restore de un dump diario de VoxIA Control (formato custom, pg_dump -Fc).
+# Restore de un dump diario de SentryCore (formato custom, pg_dump -Fc).
 # Issue #24. Procedimiento completo y como probarlo: docs/respaldos.md.
 #
 # Uso tipico (en el VPS, con el stack de Dokploy corriendo; el compose monta
 # esta carpeta en /scripts dentro del servicio postgres-backup):
 #
 #   docker compose -f docker-compose.dokploy.yml exec postgres-backup \
-#     sh /scripts/restore.sh /backups/voxia-2026-08-03.dump voxia_restore
+#     sh /scripts/restore.sh /backups/sentrycore-2026-08-03.dump sentrycore_restore
 #
 # Que hace, paso a paso:
 #   1. Valida argumentos y que el dump exista y sea un -Fc legible
@@ -24,9 +24,9 @@
 #
 # Requisitos del entorno donde corre:
 #   - PGHOST/PGUSER/PGPASSWORD del DUEÑO de la base (los mismos que usa el
-#     servicio postgres-backup). El rol voxia_app no sirve: no puede crear
+#     servicio postgres-backup). El rol sentrycore_app no sirve: no puede crear
 #     bases y RLS le cierra la lectura sin contexto de tenant.
-#   - El rol voxia_app debe existir en el cluster destino (lo crea
+#   - El rol sentrycore_app debe existir en el cluster destino (lo crea
 #     docker/postgres/init/01-app-role.sh). Sin el, fallan los GRANT y las
 #     politicas del dump. En un cluster levantado con nuestro compose ya esta.
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ DB="${2:-}"
 
 if [ -z "$DUMP" ] || [ -z "$DB" ]; then
   echo "uso: restore.sh <ruta-al-dump> <base-destino-vacia>" >&2
-  echo "ej.: restore.sh /backups/voxia-2026-08-03.dump voxia_restore" >&2
+  echo "ej.: restore.sh /backups/sentrycore-2026-08-03.dump sentrycore_restore" >&2
   exit 1
 fi
 

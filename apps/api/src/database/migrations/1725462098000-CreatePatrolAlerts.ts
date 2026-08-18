@@ -18,7 +18,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * permite avisar UNA sola vez: sin fila, cada refresco del tablero mandaria el
  * push de nuevo. La fila es la marca de "esto ya se aviso".
  *
- * POR QUE NO SE BORRA (sin DELETE para voxia_app)
+ * POR QUE NO SE BORRA (sin DELETE para sentrycore_app)
  * ----------------------------------------------
  * Mismo criterio que event_notifications y schedule_runs: la alerta atendida es
  * la prueba de que alguien se hizo cargo, y la no atendida es la prueba de que
@@ -177,12 +177,12 @@ export class CreatePatrolAlerts1725462098000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- UPDATE si: marcar atendida y marcar avisada son actualizaciones.
-          GRANT SELECT, INSERT, UPDATE ON patrol_alerts TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON patrol_alerts TO sentrycore_app;
           -- Sin DELETE: la alerta sin atender es la prueba de que nadie la
           -- atendio. Borrarla es la version silenciosa de no haber avisado.
-          REVOKE DELETE ON patrol_alerts FROM voxia_app;
+          REVOKE DELETE ON patrol_alerts FROM sentrycore_app;
         END IF;
       END
       $$

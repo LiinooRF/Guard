@@ -31,6 +31,7 @@ import {
   type TenantUser,
   type SecurityEvent,
 } from '../../_components/role-management';
+import { PuntosSupervisor } from '../../_components/puntos-supervisor';
 import { SessionManagement, type UserSession } from '../../_components/session-management';
 import { SiteManagement } from '../../_components/site-management';
 import { panelViewCopy, resolvePanelView, type PanelRole } from '../../_components/panel-navigation';
@@ -227,6 +228,20 @@ export default async function RoleDashboard({
         <TareasTurnoEditor apiUrl={publicApiUrl()} />
       </div>
     );
+  } else if (isSupervisor && view === 'terreno') {
+    // #309. Los datos NO vienen de `GET /admin/sites` —que el supervisor no
+    // puede leer— sino de `/supervisor/sites` y `/checkpoints/supervisor/...`,
+    // que ya filtran por `supervisor_sites` en el servidor. Por eso el
+    // componente se carga solo en el navegador y no recibe `sites` desde aca.
+    panel = (
+      <div className="panel-view" data-view="terreno">
+        <PuntosSupervisor
+          apiUrl={publicApiUrl()}
+          mapTileUrl={process.env.MAP_TILE_URL ?? null}
+          mapAttribution={process.env.MAP_ATTRIBUTION ?? '© OpenStreetMap contributors'}
+        />
+      </div>
+    );
   } else if (isSupervisor && view === 'monitoreo') {
     panel = (
       <div className="panel-view" data-view="monitoreo">
@@ -373,13 +388,13 @@ function publicApiUrl() {
 
 async function loadGuardHome(): Promise<GuardHomeData> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return noAssignment();
 
   const internalApiUrl = process.env.API_INTERNAL_URL ?? publicApiUrl();
   try {
     const response = await fetch(`${internalApiUrl}/guard/home`, {
-      headers: { cookie: `voxia_access=${accessToken.value}` },
+      headers: { cookie: `sentrycore_access=${accessToken.value}` },
       cache: 'no-store',
     });
     if (!response.ok) return noAssignment();
@@ -394,14 +409,14 @@ async function loadGuardHome(): Promise<GuardHomeData> {
 
 async function loadTenantOverview(): Promise<TenantOverview | null> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return null;
 
   try {
     const response = await fetch(
       `${process.env.API_INTERNAL_URL ?? publicApiUrl()}/dashboard/tenant`,
       {
-        headers: { cookie: `voxia_access=${accessToken.value}` },
+        headers: { cookie: `sentrycore_access=${accessToken.value}` },
         cache: 'no-store',
       },
     );
@@ -414,13 +429,13 @@ async function loadTenantOverview(): Promise<TenantOverview | null> {
 
 async function authenticatedGet<T>(path: string, fallback: T): Promise<T> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get('voxia_access');
+  const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return fallback;
   try {
     const response = await fetch(
       `${process.env.API_INTERNAL_URL ?? publicApiUrl()}${path}`,
       {
-        headers: { cookie: `voxia_access=${accessToken.value}` },
+        headers: { cookie: `sentrycore_access=${accessToken.value}` },
         cache: 'no-store',
       },
     );

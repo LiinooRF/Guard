@@ -1,5 +1,5 @@
 import type { Logger } from '@nestjs/common';
-import { DEFAULT_FEATURE_FLAGS, featureFlagsSchema, type FeatureFlags } from '@voxia/shared';
+import { DEFAULT_FEATURE_FLAGS, featureFlagsSchema, type FeatureFlags } from '@sentrycore/shared';
 import type { z } from 'zod';
 
 /**
@@ -8,7 +8,7 @@ import type { z } from 'zod';
  * Codigo puro: no toca la base ni Nest. Lo que decide que ve una empresa se
  * prueba aca, sin mocks de driver de por medio.
  *
- * Los flags en si viven en `featureFlagsSchema` de @voxia/shared, que es el
+ * Los flags en si viven en `featureFlagsSchema` de @sentrycore/shared, que es el
  * contrato que comparten api, web y movil. Este archivo agrega lo que le falta
  * a ese schema para poder venderlos: como se llama cada modulo en la interfaz,
  * que deja de verse cuando se apaga, y como se resuelven los cuatro niveles.

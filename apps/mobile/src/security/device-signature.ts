@@ -1,8 +1,8 @@
 import { CryptoDigestAlgorithm, digest, getRandomBytesAsync, randomUUID } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-const DEVICE_ID_KEY = 'voxia.device-signature.id.v1';
-const SECRET_KEY = 'voxia.device-signature.secret.v1';
+const DEVICE_ID_KEY = 'sentrycore.device-signature.id.v1';
+const SECRET_KEY = 'sentrycore.device-signature.secret.v1';
 
 export interface DatosFirmablesEscaneo {
   readonly clientScanId: string;
@@ -111,7 +111,7 @@ export async function registrarClaveDispositivo(apiUrl: string, portalOrigin: st
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      'X-Voxia-Client': 'mobile',
+      'X-SentryCore-Client': 'mobile',
       Origin: portalOrigin,
     },
     body: JSON.stringify({ deviceId, key: base64(secret) }),

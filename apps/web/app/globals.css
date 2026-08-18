@@ -368,6 +368,7 @@ a { color: inherit; text-decoration: none; }
 .guardia-destino { margin: .25rem 0 .6rem; color: var(--guardia-ink); font-size: clamp(1.9rem, 7vw, 2.8rem); letter-spacing: -.03em; line-height: 1.08; }
 .guardia-nota { margin: .4rem 0; color: var(--guardia-muted); font-size: 1rem; line-height: 1.5; }
 .guardia-anuncio { margin: .7rem 0 0; min-height: 1.5rem; color: var(--guardia-ink); font-size: 1.05rem; font-weight: 700; line-height: 1.45; }
+.guardia-anuncio-alerta { min-height: 0; border-left: .35rem solid var(--guardia-ambar); padding: .6rem .7rem; color: #3a2400; background: #fff4dc; }
 .guardia-aviso { margin: .7rem 0 0; border-left: .35rem solid var(--guardia-ambar); padding: .6rem .7rem; color: #3a2400; background: #fff4dc; font-size: 1rem; line-height: 1.45; }
 .guardia-error { margin: .7rem 0 0; border-left: .35rem solid var(--guardia-rojo); padding: .6rem .7rem; color: #5c0710; background: #ffeced; font-size: 1.05rem; font-weight: 700; line-height: 1.45; }
 

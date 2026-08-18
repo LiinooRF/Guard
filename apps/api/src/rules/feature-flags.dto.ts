@@ -1,5 +1,5 @@
 import { BadRequestException, type PipeTransform } from '@nestjs/common';
-import { featureFlagsSchema, type FeatureFlags } from '@voxia/shared';
+import { featureFlagsSchema, type FeatureFlags } from '@sentrycore/shared';
 import { IsUUID, Matches } from 'class-validator';
 
 export type UpdateFeatureFlagsDto = Partial<FeatureFlags>;
@@ -11,7 +11,7 @@ const updateFeatureFlagsSchema = featureFlagsSchema.partial().strict();
 
 /**
  * Pipe zod manual en vez de class-validator, por el mismo motivo que
- * UpdateRulesPipe: el DTO ES el schema compartido de @voxia/shared, y
+ * UpdateRulesPipe: el DTO ES el schema compartido de @sentrycore/shared, y
  * duplicarlo en decoradores lo desincronizaria del contrato que consumen web y
  * movil.
  *

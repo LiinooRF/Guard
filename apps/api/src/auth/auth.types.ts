@@ -1,4 +1,4 @@
-import type { Role } from '@voxia/shared';
+import type { Role } from '@sentrycore/shared';
 
 export interface AuthIdentityRow {
   user_id: string;

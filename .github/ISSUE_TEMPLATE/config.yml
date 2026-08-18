@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Backlog de VoxIA Control
+  - name: Backlog de SentryCore
     url: https://github.com/4l4h3rg4/Guard/issues?q=is%3Aissue+is%3Aopen+label%3Aepic
     about: Las 19 epicas del proyecto. Antes de crear un issue nuevo, revisa si ya existe como sub-tarea de una epica.

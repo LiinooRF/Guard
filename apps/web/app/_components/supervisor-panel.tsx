@@ -1,7 +1,7 @@
 /**
  * Panel de estadisticas e informes del SUPERVISOR (#99).
  *
- * Componente de SERVIDOR. Lee la cookie `voxia_access` y pide todo por la red
+ * Componente de SERVIDOR. Lee la cookie `sentrycore_access` y pide todo por la red
  * interna, igual que `app/app/[role]/page.tsx` y que el panel de informes (#87):
  * al navegador no viaja ni un token, ni una llamada a la API, ni una libreria de
  * graficos. Llega HTML con SVG dentro. El unico JavaScript de esta pantalla es
@@ -57,7 +57,7 @@ function apiPublica() {
 
 async function pedir<T>(ruta: string, parametros?: URLSearchParams): Promise<ResultadoSupervisor<T>> {
   const almacen = await cookies();
-  const acceso = almacen.get('voxia_access');
+  const acceso = almacen.get('sentrycore_access');
   if (!acceso) return { estado: 'sin-sesion' };
 
   const consulta = parametros?.toString();
@@ -65,7 +65,7 @@ async function pedir<T>(ruta: string, parametros?: URLSearchParams): Promise<Res
     const respuesta = await fetch(
       `${process.env.API_INTERNAL_URL ?? apiPublica()}${ruta}${consulta ? `?${consulta}` : ''}`,
       {
-        headers: { cookie: `voxia_access=${acceso.value}` },
+        headers: { cookie: `sentrycore_access=${acceso.value}` },
         cache: 'no-store',
       },
     );

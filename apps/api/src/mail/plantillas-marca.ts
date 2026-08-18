@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { checkContrast, tenantBrandingSchema } from '@voxia/shared';
+import { checkContrast, tenantBrandingSchema } from '@sentrycore/shared';
 import type { EntityManager } from 'typeorm';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
@@ -13,7 +13,7 @@ import {
 /**
  * La marca con la que sale cada correo del tenant (#42).
  *
- * Hasta ahora las plantillas decian "VoxIA Control" con nombre y apellido
+ * Hasta ahora las plantillas decian "SentryCore" con nombre y apellido
  * (ver auth/mail.service.ts). En un producto white-label eso es el correo del
  * REVENDEDOR llegandole al cliente final, que es justo lo que el issue pide
  * arreglar: la empresa de seguridad le vende el servicio a su cliente con su
@@ -182,7 +182,7 @@ export class PlantillasMarcaService {
 
   /** MAIL_FROM tal como lo dejo operaciones. Puede venir con o sin nombre. */
   remitenteDeLaPlataforma(): string {
-    return this.config.get<string>('MAIL_FROM', 'VoxIA Control <no-reply@localhost>');
+    return this.config.get<string>('MAIL_FROM', 'SentryCore <no-reply@localhost>');
   }
 
   private nombreDeLaPlataforma(): string {

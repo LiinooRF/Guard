@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { FeatureFlags } from '@voxia/shared';
+import type { FeatureFlags } from '@sentrycore/shared';
 import { QueryFailedError } from 'typeorm';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';

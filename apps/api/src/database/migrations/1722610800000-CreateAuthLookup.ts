@@ -59,8 +59,8 @@ export class CreateAuthLookup1722610800000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION authenticate_identity(text) TO sentrycore_app;
         END IF;
       END
       $$
