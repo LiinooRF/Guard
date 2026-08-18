@@ -172,6 +172,50 @@ export const CONSULTA_HOME = `
         LIMIT 1
       `;
 
+/*
+ * El recinto al que se asocia un evento cuando el guardia no tiene ni ronda ni
+ * jornada abierta: el caso del guardia recien dado de alta que aprieta panico.
+ *
+ * Dos cosas que este SQL arregla y conviene no volver a perder:
+ *
+ * 1. La tabla es `guard_sites` (tenant_id, guard_id, role_key, site_id).
+ *    `user_sites` NO EXISTE —nunca existio en ninguna migracion— y la consulta
+ *    fallaba con `42P01`, o sea un 500 en el boton de panico. El test con mock
+ *    no podia verlo: devolvia la fila que el autor esperaba.
+ *
+ * 2. Con mas de un recinto asignado NO da igual cual se elija. La alerta se
+ *    escala al supervisor de ESE recinto, asi que tomar el primero que devuelva
+ *    la base es mandar el panico a quien no esta cerca. Se elige el recinto mas
+ *    cercano a la posicion informada; sin coordenadas —guardia sin GPS, que es
+ *    normal en un subterraneo— cae a un orden estable en vez de a uno aleatorio.
+ *    Los recintos activos van primero, pero los inactivos NO se filtran: dejar
+ *    un panico sin destino es peor que mandarlo a un recinto dado de baja.
+ *
+ * La distancia es equirectangular sobre grados, con la longitud corregida por
+ * el coseno de la latitud. No es para medir, es para ordenar entre recintos que
+ * estan a kilometros; el haversine de `geo/haversine.ts` es para lo otro.
+ *
+ * Los `::float8` no son adorno: un parametro que solo aparece dentro de un
+ * `IS NULL` no le da a PostgreSQL de donde deducir el tipo y la sentencia
+ * revienta con `42P08`. Ver `database/parametros-tipados.integration.spec.ts`,
+ * que ejecuta ESTA misma cadena contra PostgreSQL de verdad.
+ */
+export const SQL_RECINTO_ASIGNADO_DEL_GUARDIA = `SELECT gs.site_id
+   FROM guard_sites gs
+   JOIN sites si ON si.tenant_id = gs.tenant_id AND si.id = gs.site_id
+   WHERE gs.guard_id = $1
+   ORDER BY
+     si.is_active DESC,
+     CASE
+       WHEN $2::float8 IS NULL OR $3::float8 IS NULL
+         OR si.latitude IS NULL OR si.longitude IS NULL THEN NULL
+       ELSE (si.latitude::float8 - $2::float8) ^ 2
+          + ((si.longitude::float8 - $3::float8) * cos(radians($2::float8))) ^ 2
+     END ASC NULLS LAST,
+     gs.created_at ASC,
+     gs.site_id ASC
+   LIMIT 1`;
+
 @Injectable()
 export class GuardService {
   private readonly logger = new Logger(GuardService.name);
@@ -1082,7 +1126,7 @@ export class GuardService {
    * field_events, asi que no existe el camino para reescribir la historia.
    */
   async reportEvent(guardId: string, input: ReportEventDto) {
-    let patrol: { id: string; site_id: string } | undefined;
+    let patrol: { id: string | null; site_id: string } | undefined;
     if (input.patrolId) {
       const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
         `SELECT id, site_id FROM patrols WHERE id = $1 AND guard_id = $2`,
@@ -1100,7 +1144,30 @@ export class GuardService {
       );
       patrol = rows[0];
       if (!patrol) {
-        throw new ConflictException('No hay una ronda que asocie el evento a un recinto');
+        // Si el guardia no tiene rondas registradas aun, se asocia el evento al
+        // recinto de su jornada activa (shift_assignments en curso) o recinto asignado.
+        const shiftRows = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+          `SELECT s.site_id
+           FROM shift_assignments a
+           JOIN shifts s ON s.id = a.shift_id
+           WHERE a.guard_id = $1 AND a.status = 'en_curso'
+           ORDER BY a.started_at DESC
+           LIMIT 1`,
+          [guardId],
+        );
+        if (shiftRows[0]?.site_id) {
+          patrol = { id: null, site_id: shiftRows[0].site_id };
+        } else {
+          const guardSiteRows = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+            SQL_RECINTO_ASIGNADO_DEL_GUARDIA,
+            [guardId, input.latitude ?? null, input.longitude ?? null],
+          );
+          if (guardSiteRows[0]?.site_id) {
+            patrol = { id: null, site_id: guardSiteRows[0].site_id };
+          } else {
+            throw new ConflictException('No hay una ronda o recinto que asocie el evento');
+          }
+        }
       }
     }
 

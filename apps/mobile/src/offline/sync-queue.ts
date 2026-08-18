@@ -127,19 +127,46 @@ async function ejecutarSincronizacion(): Promise<{ procesadas: number; pendiente
   const portalOrigin = filas[0]?.portal_origin;
   const lote = filas.filter((fila) =>
     fila.api_url === apiUrl && fila.portal_origin === portalOrigin);
-  let operaciones: OperacionSyncNativa[];
-  try {
-    operaciones = lote.map((fila) => JSON.parse(fila.operation_json) as OperacionSyncNativa);
-  } catch {
-    throw new Error('cola-operacion-corrupta');
+
+  const operacionesValidas: OperacionSyncNativa[] = [];
+  const filasCorruptas: string[] = [];
+
+  for (const fila of lote) {
+    try {
+      const op = JSON.parse(fila.operation_json) as OperacionSyncNativa;
+      if (op && typeof op === 'object' && op.clientId) {
+        operacionesValidas.push(op);
+      } else {
+        filasCorruptas.push(fila.client_id);
+      }
+    } catch {
+      filasCorruptas.push(fila.client_id);
+    }
+  }
+
+  if (filasCorruptas.length > 0) {
+    await db.withExclusiveTransactionAsync(async (txn) => {
+      for (const clientId of filasCorruptas) {
+        await txn.runAsync(
+          `UPDATE sync_queue SET state = 'rechazada', attempts = attempts + 1,
+           rejection_reason = 'operacion-json-invalida' WHERE client_id = ?`,
+          clientId,
+        );
+      }
+    });
+  }
+
+  if (!operacionesValidas.length) {
+    return { procesadas: 0, pendientes: lote.length - filasCorruptas.length };
   }
 
   try {
-    const veredictos = await empujar(apiUrl ?? '', portalOrigin ?? '', operaciones);
+    const veredictos = await empujar(apiUrl ?? '', portalOrigin ?? '', operacionesValidas);
     const resultados = new Map(veredictos.map((item) => [item.clientId, item]));
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const fila of lote) {
+        if (filasCorruptas.includes(fila.client_id)) continue;
         const veredicto = resultados.get(fila.client_id);
         if (!veredicto) continue;
         if (veredicto.status === 'rechazado') {
@@ -154,10 +181,11 @@ async function ejecutarSincronizacion(): Promise<{ procesadas: number; pendiente
         }
       }
     });
-    return { procesadas: resultados.size, pendientes: lote.length - resultados.size };
+    return { procesadas: resultados.size, pendientes: lote.length - filasCorruptas.length - resultados.size };
   } catch (error) {
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const fila of lote) {
+        if (filasCorruptas.includes(fila.client_id)) continue;
         await txn.runAsync(
           `UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ?
            WHERE client_id = ? AND state = 'pendiente'`,

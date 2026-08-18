@@ -273,7 +273,7 @@ export default function App() {
       <WebView
         ref={webView}
         source={{ uri: portal.href }}
-        applicationNameForUserAgent="SentryCoreAndroid/0.1"
+        applicationNameForUserAgent={`SentryCoreAndroid/${mobilePackage.version}`}
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
         injectedJavaScript={puente.guionPrevio}
         onMessage={puente.alRecibirMensaje}
