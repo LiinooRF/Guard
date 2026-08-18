@@ -26,8 +26,8 @@ export class CreateDeviceSigningKeys1725559200000 implements MigrationInterface 
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT, UPDATE, DELETE ON device_signing_keys TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT, UPDATE, DELETE ON device_signing_keys TO sentrycore_app;
         END IF;
       END
       $$

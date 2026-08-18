@@ -1,6 +1,6 @@
 import { BrandingService } from './branding.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
-import { checkContrast, contrastRatio } from '@voxia/shared';
+import { checkContrast, contrastRatio } from '@sentrycore/shared';
 
 const ctx = (query: jest.Mock) => ({ manager: { query } }) as unknown as TenantContextService;
 

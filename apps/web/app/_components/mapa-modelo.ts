@@ -9,7 +9,7 @@
  * El componente `mapa-base.tsx` solo traduce este modelo a capas de Leaflet.
  */
 
-import type { GeoPoint } from '@voxia/shared';
+import type { GeoPoint } from '@sentrycore/shared';
 
 /** Que representa la marca. Cambia el color, no el comportamiento. */
 export type VarianteMarca = 'punto' | 'recinto' | 'inicio' | 'fin' | 'alerta';

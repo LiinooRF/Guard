@@ -173,15 +173,15 @@ export class CreateAuthActionTokens1723561200000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          REVOKE ALL ON auth_action_tokens FROM voxia_app;
-          GRANT SELECT ON auth_action_tokens TO voxia_app;
-          GRANT EXECUTE ON FUNCTION lookup_recovery_identity(text) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          REVOKE ALL ON auth_action_tokens FROM sentrycore_app;
+          GRANT SELECT ON auth_action_tokens TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION lookup_recovery_identity(text) TO sentrycore_app;
           GRANT EXECUTE ON FUNCTION
             issue_auth_action_token(uuid, uuid, text, text, timestamptz)
-            TO voxia_app;
+            TO sentrycore_app;
           GRANT EXECUTE ON FUNCTION consume_auth_action_token(text, text, text)
-            TO voxia_app;
+            TO sentrycore_app;
         END IF;
       END
       $$

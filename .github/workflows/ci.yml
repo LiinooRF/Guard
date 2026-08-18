@@ -21,13 +21,13 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: voxia
+          POSTGRES_USER: sentrycore
           POSTGRES_PASSWORD: cambiar_en_ci
-          POSTGRES_DB: voxia
+          POSTGRES_DB: sentrycore
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U voxia -d voxia"
+          --health-cmd "pg_isready -U sentrycore -d sentrycore"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -41,10 +41,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
-      DATABASE_TEST_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
-      DATABASE_APP_TEST_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
-      DATABASE_ADMIN_URL: postgresql://voxia:cambiar_en_ci@localhost:5432/voxia
+      DATABASE_URL: postgresql://sentrycore:cambiar_en_ci@localhost:5432/sentrycore
+      DATABASE_TEST_URL: postgresql://sentrycore:cambiar_en_ci@localhost:5432/sentrycore
+      DATABASE_APP_TEST_URL: postgresql://sentrycore_app:cambiar_app_en_ci@localhost:5432/sentrycore
+      DATABASE_ADMIN_URL: postgresql://sentrycore:cambiar_en_ci@localhost:5432/sentrycore
       REDIS_URL: redis://localhost:6379
       REDIS_TEST_URL: redis://localhost:6379
       JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
@@ -71,23 +71,23 @@ jobs:
         env:
           PGPASSWORD: cambiar_en_ci
         run: |
-          psql -h localhost -U voxia -d voxia -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE ROLE voxia_app LOGIN PASSWORD 'cambiar_app_en_ci'
+          psql -h localhost -U sentrycore -d sentrycore -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE sentrycore_app LOGIN PASSWORD 'cambiar_app_en_ci'
             NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
-          GRANT USAGE ON SCHEMA public TO voxia_app;
+          GRANT USAGE ON SCHEMA public TO sentrycore_app;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public
-            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO voxia_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sentrycore_app;
           SQL
-          npm run db:migrate --workspace @voxia/api
+          npm run db:migrate --workspace @sentrycore/api
 
       - name: Cargar datos aislados de prueba
         env:
-          DATABASE_URL: postgresql://voxia_app:cambiar_app_en_ci@localhost:5432/voxia
-        run: npm run seed --workspace @voxia/api
+          DATABASE_URL: postgresql://sentrycore_app:cambiar_app_en_ci@localhost:5432/sentrycore
+        run: npm run seed --workspace @sentrycore/api
 
       # shared se compila primero: api y web importan sus tipos.
-      - name: Compilar @voxia/shared
-        run: npm run build --workspace @voxia/shared
+      - name: Compilar @sentrycore/shared
+        run: npm run build --workspace @sentrycore/shared
 
       - name: Lint
         run: npm run lint
@@ -120,14 +120,14 @@ jobs:
 
       - name: Validar el compose de produccion
         env:
-          POSTGRES_USER: voxia
+          POSTGRES_USER: sentrycore
           POSTGRES_PASSWORD: validation-only
-          POSTGRES_DB: voxia
-          DATABASE_APP_USER: voxia_app
+          POSTGRES_DB: sentrycore
+          DATABASE_APP_USER: sentrycore_app
           DATABASE_APP_PASSWORD: validation-app-only
           REDIS_PASSWORD: validation-redis-only
           JWT_SECRET: validation-secret-with-more-than-48-characters
-          MAIL_FROM: VoxIA <no-reply@example.test>
+          MAIL_FROM: SentryCore <no-reply@example.test>
           SMTP_HOST: smtp.example.test
           SMTP_USER: validation
           SMTP_PASSWORD: validation-only

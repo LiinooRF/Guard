@@ -3,7 +3,7 @@ import {
   RULE_UNIT_LABELS,
   type PatrolRules,
   type RuleUnit,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 import { FEATURE_CATALOG, type FeatureFlagKey } from '../rules/feature-flags.catalog';
 

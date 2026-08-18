@@ -40,7 +40,7 @@ describe('migracion de la cascada de reglas', () => {
   });
 
   it('platform_rules solo se lee desde la aplicacion; se escribe por la funcion', () => {
-    expect(SQL).toContain('GRANT SELECT ON platform_rules TO voxia_app');
+    expect(SQL).toContain('GRANT SELECT ON platform_rules TO sentrycore_app');
     expect(SQL).not.toMatch(/GRANT[^;]*(INSERT|UPDATE|DELETE)[^;]*ON platform_rules/);
     expect(SQL).toContain('PERFORM public.assert_platform_superadmin(actor_id)');
     expect(SQL).toContain('SECURITY DEFINER');
@@ -48,7 +48,7 @@ describe('migracion de la cascada de reglas', () => {
   });
 
   it('los grants estan detras del chequeo del rol de aplicacion', () => {
-    expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+    expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
   });
 
   it('se puede revertir', () => {

@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
@@ -36,6 +36,7 @@ const punto = (numero: number, omitido = false): FilaPunto => ({
   escaneadoEn: omitido ? null : new Date('2026-07-30T23:00:00-04:00'),
   metodo: omitido ? null : 'nfc',
   anomalias: [],
+  instrucciones: null,
 });
 
 const PUNTOS: FilaPunto[] = [punto(1), punto(2, true)];

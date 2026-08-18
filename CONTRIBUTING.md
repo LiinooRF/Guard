@@ -1,4 +1,4 @@
-# Cómo trabajamos en VoxIA Control
+# Cómo trabajamos en SentryCore
 
 Somos 4 sobre un monorepo con un plazo corto. Estas reglas existen para que no nos pisemos, no por
 ceremonia.
@@ -102,7 +102,7 @@ npm run infra:up       # levantar
 npm run infra:reset    # BORRA los datos y vuelve a correr los scripts de init
 ```
 
-El usuario de aplicación (`voxia_app`) **no tiene `BYPASSRLS`** a propósito: si lo tuviera,
+El usuario de aplicación (`sentrycore_app`) **no tiene `BYPASSRLS`** a propósito: si lo tuviera,
 PostgreSQL ignoraría las políticas de aislamiento y un `WHERE` olvidado filtraría datos de una
 empresa a otra. El script de init falla el arranque si detecta lo contrario.
 
@@ -111,7 +111,7 @@ empresa a otra. El script de init falla el arranque si detecta lo contrario.
 | Rol | Para qué | Puede crear tablas |
 |---|---|---|
 | dueño del esquema | correr migraciones | **sí** |
-| `voxia_app` | la API en runtime | **no** |
+| `sentrycore_app` | la API en runtime | **no** |
 
 La API no necesita poder alterar el esquema, y no debería poder: si alguien la compromete, la
 diferencia entre leer datos y poder borrar tablas es esta línea.
@@ -125,7 +125,7 @@ separación de roles que usa un desarrollador; si no, prueba una configuración 
 
 ### El rol se define en un solo lugar
 
-`docker/postgres/init/01-app-role.sh` es la **única** definición de `voxia_app`, y ahí vive la
+`docker/postgres/init/01-app-role.sh` es la **única** definición de `sentrycore_app`, y ahí vive la
 comprobación que aborta el arranque si el rol quedó con `BYPASSRLS`.
 
 No crees el rol a mano en otro lado —un workflow de CI, un script de setup— aunque parezca más

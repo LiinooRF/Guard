@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { IsBoolean, IsUUID } from 'class-validator';
+import type { Request } from 'express';
 
+import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { AdminService } from './admin.service';
@@ -47,6 +49,8 @@ class AssignmentDto {
   @IsBoolean()
   assigned!: boolean;
 }
+
+type Autenticado = Request & { user: AuthenticatedUser };
 
 @Controller('admin')
 @TenantScope()
@@ -167,34 +171,64 @@ export class AdminController {
     return this.admin.listCheckpoints(params.siteId);
   }
 
+  // El actor de las escrituras de terreno sale SIEMPRE de `request.user.sub`
+  // (el token), nunca del cuerpo ni de la URL: es lo que queda en audit_log.
+  // Estas rutas siguen siendo del ADMIN y operan sobre el tenant entero — el
+  // SUPERVISOR entra por PuntosSupervisorController, acotado a sus recintos.
   @Post('sites/:siteId/checkpoints')
   @Permissions('tenant:sites:manage')
-  createCheckpoint(@Param() params: SiteParam, @Body() input: CreateCheckpointDto) {
-    return this.admin.createCheckpoint(params.siteId, input);
+  createCheckpoint(
+    @Param() params: SiteParam,
+    @Body() input: CreateCheckpointDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.createCheckpoint(params.siteId, input, { actorId: request.user.sub });
   }
 
   @Post('sites/:siteId/checkpoints/import')
   @Permissions('tenant:sites:manage')
-  importCheckpoints(@Param() params: SiteParam, @Body() input: ImportCheckpointsDto) {
-    return this.admin.importCheckpoints(params.siteId, input.checkpoints);
+  importCheckpoints(
+    @Param() params: SiteParam,
+    @Body() input: ImportCheckpointsDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.importCheckpoints(params.siteId, input.checkpoints, {
+      actorId: request.user.sub,
+    });
   }
 
   @Patch('checkpoints/:checkpointId')
   @Permissions('tenant:sites:manage')
-  updateCheckpoint(@Param() params: CheckpointParam, @Body() input: UpdateCheckpointDto) {
-    return this.admin.updateCheckpoint(params.checkpointId, input);
+  updateCheckpoint(
+    @Param() params: CheckpointParam,
+    @Body() input: UpdateCheckpointDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.updateCheckpoint(params.checkpointId, input, { actorId: request.user.sub });
   }
 
   @Patch('checkpoints/:checkpointId/photo')
   @Permissions('tenant:sites:manage')
-  setCheckpointPhoto(@Param() params: CheckpointParam, @Body() input: PhotoOverrideDto) {
-    return this.admin.setCheckpointPhoto(params.checkpointId, input.requiresPhoto);
+  setCheckpointPhoto(
+    @Param() params: CheckpointParam,
+    @Body() input: PhotoOverrideDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.setCheckpointPhoto(params.checkpointId, input.requiresPhoto, {
+      actorId: request.user.sub,
+    });
   }
 
   @Patch('checkpoints/:checkpointId/active')
   @Permissions('tenant:sites:manage')
-  setCheckpointActive(@Param() params: CheckpointParam, @Body() input: UpdateActiveDto) {
-    return this.admin.setCheckpointActive(params.checkpointId, input.isActive);
+  setCheckpointActive(
+    @Param() params: CheckpointParam,
+    @Body() input: UpdateActiveDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.setCheckpointActive(params.checkpointId, input.isActive, {
+      actorId: request.user.sub,
+    });
   }
 
   @Get('checkpoints/:checkpointId/tags')
@@ -205,14 +239,18 @@ export class AdminController {
 
   @Post('checkpoints/:checkpointId/tags')
   @Permissions('tenant:sites:manage')
-  registerTag(@Param() params: CheckpointParam, @Body() input: RegisterTagDto) {
-    return this.admin.registerTag(params.checkpointId, input);
+  registerTag(
+    @Param() params: CheckpointParam,
+    @Body() input: RegisterTagDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.admin.registerTag(params.checkpointId, input, { actorId: request.user.sub });
   }
 
   @Delete('tags/:tagId')
   @Permissions('tenant:sites:manage')
-  retireTag(@Param() params: TagParam) {
-    return this.admin.retireTag(params.tagId);
+  retireTag(@Param() params: TagParam, @Req() request: Autenticado) {
+    return this.admin.retireTag(params.tagId, { actorId: request.user.sub });
   }
 
   @Get('tags/resolve')

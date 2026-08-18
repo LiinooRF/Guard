@@ -5,7 +5,7 @@ import type { TenantContextService } from '../database/tenant-context/tenant-con
 import type { EscalationService } from '../escalation/escalation.service';
 import type { MailQueueService } from '../mail/mail-queue.service';
 import type { RulesService } from '../rules/rules.service';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 const sinCorreo = () =>
   ({ enqueue: jest.fn().mockResolvedValue({ jobId: 'mail-job' }) }) as unknown as MailQueueService;

@@ -1,4 +1,4 @@
-import { brandingCssVariables, type TenantBranding } from '@voxia/shared';
+import { brandingCssVariables, type TenantBranding } from '@sentrycore/shared';
 
 type EstiloConVariables = Pick<CSSStyleDeclaration, 'setProperty'>;
 

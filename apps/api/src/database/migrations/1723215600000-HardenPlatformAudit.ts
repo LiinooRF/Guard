@@ -8,8 +8,8 @@ export class HardenPlatformAudit1723215600000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          REVOKE INSERT, UPDATE, DELETE ON platform_audit_log FROM voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          REVOKE INSERT, UPDATE, DELETE ON platform_audit_log FROM sentrycore_app;
         END IF;
       END
       $$
@@ -21,8 +21,8 @@ export class HardenPlatformAudit1723215600000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT INSERT, UPDATE, DELETE ON platform_audit_log TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT INSERT, UPDATE, DELETE ON platform_audit_log TO sentrycore_app;
         END IF;
       END
       $$

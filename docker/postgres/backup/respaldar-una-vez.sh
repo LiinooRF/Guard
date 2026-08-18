@@ -1,6 +1,6 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# UN respaldo completo de VoxIA Control (issue #24). Base + fotos + copia FUERA
+# UN respaldo completo de SentryCore (issue #24). Base + fotos + copia FUERA
 # del VPS + retencion. Procedimiento completo: docs/respaldos.md.
 #
 # Este script es el respaldo de verdad: `respaldo-diario.sh` solo lo llama a la
@@ -12,7 +12,7 @@
 #     sh /scripts/respaldar-una-vez.sh
 #
 # Que hace, en orden:
-#   1. pg_dump -Fc de la base a /backups/voxia-AAAA-MM-DD.dump, escribiendo a
+#   1. pg_dump -Fc de la base a /backups/sentrycore-AAAA-MM-DD.dump, escribiendo a
 #      *.part y renombrando al final: un corte a mitad de dump nunca deja un
 #      archivo con nombre valido.
 #   2. Lee el indice del dump recien escrito con `pg_restore -l`. Un dump
@@ -25,7 +25,7 @@
 #      con dos frenos (abajo). La copia remota NO se borra desde aca.
 #
 # Entorno:
-#   PGHOST/PGUSER/PGPASSWORD/PGDATABASE   dueño de la base. voxia_app NO sirve:
+#   PGHOST/PGUSER/PGPASSWORD/PGDATABASE   dueño de la base. sentrycore_app NO sirve:
 #                                         RLS falla cerrada y el dump saldria
 #                                         vacio.
 #   BACKUP_DIR              default /backups
@@ -34,7 +34,7 @@
 #   BACKUP_MINIMO_LOCAL     default 3   piso duro: la retencion nunca deja
 #                                       menos de estos dumps en el disco, por
 #                                       viejos que sean todos
-#   BACKUP_REMOTE           destino rclone BASE, ej. r2:voxia-respaldos
+#   BACKUP_REMOTE           destino rclone BASE, ej. r2:sentrycore-respaldos
 #                           vacio = NO hay copia fuera del VPS (se reporta)
 #   BACKUP_REMOTE_POSTGRES  default "$BACKUP_REMOTE/postgres"
 #   BACKUP_REMOTE_EVIDENCIA default "$BACKUP_REMOTE/evidencia"
@@ -63,7 +63,7 @@ REMOTO_EV="${BACKUP_REMOTE_EVIDENCIA:-${REMOTO_BASE:+$REMOTO_BASE/evidencia}}"
 COPIAR_EVIDENCIA="${BACKUP_COPIAR_EVIDENCIA:-si}"
 
 FECHA=$(date +%F)
-ARCHIVO="voxia-$FECHA.dump"
+ARCHIVO="sentrycore-$FECHA.dump"
 DESTINO="$BACKUP_DIR/$ARCHIVO"
 ESTADO="$BACKUP_DIR/estado-respaldo.txt"
 
@@ -192,7 +192,7 @@ fi
 # superan la retencion y el find los borra de una sola pasada, dejando el VPS
 # con el dump de hoy y nada mas.
 #
-# El orden alfabetico de 'voxia-AAAA-MM-DD.dump' es el orden cronologico —el
+# El orden alfabetico de 'sentrycore-AAAA-MM-DD.dump' es el orden cronologico —el
 # nombre lleva la fecha en ISO—, asi que `sort` alcanza y no hace falta pedirle
 # a find una opcion de ordenamiento que busybox no tiene.
 #
@@ -200,12 +200,12 @@ fi
 # regla de ciclo de vida del proveedor: si este contenedor pudiera borrar en el
 # destino, cualquiera que entre al VPS se lleva tambien los respaldos.
 # ---------------------------------------------------------------------------
-CANTIDAD=$(find "$BACKUP_DIR" -maxdepth 1 -name 'voxia-*.dump' -type f | wc -l | tr -d ' ')
+CANTIDAD=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f | wc -l | tr -d ' ')
 BORRABLES=$((CANTIDAD - MINIMO_LOCAL))
 if [ "$BORRABLES" -le 0 ]; then
   registrar "retencion: hay $CANTIDAD dump(s), el minimo es $MINIMO_LOCAL; no se borra nada"
 else
-  VIEJOS=$(find "$BACKUP_DIR" -maxdepth 1 -name 'voxia-*.dump' -type f -mtime "+$RETENCION" | sort)
+  VIEJOS=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f -mtime "+$RETENCION" | sort)
   VENCIDOS=0
   BORRADOS=0
   if [ -n "$VIEJOS" ]; then
@@ -225,7 +225,7 @@ else
     done
     IFS=$IFS_ORIGINAL
   fi
-  QUEDAN=$(find "$BACKUP_DIR" -maxdepth 1 -name 'voxia-*.dump' -type f | wc -l | tr -d ' ')
+  QUEDAN=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f | wc -l | tr -d ' ')
   if [ "$VENCIDOS" -gt "$BORRADOS" ]; then
     registrar_aviso "retencion: $VENCIDOS dump(s) pasaron los $RETENCION dias pero solo se borraron $BORRADOS; manda el minimo de $MINIMO_LOCAL"
   fi
@@ -233,7 +233,7 @@ else
 fi
 
 # Restos de un dump cortado a la mitad por un reinicio; no son respaldos.
-find "$BACKUP_DIR" -maxdepth 1 -name 'voxia-*.part' -type f -mtime +1 -delete 2> /dev/null || true
+find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.part' -type f -mtime +1 -delete 2> /dev/null || true
 
 # ---------------------------------------------------------------------------
 # Estado, para que el monitoreo no tenga que leer el log

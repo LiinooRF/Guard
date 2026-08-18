@@ -70,9 +70,9 @@ describe('migracion del backlog de despachos', () => {
     });
 
     it('es bitacora: el rol de aplicacion inserta y lee, no corrige ni borra', () => {
-      expect(SQL).toContain('GRANT SELECT, INSERT ON report_dispatch_attempts TO voxia_app');
-      expect(SQL).toContain('REVOKE UPDATE, DELETE ON report_dispatch_attempts FROM voxia_app');
-      expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+      expect(SQL).toContain('GRANT SELECT, INSERT ON report_dispatch_attempts TO sentrycore_app');
+      expect(SQL).toContain('REVOKE UPDATE, DELETE ON report_dispatch_attempts FROM sentrycore_app');
+      expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
     });
 
     it('solo admite los dos motivos que el despacho sabe escribir', () => {
@@ -93,7 +93,7 @@ describe('migracion del backlog de despachos', () => {
         'REVOKE ALL ON FUNCTION report_dispatch_backlog(integer, integer, integer) FROM PUBLIC',
       );
       expect(SQL).toContain(
-        'GRANT EXECUTE ON FUNCTION report_dispatch_backlog(integer, integer, integer) TO voxia_app',
+        'GRANT EXECUTE ON FUNCTION report_dispatch_backlog(integer, integer, integer) TO sentrycore_app',
       );
     });
 

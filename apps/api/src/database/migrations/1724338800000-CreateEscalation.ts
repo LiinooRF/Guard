@@ -11,9 +11,9 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * SOBRE #127 (falsa alarma): NO se agregan columnas false_alarm_at /
  * false_alarm_reason / false_alarm_by a field_events. Esa tabla es append-only
- * en PostgreSQL — voxia_app tiene SELECT e INSERT y nada mas (ver
+ * en PostgreSQL — sentrycore_app tiene SELECT e INSERT y nada mas (ver
  * 1723820400000-CreateFieldEvents) — asi que un UPDATE sobre esas columnas
- * fallaria con 42501 en produccion. Darle UPDATE a voxia_app para lograrlo
+ * fallaria con 42501 en produccion. Darle UPDATE a sentrycore_app para lograrlo
  * derribaria la garantia que hace que el libro de novedades sirva como prueba
  * en un juicio laboral. La cancelacion se registra como una ENTRADA NUEVA de
  * criticidad 'info' con corrects_event_id apuntando al panico original: el
@@ -107,13 +107,13 @@ export class CreateEscalation1724338800000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- La cadena se reemplaza completa al guardarla: necesita DELETE.
-          GRANT SELECT, INSERT, UPDATE, DELETE ON escalation_policies TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON escalation_policies TO sentrycore_app;
           -- Sin DELETE: el acuse es evidencia de quien se hizo cargo de un
           -- panico. Se marca, no se borra.
-          GRANT SELECT, INSERT, UPDATE ON event_notifications TO voxia_app;
-          REVOKE DELETE ON event_notifications FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON event_notifications TO sentrycore_app;
+          REVOKE DELETE ON event_notifications FROM sentrycore_app;
         END IF;
       END
       $$

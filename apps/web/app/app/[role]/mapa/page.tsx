@@ -94,13 +94,18 @@ export default async function PantallaDeMapa({
   const pedido = primerValor(consulta.recinto);
   const elegidoId = recintoElegido(recintos, pedido);
 
-  // Los puntos de control salen del catalogo de administracion, que el
-  // SUPERVISOR no puede leer (no tiene tenant:sites:manage). Pedirselos seria un
-  // 403 seguro y un registro de acceso denegado por nada.
+  // Cada rol pide los puntos por SU puerta. El ADMIN por el catalogo de
+  // administracion (`tenant:sites:manage`, tenant completo) y el SUPERVISOR por
+  // el suyo (#309: `checkpoints:manage`, acotado a sus recintos asignados). Hasta
+  // ese issue el supervisor veia el mapa sin un solo punto, porque la unica ruta
+  // que existia le daba 403; pedirle la del admin sigue siendo un 403 seguro y un
+  // registro de acceso denegado por nada.
   const [puntosDeControl, reglas] = await Promise.all([
-    esAdmin && elegidoId
+    elegidoId
       ? pedir<PuntoDeControlDelMapa[]>(
-          `/admin/sites/${encodeURIComponent(elegidoId)}/checkpoints`,
+          esAdmin
+            ? `/admin/sites/${encodeURIComponent(elegidoId)}/checkpoints`
+            : `/checkpoints/supervisor/sites/${encodeURIComponent(elegidoId)}/checkpoints`,
           [],
         )
       : Promise.resolve<PuntoDeControlDelMapa[]>([]),
@@ -206,13 +211,13 @@ export default async function PantallaDeMapa({
  */
 async function pedir<T>(ruta: string, respaldo: T): Promise<T> {
   const galletas = await cookies();
-  const acceso = galletas.get('voxia_access');
+  const acceso = galletas.get('sentrycore_access');
   if (!acceso) return respaldo;
 
   const base = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '/api';
   try {
     const respuesta = await fetch(`${base}${ruta}`, {
-      headers: { cookie: `voxia_access=${acceso.value}` },
+      headers: { cookie: `sentrycore_access=${acceso.value}` },
       cache: 'no-store',
     });
     if (!respuesta.ok) return respaldo;

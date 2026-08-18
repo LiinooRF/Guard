@@ -87,7 +87,7 @@ cada persona gestiona **su** consentimiento y nadie lo acepta por otra.
   registro respalda informes ya emitidos; borrarla retroactivamente destruiría
   evidencia de servicios prestados. Lo antiguo caduca solo, por retención.
 - La fila del consentimiento tampoco se borra: se marca `revoked_at`. A nivel de
-  PostgreSQL, `voxia_app` **no tiene `DELETE`** sobre `gps_consents`.
+  PostgreSQL, `sentrycore_app` **no tiene `DELETE`** sobre `gps_consents`.
 
 ## Por cuánto tiempo se conserva
 
@@ -97,7 +97,7 @@ mucho más invasiva y mucho más pesada: a un punto por minuto, una ronda de 8
 horas son ~480 filas, contra decenas de escaneos.
 
 El barrido por retención todavía **no tiene job**: la tabla ya trae el índice
-`patrol_tracks_retention_idx` y `voxia_app` tiene `DELETE` sobre
+`patrol_tracks_retention_idx` y `sentrycore_app` tiene `DELETE` sobre
 `patrol_tracks` justamente para eso. Está en la misma situación que
 `photoRetentionDays`, que tampoco tiene barrido. Mientras no exista, el valor es
 una promesa incumplida: es deuda a cerrar antes de vender la función.

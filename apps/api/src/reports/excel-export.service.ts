@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { checkContrast, type Role } from '@voxia/shared';
+import { checkContrast, type Role } from '@sentrycore/shared';
 
 import { BrandingService } from '../branding/branding.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';

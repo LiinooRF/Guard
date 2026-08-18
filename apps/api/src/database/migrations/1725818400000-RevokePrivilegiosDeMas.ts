@@ -31,33 +31,33 @@ export class RevokePrivilegiosDeMas1725818400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           RETURN;
         END IF;
 
         -- Se escriben SOLO por set_platform_rules(), que empieza con
         -- assert_platform_superadmin(actor_id). Con UPDATE directo, esa
         -- comprobacion era decorativa.
-        REVOKE INSERT, UPDATE, DELETE ON platform_rules FROM voxia_app;
+        REVOKE INSERT, UPDATE, DELETE ON platform_rules FROM sentrycore_app;
 
         -- Idem: issue_auth_action_token() valida antes de acuñar, y
         -- consume_auth_action_token() antes de marcar usado. Con INSERT directo
         -- se podia acuñar un token de recuperacion de contraseña sin validacion.
-        REVOKE INSERT, UPDATE, DELETE ON auth_action_tokens FROM voxia_app;
+        REVOKE INSERT, UPDATE, DELETE ON auth_action_tokens FROM sentrycore_app;
 
         -- Lo unico que cambia despues de publicar un aviso es el retiro. El
         -- texto, la version y la URL quedan congelados: es lo que convierte la
         -- fila en prueba, y es lo que promete el docblock de su migracion.
         -- El GRANT por columna que ya existe se conserva; hasta ahora convivia
         -- con un UPDATE de tabla completa que lo hacia irrelevante.
-        REVOKE UPDATE ON consent_policies FROM voxia_app;
-        GRANT UPDATE (retired_at) ON consent_policies TO voxia_app;
+        REVOKE UPDATE ON consent_policies FROM sentrycore_app;
+        GRANT UPDATE (retired_at) ON consent_policies TO sentrycore_app;
 
         -- Estas dos se insertan y se actualizan desde la aplicacion, nunca se
         -- borran: la politica de acceso y la solicitud de borrado de un tenant
         -- son historia, y borrarlas taparia quien pidio que.
-        REVOKE DELETE ON tenant_auth_policies FROM voxia_app;
-        REVOKE DELETE ON tenant_deletions FROM voxia_app;
+        REVOKE DELETE ON tenant_auth_policies FROM sentrycore_app;
+        REVOKE DELETE ON tenant_deletions FROM sentrycore_app;
       END
       $$
     `);
@@ -67,14 +67,14 @@ export class RevokePrivilegiosDeMas1725818400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           RETURN;
         END IF;
-        GRANT INSERT, UPDATE, DELETE ON platform_rules TO voxia_app;
-        GRANT INSERT, UPDATE, DELETE ON auth_action_tokens TO voxia_app;
-        GRANT UPDATE ON consent_policies TO voxia_app;
-        GRANT DELETE ON tenant_auth_policies TO voxia_app;
-        GRANT DELETE ON tenant_deletions TO voxia_app;
+        GRANT INSERT, UPDATE, DELETE ON platform_rules TO sentrycore_app;
+        GRANT INSERT, UPDATE, DELETE ON auth_action_tokens TO sentrycore_app;
+        GRANT UPDATE ON consent_policies TO sentrycore_app;
+        GRANT DELETE ON tenant_auth_policies TO sentrycore_app;
+        GRANT DELETE ON tenant_deletions TO sentrycore_app;
       END
       $$
     `);

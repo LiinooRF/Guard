@@ -41,7 +41,7 @@ import {
   type ValoresDeReglas,
   type VistaReglas,
 } from './reglas-catalogo';
-import type { RuleSource } from '@voxia/shared';
+import type { RuleSource } from '@sentrycore/shared';
 
 interface RespuestaEfectivas {
   rules: ValoresDeReglas;

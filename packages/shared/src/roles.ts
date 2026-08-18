@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Los 4 roles de VoxIA Control.
+ * Los 4 roles de SentryCore.
  *
  * Rol y plataforma son ejes SEPARADOS: el rol define permisos, la plataforma es
  * consecuencia de la tarea. `SUPERVISOR` necesita desktop para armar rutas sobre

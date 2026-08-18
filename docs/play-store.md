@@ -1,4 +1,4 @@
-# Ficha de Google Play — VoxIA Control (issue #116)
+# Ficha de Google Play — SentryCore (issue #116)
 
 Todo lo que hay que copiar y pegar en Play Console, más los trámites que hay que
 empezar antes de que exista la app.
@@ -45,8 +45,8 @@ fecha de lanzamiento con el cliente: son dos semanas de diferencia.
 
 | Campo | Valor |
 |---|---|
-| Nombre de la app (máx. 30) | `VoxIA Control` |
-| Nombre del paquete | `com.voxtilabs.voxiacontrol` |
+| Nombre de la app (máx. 30) | `SentryCore` |
+| Nombre del paquete | `com.voxtilabs.sentrycore` |
 | Categoría | **Empresa** |
 | Etiquetas | Seguridad · Gestión de personal · Trabajo en terreno |
 | Tipo de app | Aplicación (no juego) |
@@ -56,7 +56,7 @@ fecha de lanzamiento con el cliente: son dos semanas de diferencia.
 | Diseñada para familias | **No** |
 | Correo de contacto | «soporte@voxtilabs.cl» |
 | Sitio web | «https://voxtilabs.cl» |
-| Política de privacidad | «https://voxtilabs.cl/privacidad-voxia-control» |
+| Política de privacidad | «https://voxtilabs.cl/privacidad-sentrycore» |
 
 > **El acceso restringido hay que declararlo.** La app no tiene registro público:
 > las credenciales las entrega la empresa de seguridad. En el formulario de
@@ -80,8 +80,8 @@ sin avisar.)*
 ## 4. Descripción larga (máx. 4000 caracteres)
 
 ```
-VoxIA Control es la aplicación para el personal de seguridad de las empresas que
-usan la plataforma VoxIA Control. No es una app de uso personal: se accede con
+SentryCore es la aplicación para el personal de seguridad de las empresas que
+usan la plataforma SentryCore. No es una app de uso personal: se accede con
 las credenciales que entrega tu empleador.
 
 RONDAS QUE SE PUEDEN DEMOSTRAR
@@ -122,7 +122,7 @@ QUÉ NECESITA EL TELÉFONO
 
 SOBRE LA UBICACIÓN
 
-VoxIA Control registra la ubicación durante la ronda, incluso con la app en
+SentryCore registra la ubicación durante la ronda, incluso con la app en
 segundo plano o la pantalla apagada, para poder acreditar el recorrido completo
 de un turno. Antes de activarlo la app muestra un aviso explícito y pide tu
 consentimiento, que puedes revocar cuando quieras desde la app. No se registra
@@ -130,7 +130,7 @@ la ubicación fuera del turno. Mientras el registro está activo aparece una
 notificación permanente en el teléfono.
 
 El tratamiento de estos datos lo determina la empresa de seguridad que te
-contrata, que es la responsable de ellos; VoxIA Control opera como proveedor
+contrata, que es la responsable de ellos; SentryCore opera como proveedor
 tecnológico. Consulta la política de privacidad para el detalle de qué se
 registra, por cuánto tiempo y cómo se ejerce cada derecho.
 
@@ -161,9 +161,9 @@ Requisitos que el aviso tiene que cumplir, y que se verifican uno por uno:
 
 ### Texto exacto para la pantalla in-app
 
-> **VoxIA Control necesita tu ubicación durante el turno**
+> **SentryCore necesita tu ubicación durante el turno**
 >
-> Para poder acreditar que la ronda se recorrió en terreno, VoxIA Control
+> Para poder acreditar que la ronda se recorrió en terreno, SentryCore
 > registra tu ubicación mientras el turno está activo, **incluso cuando la app
 > está en segundo plano o la pantalla apagada**.
 >
@@ -196,7 +196,7 @@ vigilancia (traza de la ronda).
 
 ```
 La app la usa personal de seguridad privada contratado por empresas que operan
-VoxIA Control. Durante un turno, el guardia recorre puntos de control físicos con
+SentryCore. Durante un turno, el guardia recorre puntos de control físicos con
 el teléfono en el bolsillo y la pantalla apagada, por períodos de hasta 8 horas y
 frecuentemente en subterráneos y perímetros sin señal.
 
@@ -282,13 +282,13 @@ y en el formulario de datos. Texto listo para publicar:
 
 ---
 
-### Política de privacidad — VoxIA Control (aplicación Android)
+### Política de privacidad — SentryCore (aplicación Android)
 
 **Última actualización:** «fecha de publicación»
 
 **1. Quiénes somos y qué rol cumple cada uno**
 
-VoxIA Control es una plataforma de monitoreo de rondas de vigilancia operada por
+SentryCore es una plataforma de monitoreo de rondas de vigilancia operada por
 «Voxti Labs SpA», RUT «XX.XXX.XXX-X», domicilio en «dirección», Chile.
 
 La aplicación la usan trabajadores de **empresas de seguridad privada que

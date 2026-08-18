@@ -7,7 +7,7 @@
  * Las fichas de prueba son inventadas a proposito: si el catalogo real cambia,
  * estas pruebas siguen valiendo.
  */
-import type { AnyRuleParameter } from '@voxia/shared';
+import type { AnyRuleParameter } from '@sentrycore/shared';
 
 import {
   agruparParaFormulario,

@@ -11,9 +11,9 @@ const nextConfig: NextConfig = {
   // Incluye el workspace compartido en el trazado de la imagen standalone.
   outputFileTracingRoot: path.join(process.cwd(), '../..'),
 
-  // @voxia/shared es un paquete del workspace sin publicar: Next tiene que
+  // @sentrycore/shared es un paquete del workspace sin publicar: Next tiene que
   // transpilarlo en vez de tratarlo como dependencia externa ya compilada.
-  transpilePackages: ['@voxia/shared'],
+  transpilePackages: ['@sentrycore/shared'],
   async headers() {
     return [
       {

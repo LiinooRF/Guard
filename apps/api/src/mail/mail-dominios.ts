@@ -52,7 +52,7 @@
  */
 export const DOMINIOS_NO_DESPACHABLES = Symbol('DOMINIOS_NO_DESPACHABLES');
 
-/** Lista extra, separada por comas. Ej: "demo-andina.cl,staging.voxia.cl". */
+/** Lista extra, separada por comas. Ej: "demo-andina.cl,staging.sentrycore.cl". */
 export const ENV_DOMINIOS_BLOQUEADOS = 'MAIL_BLOCKED_DOMAINS';
 
 /**

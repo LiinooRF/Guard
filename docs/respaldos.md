@@ -19,7 +19,7 @@ interna. Su imagen es `docker/postgres/backup/Dockerfile`: `postgres:17-alpine` 
 El contenedor ejecuta `respaldo-diario.sh`, que es **solo el reloj**. Cada día a las **04:00 de
 America/Santiago** llama a `respaldar-una-vez.sh`, que es el respaldo de verdad:
 
-1. `pg_dump -Fc` con las credenciales del **dueño** (`POSTGRES_USER`). No puede usar `voxia_app`:
+1. `pg_dump -Fc` con las credenciales del **dueño** (`POSTGRES_USER`). No puede usar `sentrycore_app`:
    RLS falla cerrada y sin contexto de tenant el dump saldría vacío. Escribe a `*.part` y renombra
    al terminar, así un corte a mitad de dump nunca deja un archivo con nombre válido.
 2. **Lee el índice del dump recién escrito** con `pg_restore -l`. Un dump truncado se descubre esa
@@ -57,7 +57,7 @@ medianoche en Chile y en plena ronda.
 
 | Qué | Dónde | Retención |
 |---|---|---|
-| Dump diario | volumen `backup_data` (`/backups/voxia-AAAA-MM-DD.dump`) | `BACKUP_RETENTION_DAYS`, **30 días**, con piso de `BACKUP_MINIMO_LOCAL` (3) dumps |
+| Dump diario | volumen `backup_data` (`/backups/sentrycore-AAAA-MM-DD.dump`) | `BACKUP_RETENTION_DAYS`, **30 días**, con piso de `BACKUP_MINIMO_LOCAL` (3) dumps |
 | Dump diario | `BACKUP_REMOTE/postgres/` — **fuera del VPS** | regla del proveedor (ver abajo) |
 | Evidencia fotográfica | `BACKUP_REMOTE/evidencia/` — **fuera del VPS** | **no se borra nunca** |
 | Estado de la última corrida | `/backups/estado-respaldo.txt` | — |
@@ -85,7 +85,7 @@ Las credenciales van en variables `RCLONE_CONFIG_<NOMBRE>_*` del gestor de secre
 **nunca dentro de `BACKUP_REMOTE`**. Ejemplo con Cloudflare R2, con el destino llamado `r2`:
 
 ```bash
-BACKUP_REMOTE=r2:voxia-respaldos
+BACKUP_REMOTE=r2:sentrycore-respaldos
 RCLONE_CONFIG_R2_TYPE=s3
 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 RCLONE_CONFIG_R2_ENDPOINT=https://<cuenta>.r2.cloudflarestorage.com
@@ -176,7 +176,7 @@ commit.
 
 Contra un PostgreSQL y un Redis limpios y descartables del runner:
 
-1. Levanta la base, crea el rol `voxia_app` **sin BYPASSRLS** (el dump trae los `GRANT` pero no los
+1. Levanta la base, crea el rol `sentrycore_app` **sin BYPASSRLS** (el dump trae los `GRANT` pero no los
    roles: sin ese rol el restore falla), corre **todas** las migraciones y el **seed**.
 2. Inventa evidencia fotográfica, haciendo de volumen `evidence_data`.
 3. **Respalda con `respaldar-una-vez.sh`**, el script del servicio, dentro de la imagen del servicio.
@@ -189,7 +189,7 @@ Contra un PostgreSQL y un Redis limpios y descartables del runner:
    original.
 8. **Arranca la API contra la base restaurada** y comprueba `/health`, `/ready` —que consulta
    PostgreSQL y Redis de verdad— y un **login real** con los usuarios que venían en el respaldo.
-   La API se conecta como `voxia_app`, el rol restringido: si el restore hubiera perdido los `GRANT`
+   La API se conecta como `sentrycore_app`, el rol restringido: si el restore hubiera perdido los `GRANT`
    o las políticas, se cae acá.
 
 Un paso aparte compara que el `pg_dump` del servicio y el de la prueba sigan siendo el mismo. Si
@@ -214,9 +214,9 @@ el resultado:
 | **RLS ENABLE + FORCE en toda tabla con `tenant_id`** | Un restore que pierde las políticas es una **fuga de datos esperando**: muchas empresas de seguridad privada comparten esta base. Sin `FORCE`, además, el dueño se salta sus propias políticas. |
 | **Políticas RLS idénticas**, con su `USING` y su `WITH CHECK` | Una política que sobrevive con la condición cambiada es peor que una perdida: no se nota. |
 | **`app_tenant_id()` y `app_has_audited_support_access()` existen y CORREN** | Las políticas dependen de ellas. Se comprueba que la primera lee el contexto y que el acceso de soporte **falla cerrado**. |
-| **Lectura real con el rol `voxia_app`**: con contexto ve lo de su tenant y nada de los otros; **sin contexto no ve nada** | Todo lo anterior mira el catálogo. Esto lee datos como los lee la API. Se hace con `SET LOCAL ROLE` porque el dueño de la base es superusuario y el superusuario **se salta RLS entero**: "probar" el aislamiento con el mismo usuario que hace el dump daría verde siempre. |
+| **Lectura real con el rol `sentrycore_app`**: con contexto ve lo de su tenant y nada de los otros; **sin contexto no ve nada** | Todo lo anterior mira el catálogo. Esto lee datos como los lee la API. Se hace con `SET LOCAL ROLE` porque el dueño de la base es superusuario y el superusuario **se salta RLS entero**: "probar" el aislamiento con el mismo usuario que hace el dump daría verde siempre. |
 | **Conteos de filas por tabla**, iguales entre origen y destino | Es la única forma de saber que los datos llegaron, no solo el esquema. |
-| **`GRANT` sobre tablas para `voxia_app`** | Sin ellos la base restaurada existe pero la API no puede leerla. |
+| **`GRANT` sobre tablas para `sentrycore_app`** | Sin ellos la base restaurada existe pero la API no puede leerla. |
 | **Índices** | Un restore sin los índices únicos acepta duplicados que el modelo prohíbe. |
 | **Las fotos, byte a byte** | El respaldo de la base no las cubre. |
 | **Que la API arranque encima** | Criterio del issue. Lo demás prueba el archivo; esto prueba el producto. |
@@ -248,7 +248,7 @@ docker compose -f docker-compose.dokploy.yml exec postgres-backup \
 # prueba completa: dump + restore + verificación, sobre una base de prueba
 docker compose -f docker-compose.dokploy.yml exec \
   -e ORIGEN_EN_VIVO=si postgres-backup \
-  sh /scripts/verificar-restore.sh voxia_verificacion_restore
+  sh /scripts/verificar-restore.sh sentrycore_verificacion_restore
 ```
 
 `ORIGEN_EN_VIVO=si` porque la base productiva sigue recibiendo escrituras: las filas que llegan
@@ -265,14 +265,14 @@ los deja para inspeccionarlos. El dump de la prueba se escribe en un temporal, *
 ```bash
 # 1. la base, desde un dump ya existente
 docker compose -f docker-compose.dokploy.yml exec postgres-backup \
-  sh /scripts/restore.sh /backups/voxia-2026-08-03.dump voxia_restore
+  sh /scripts/restore.sh /backups/sentrycore-2026-08-03.dump sentrycore_restore
 
 # si el dump ya no está en el disco local, primero se baja del destino remoto.
 # El sh -c con comillas SIMPLES es obligatorio: BACKUP_REMOTE existe dentro del
 # contenedor, no en la shell del VPS. Sin él la ruta queda "/postgres/..." y el
 # comando falla justo el día que hace falta.
 docker compose -f docker-compose.dokploy.yml exec postgres-backup \
-  sh -c 'rclone copy "$BACKUP_REMOTE/postgres/voxia-2026-08-03.dump" /backups/'
+  sh -c 'rclone copy "$BACKUP_REMOTE/postgres/sentrycore-2026-08-03.dump" /backups/'
 
 # 2. las fotos
 docker compose -f docker-compose.dokploy.yml exec postgres-backup \
@@ -280,8 +280,8 @@ docker compose -f docker-compose.dokploy.yml exec postgres-backup \
 
 # 3. comprobar y limpiar
 docker compose -f docker-compose.dokploy.yml exec postgres-backup \
-  psql -d voxia_restore -qAtc "select count(*) from schema_migrations"
-docker compose -f docker-compose.dokploy.yml exec postgres-backup dropdb voxia_restore
+  psql -d sentrycore_restore -qAtc "select count(*) from schema_migrations"
+docker compose -f docker-compose.dokploy.yml exec postgres-backup dropdb sentrycore_restore
 ```
 
 `restore.sh` se niega a apuntar a la base productiva salvo `CONFIRMO_RESTORE_PRODUCTIVO=si`, y

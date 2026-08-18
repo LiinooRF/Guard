@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { isPhotoRequired } from '@voxia/shared';
+import { isPhotoRequired } from '@sentrycore/shared';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -106,7 +106,7 @@ export class EvidenceService {
   /**
    * ¿Este punto exige foto en este instante? Es lo que consulta el flujo de
    * escaneo. Combina el override tri-estado del punto, las reglas efectivas
-   * del tenant y el horario del recinto via isPhotoRequired() de @voxia/shared
+   * del tenant y el horario del recinto via isPhotoRequired() de @sentrycore/shared
    * — la logica vive alla y no se reimplementa aca.
    */
   async requiresPhoto(checkpointId: string, cuando: Date = new Date()) {

@@ -28,7 +28,7 @@ export class HealthController {
 
   @Get('health')
   health() {
-    return { status: 'ok', service: 'voxia-api', ts: new Date().toISOString() };
+    return { status: 'ok', service: 'sentrycore-api', ts: new Date().toISOString() };
   }
 
   @Get('ready')

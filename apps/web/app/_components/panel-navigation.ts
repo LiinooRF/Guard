@@ -49,6 +49,11 @@ export const PANEL_NAVIGATION: Record<PanelRole, PanelNavigationGroup[]> = {
       label: 'Operación',
       items: [
         { view: 'planificacion', icon: '⌁', label: 'Planificación' },
+        // #309. Comodidad de navegacion, NO control de acceso: quien autoriza es
+        // el servidor (`checkpoints:manage` + supervisor_sites). Si esta entrada
+        // faltara, `resolvePanelView` mandaria la vista a 'resumen' y la pantalla
+        // quedaria inalcanzable aunque la API la acepte.
+        { view: 'terreno', icon: '▣', label: 'Puntos y etiquetas' },
         { view: 'monitoreo', icon: '●', label: 'Monitoreo en vivo' },
         { view: 'informes', icon: '▤', label: 'Informes' },
       ],
@@ -93,6 +98,7 @@ export function panelViewCopy(role: PanelRole, view: string): { title: string; s
     SUPERVISOR: {
       resumen: { title: 'Mis recintos', subtitle: 'Estado actual de los recintos que tienes asignados.' },
       planificacion: { title: 'Planificación', subtitle: 'Programa turnos, recorridos y tareas de terreno.' },
+      terreno: { title: 'Puntos y etiquetas', subtitle: 'Da de alta puntos de control y vincula sus etiquetas NFC en tus recintos.' },
       monitoreo: { title: 'Monitoreo en vivo', subtitle: 'Sigue las rondas activas de tus recintos asignados.' },
       informes: { title: 'Informes', subtitle: 'Analiza cumplimiento y revisa rondas por recinto.' },
       consentimiento: { title: 'Mi ubicación', subtitle: 'Revisa el aviso aplicable al trabajo en terreno.' },

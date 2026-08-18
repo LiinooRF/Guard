@@ -14,7 +14,7 @@ module.exports = {
   testMatch: ['<rootDir>/app/**/*.spec.ts'],
   /*
    * Limitar el escaneo a app/ y no a todo el workspace. npm deja un enlace
-   * node_modules/@voxia/web que apunta a esta misma carpeta, asi que jest
+   * node_modules/@sentrycore/web que apunta a esta misma carpeta, asi que jest
    * indexaria el paquete dos veces y avisaria "Haste module naming collision"
    * en cada corrida: ruido que parece un problema del codigo y no lo es.
    *

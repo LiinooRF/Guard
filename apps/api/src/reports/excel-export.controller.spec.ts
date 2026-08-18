@@ -7,7 +7,7 @@ import { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
 import type Redis from 'ioredis';
 import type { DataSource } from 'typeorm';
-import { ROLES, type Role } from '@voxia/shared';
+import { ROLES, type Role } from '@sentrycore/shared';
 
 import { AuthGuard, type AuthenticatedUser } from '../auth/auth.guard';
 import { ExcelExportController } from './excel-export.controller';
@@ -52,7 +52,7 @@ function contexto(request: Record<string, unknown> = {}): ExecutionContext {
     headers: request.headers ?? {},
     method: 'GET',
     path: '/api/reports/excel',
-    cookies: request.cookies ?? { voxia_access: 'token' },
+    cookies: request.cookies ?? { sentrycore_access: 'token' },
   });
   return {
     getClass: () => ExcelExportController,

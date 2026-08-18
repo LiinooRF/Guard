@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import { ReportsService } from './reports.service';
 import type { BrandingService } from '../branding/branding.service';
