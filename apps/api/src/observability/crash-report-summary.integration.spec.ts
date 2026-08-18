@@ -1,4 +1,4 @@
-import { DEFAULT_PATROL_RULES } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES } from '@sentrycore/shared';
 import { DataSource, type QueryRunner } from 'typeorm';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
