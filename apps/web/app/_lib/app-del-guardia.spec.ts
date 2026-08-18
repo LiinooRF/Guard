@@ -12,6 +12,9 @@
  * decorativo, es la única forma de que un APK viejo siga funcionando.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { MARCAS_APP_GUARDIA, esAppDelGuardia } from './app-del-guardia';
 
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; moto g35 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36';
@@ -51,9 +54,6 @@ describe('las dos puertas del carril del guardia usan la misma comprobación', (
   // Una sola de las dos alcanzaba para dejar al guardia afuera, y estaban
   // escritas por separado. Que ambas salgan de aqui es lo que impide que la
   // proxima vez se arregle solo una.
-  const { readFileSync } = require('node:fs') as typeof import('node:fs');
-  const { join } = require('node:path') as typeof import('node:path');
-
   it.each([
     ['middleware.ts', join(__dirname, '..', '..', 'middleware.ts')],
     ['login-screen.tsx', join(__dirname, '..', '_components', 'login-screen.tsx')],
