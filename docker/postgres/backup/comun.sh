@@ -1,6 +1,6 @@
 #!/bin/sh
 # ---------------------------------------------------------------------------
-# Funciones compartidas por los scripts de respaldo de VoxIA Control (#24).
+# Funciones compartidas por los scripts de respaldo de SentryCore (#24).
 #
 # NO se ejecuta solo: se incluye con `. "$(dirname "$0")/comun.sh"`.
 #
@@ -70,7 +70,7 @@ ejecutar_rclone() {
 
 # Tamaño en bytes de UN archivo dentro de un destino rclone, o vacio si no esta.
 # El `/` del --include ancla el patron a la raiz del destino listado: sin el,
-# `voxia-2026-08-03.dump` tambien haria match en subcarpetas.
+# `sentrycore-2026-08-03.dump` tambien haria match en subcarpetas.
 tamano_remoto() {
   ejecutar_rclone lsl "$1" --include "/$2" 2> /dev/null | awk 'NR == 1 { print $1 }'
 }

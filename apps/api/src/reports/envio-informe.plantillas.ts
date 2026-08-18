@@ -1,4 +1,4 @@
-import type { ComplianceResult } from '@voxia/shared';
+import type { ComplianceResult } from '@sentrycore/shared';
 
 import type { MailTemplate, MailTemplateVariables } from '../mail/mail-provider';
 import { formatearFechaHora } from './pdf-primitivas';

@@ -49,7 +49,7 @@ else
   FECHA=$(restar_un_dia "$(date +%F)") || exit 1
 fi
 
-ARCHIVO="voxia-$FECHA.dump"
+ARCHIVO="sentrycore-$FECHA.dump"
 
 if [ -z "$REMOTO_PG" ]; then
   registrar_error "BACKUP_REMOTE no esta configurado: NO hay ningun respaldo fuera del VPS."
@@ -106,4 +106,4 @@ fi
 
 # Lo ultimo que se copio, para ver de un vistazo la retencion real del destino.
 registrar "ultimos respaldos en el destino remoto:"
-ejecutar_rclone lsl "$REMOTO_PG" --include '/voxia-*.dump' 2> /dev/null | sort -k2 | tail -5 || true
+ejecutar_rclone lsl "$REMOTO_PG" --include '/sentrycore-*.dump' 2> /dev/null | sort -k2 | tail -5 || true

@@ -29,7 +29,7 @@
  * NO se guarda (ver `guardar()`). Quitar esa comprobacion reabre el pisoton.
  */
 import { useMemo, useState } from 'react';
-import type { AnyRuleParameter } from '@voxia/shared';
+import type { AnyRuleParameter } from '@sentrycore/shared';
 
 import {
   ajustesConValor,

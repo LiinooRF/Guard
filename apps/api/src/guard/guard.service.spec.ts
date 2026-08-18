@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

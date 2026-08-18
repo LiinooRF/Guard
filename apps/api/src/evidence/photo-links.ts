@@ -30,7 +30,7 @@ export const VIGENCIA_ENLACE_MS = 5 * 60 * 1000;
  * entorno que alguien tenga que recordar rotar.
  */
 function claveDeEnlaces(jwtSecret: string): Buffer {
-  return createHmac('sha256', jwtSecret).update('voxia:evidence-links:v1').digest();
+  return createHmac('sha256', jwtSecret).update('sentrycore:evidence-links:v1').digest();
 }
 
 /**

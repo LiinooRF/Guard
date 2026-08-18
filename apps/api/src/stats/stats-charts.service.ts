@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Role } from '@voxia/shared';
+import type { Role } from '@sentrycore/shared';
 
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { FILTRO_RECINTOS } from './stats-site-scope';

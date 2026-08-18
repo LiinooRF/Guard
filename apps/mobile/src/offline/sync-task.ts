@@ -3,7 +3,7 @@ import * as TaskManager from 'expo-task-manager';
 
 import { sincronizarCola } from './sync-queue';
 
-const TASK_NAME = 'voxia-sync-queue-v1';
+const TASK_NAME = 'sentrycore-sync-queue-v1';
 
 if (!TaskManager.isTaskDefined(TASK_NAME)) {
   TaskManager.defineTask(TASK_NAME, async () => {

@@ -57,13 +57,13 @@ export class CreateAdminManagement1722870000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           REVOKE ALL ON FUNCTION admin_create_tenant_user(
             uuid, citext, citext, text, text, text, text
           ) FROM PUBLIC;
           GRANT EXECUTE ON FUNCTION admin_create_tenant_user(
             uuid, citext, citext, text, text, text, text
-          ) TO voxia_app;
+          ) TO sentrycore_app;
         END IF;
       END
       $$

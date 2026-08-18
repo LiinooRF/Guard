@@ -55,7 +55,7 @@ const SIN_ANTENA_QR_BLOQUEADO =
   'Este teléfono no tiene antena NFC y tu empresa no permite el respaldo por QR. ' +
   'Avisa a tu supervisor: necesitas otro teléfono para esta ronda.';
 const SIN_ANTENA_APP_ANTIGUA =
-  'Este teléfono no tiene antena NFC. Actualiza VoxIA Control desde Google Play para ' +
+  'Este teléfono no tiene antena NFC. Actualiza SentryCore desde Google Play para ' +
   'poder marcar los puntos con el código QR.';
 
 /** Texto del boton cuando el QR es el unico camino. */
@@ -118,7 +118,7 @@ function avisoSinCamino(capacidades: CapacidadesEscaneo): string {
 export function motivoQrInvalido(texto: string): string | undefined {
   return esCodigoQrDePunto(texto.trim())
     ? undefined
-    : 'Ese código no es de un punto de VoxIA. Busca el QR pegado en el punto de control.';
+    : 'Ese código no es de un punto de SentryCore. Busca el QR pegado en el punto de control.';
 }
 
 export type MetodoEscaneo = 'nfc' | 'qr';

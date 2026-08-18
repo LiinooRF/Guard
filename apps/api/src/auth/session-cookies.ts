@@ -21,17 +21,17 @@ function sessionCookieOptions(): CookieOptions {
 }
 
 export function setSessionCookies(response: Response, session: AuthenticatedSession): void {
-  response.cookie('voxia_access', session.accessToken, {
+  response.cookie('sentrycore_access', session.accessToken, {
     ...sessionCookieOptions(),
     maxAge: ACCESS_MAX_AGE_MS,
   });
-  response.cookie('voxia_refresh', session.refreshToken, {
+  response.cookie('sentrycore_refresh', session.refreshToken, {
     ...sessionCookieOptions(),
     maxAge: REFRESH_MAX_AGE_MS,
   });
 }
 
 export function clearSessionCookies(response: Response): void {
-  response.clearCookie('voxia_access', { path: '/' });
-  response.clearCookie('voxia_refresh', { path: '/' });
+  response.clearCookie('sentrycore_access', { path: '/' });
+  response.clearCookie('sentrycore_refresh', { path: '/' });
 }

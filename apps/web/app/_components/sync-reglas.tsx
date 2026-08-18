@@ -1,6 +1,6 @@
 'use client';
 
-import { DEFAULT_PATROL_RULES, type PatrolRules } from '@voxia/shared';
+import { DEFAULT_PATROL_RULES, type PatrolRules } from '@sentrycore/shared';
 import { useEffect, useState } from 'react';
 
 import { pedirApi } from './guard-outbox';
@@ -23,10 +23,10 @@ import { borrarClave, escribirJson, leerJson } from './guard-storage';
  * endpoint no responde, y pedirle a la pantalla del guardia que espere una
  * regla para poder avisarle que esta sin senal seria exactamente al reves.
  * Mientras no haya nada cacheado se usan los defaults del producto, que salen
- * de `@voxia/shared` y no de este archivo.
+ * de `@sentrycore/shared` y no de este archivo.
  */
 
-const CLAVE_CACHE = 'voxia.guard.sync.reglas.v1';
+const CLAVE_CACHE = 'sentrycore.guard.sync.reglas.v1';
 
 export interface ReglasSync {
   /** Minutos con trabajo sin subir tras los cuales la pantalla lo trata como problema. */

@@ -20,8 +20,8 @@ WORKDIR /app
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/web apps/web
-RUN npm run build --workspace @voxia/shared \
- && npm run build --workspace @voxia/web
+RUN npm run build --workspace @sentrycore/shared \
+ && npm run build --workspace @sentrycore/web
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production

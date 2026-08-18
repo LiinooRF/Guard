@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { ROLES, type Role } from '@voxia/shared';
+import { ROLES, type Role } from '@sentrycore/shared';
 import { createHash, randomBytes } from 'node:crypto';
 import type Redis from 'ioredis';
 

@@ -36,6 +36,7 @@ const punto = (numero: number, omitido = false): FilaPunto => ({
   escaneadoEn: omitido ? null : new Date('2026-07-30T23:00:00-04:00'),
   metodo: omitido ? null : 'nfc',
   anomalias: [],
+  instrucciones: null,
 });
 
 const coordenada = (id: string, lat: number, lng: number): CoordenadaPuntoRow => ({

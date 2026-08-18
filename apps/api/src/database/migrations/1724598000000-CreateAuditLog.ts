@@ -3,7 +3,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Auditoria de acciones sensibles del tenant. Ver issue #104.
  *
- * Append-only a nivel de PostgreSQL, igual que field_events: voxia_app recibe
+ * Append-only a nivel de PostgreSQL, igual que field_events: sentrycore_app recibe
  * SELECT e INSERT y nada mas. Un registro de auditoria que la propia aplicacion
  * puede editar no sirve para reconstruir quien cambio que — y "el sistema lo
  * permitia" es lo primero que alega quien fue auditado.
@@ -56,10 +56,10 @@ export class CreateAuditLog1724598000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Solo SELECT e INSERT: la auditoria no se corrige, se acumula.
-          GRANT SELECT, INSERT ON audit_log TO voxia_app;
-          REVOKE UPDATE, DELETE ON audit_log FROM voxia_app;
+          GRANT SELECT, INSERT ON audit_log TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON audit_log FROM sentrycore_app;
         END IF;
       END
       $$

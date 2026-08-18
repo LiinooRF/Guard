@@ -169,7 +169,7 @@ describe('AuthService.issueForExistingSession', () => {
     userId: USER_ID,
     tenantId: TENANT_ID,
     role: 'GUARDIA',
-    device: 'VoxIAAndroid/0.1',
+    device: 'SentryCoreAndroid/0.1',
     createdAt: '2026-08-01T10:00:00.000Z',
     lastUsedAt: '2026-08-01T10:00:00.000Z',
   };
@@ -183,7 +183,7 @@ describe('AuthService.issueForExistingSession', () => {
     };
     const jwt = new JwtService({
       secret: SECRET,
-      signOptions: { algorithm: 'HS256', issuer: 'voxia-api', audience: 'voxia-clients' },
+      signOptions: { algorithm: 'HS256', issuer: 'sentrycore-api', audience: 'sentrycore-clients' },
     });
     const auth = new AuthService(
       {} as DataSource,

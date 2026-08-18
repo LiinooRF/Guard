@@ -5,8 +5,8 @@ import 'leaflet/dist/leaflet.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'VoxIA Control',
-    template: '%s · VoxIA Control',
+    default: 'SentryCore',
+    template: '%s · SentryCore',
   },
   description:
     'SaaS multi-tenant de monitoreo de rondas de vigilancia con etiquetas NFC',

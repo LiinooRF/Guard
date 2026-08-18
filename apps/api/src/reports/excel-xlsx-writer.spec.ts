@@ -207,7 +207,7 @@ describe('escribirLibroExcel', () => {
   it('no escribe metadatos de personas en las propiedades del archivo', async () => {
     const buffer = await libroExcelABuffer([HOJA_MINIMA], OPCIONES);
     const app = leerZip(buffer).entradas.get('docProps/app.xml')!.toString('utf8');
-    expect(app).toContain('<Application>VoxIA Control</Application>');
+    expect(app).toContain('<Application>SentryCore</Application>');
     expect(app).not.toContain('Creator');
     expect(app).not.toContain('lastModifiedBy');
   });

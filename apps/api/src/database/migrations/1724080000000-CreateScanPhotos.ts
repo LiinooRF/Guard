@@ -12,13 +12,13 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * `storage_path` es RELATIVO a EVIDENCE_PATH (tenant/ronda/sha.ext): mover el
  * volumen de evidencia no invalida las filas.
  *
- * La evidencia no se reescribe: el GRANT de voxia_app es SOLO SELECT e INSERT,
+ * La evidencia no se reescribe: el GRANT de sentrycore_app es SOLO SELECT e INSERT,
  * igual que field_events (#124). La retencion (photoRetentionDays en rules.ts)
  * la aplicara un proceso aparte con el rol dueño, no la API.
  *
  * `site_business_hours`: horario habil POR RECINTO (un mall y una bodega no
  * tienen el mismo). weekday 0=domingo..6=sabado, igual que businessHoursSchema
- * en @voxia/shared. Las horas son en la zona horaria DEL RECINTO
+ * en @sentrycore/shared. Las horas son en la zona horaria DEL RECINTO
  * (sites.timezone). opens_at > closes_at significa tramo nocturno que cruza
  * medianoche (22:00-06:00); abre == cierra seria ambiguo y se prohibe.
  */
@@ -99,11 +99,11 @@ export class CreateScanPhotos1724080000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- SOLO SELECT e INSERT, a proposito: la evidencia no se reescribe.
-          GRANT SELECT, INSERT ON scan_photos TO voxia_app;
-          REVOKE UPDATE, DELETE ON scan_photos FROM voxia_app;
-          GRANT SELECT, INSERT, UPDATE, DELETE ON site_business_hours TO voxia_app;
+          GRANT SELECT, INSERT ON scan_photos TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON scan_photos FROM sentrycore_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON site_business_hours TO sentrycore_app;
         END IF;
       END
       $$

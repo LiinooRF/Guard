@@ -1,5 +1,5 @@
 /**
- * Contrato del deep link de una notificacion push de VoxIA Control (#113).
+ * Contrato del deep link de una notificacion push de SentryCore (#113).
  *
  * ---------------------------------------------------------------------------
  * POR QUE ESTE CONTRATO ESTA VERSIONADO
@@ -46,7 +46,7 @@
  * Ni Node, ni React Native, ni el DOM. Es el MISMO archivo en la API
  * (`apps/api/src/push/deep-link.ts`) y en el shell
  * (`apps/mobile/src/push/deep-link.ts`), copiado tal cual, porque `apps/mobile`
- * esta fuera de los workspaces de npm y no puede importar `@voxia/shared`. Si
+ * esta fuera de los workspaces de npm y no puede importar `@sentrycore/shared`. Si
  * le agregas un import, deja de poder copiarse y los dos lados se desincronizan
  * en silencio — que es exactamente lo que este archivo existe para evitar. La
  * verificacion en CI esta propuesta en INTEGRACION.md.

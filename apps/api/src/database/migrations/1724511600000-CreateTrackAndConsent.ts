@@ -117,16 +117,16 @@ export class CreateTrackAndConsent1724511600000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- patrol_tracks: sin UPDATE. Una posicion registrada no se corrige;
           -- DELETE si, porque la retencion tiene que poder borrarla.
-          GRANT SELECT, INSERT, DELETE ON patrol_tracks TO voxia_app;
-          REVOKE UPDATE ON patrol_tracks FROM voxia_app;
+          GRANT SELECT, INSERT, DELETE ON patrol_tracks TO sentrycore_app;
+          REVOKE UPDATE ON patrol_tracks FROM sentrycore_app;
           -- gps_consents: sin DELETE. Un consentimiento no se borra, se revoca
           -- (UPDATE de revoked_at); la evidencia de que se informo tiene que
           -- sobrevivir a la revocacion.
-          GRANT SELECT, INSERT, UPDATE ON gps_consents TO voxia_app;
-          REVOKE DELETE ON gps_consents FROM voxia_app;
+          GRANT SELECT, INSERT, UPDATE ON gps_consents TO sentrycore_app;
+          REVOKE DELETE ON gps_consents FROM sentrycore_app;
         END IF;
       END
       $$

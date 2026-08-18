@@ -1,4 +1,4 @@
-# Imagen del servicio de respaldos de VoxIA Control (issue #24).
+# Imagen del servicio de respaldos de SentryCore (issue #24).
 #
 # Es postgres:17-alpine mas rclone. La version de postgres NO se cambia por
 # capricho: pg_dump se niega a respaldar un servidor mas nuevo que el cliente,

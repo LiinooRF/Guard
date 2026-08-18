@@ -11,7 +11,7 @@ import {
  *
  * QUE CAMBIA RESPECTO DE LO QUE HABIA
  * Las de invitacion y recuperacion vivian escritas a mano dentro de
- * auth/mail.service.ts y decian "VoxIA Control" con todas sus letras: al
+ * auth/mail.service.ts y decian "SentryCore" con todas sus letras: al
  * cliente final de una empresa de seguridad le llegaba la marca del revendedor.
  * Las de informe y alerta ya estaban bien escritas en
  * reports/envio-informe.plantillas.ts pero eran solo texto y sin marca.

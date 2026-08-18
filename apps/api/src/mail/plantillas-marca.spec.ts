@@ -130,7 +130,7 @@ describe('PlantillasMarcaService', () => {
     const s = new PlantillasMarcaService(contexto, CONFIG);
     const marca = await s.resolver(200);
     expect(marca.esDeLaPlataforma).toBe(true);
-    expect(marca.nombreEmpresa).toBe('VoxIA Control');
+    expect(marca.nombreEmpresa).toBe('SentryCore');
   });
 
   it('nunca consulta la columna inventada tenants.name', async () => {

@@ -32,9 +32,9 @@ export class CreateActiveSessionCheck1722956400000 implements MigrationInterface
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           REVOKE ALL ON FUNCTION is_active_tenant_session(uuid, uuid, text) FROM PUBLIC;
-          GRANT EXECUTE ON FUNCTION is_active_tenant_session(uuid, uuid, text) TO voxia_app;
+          GRANT EXECUTE ON FUNCTION is_active_tenant_session(uuid, uuid, text) TO sentrycore_app;
         END IF;
       END
       $$

@@ -4,7 +4,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * Overrides de reglas por tenant (#16).
  *
  * La fila guarda SOLO las desviaciones respecto de los defaults de
- * `patrolRulesSchema` en @voxia/shared: sin fila (o con overrides vacios) el
+ * `patrolRulesSchema` en @sentrycore/shared: sin fila (o con overrides vacios) el
  * tenant opera con los defaults del producto. Por eso NO se siembra una fila
  * por tenant ni se replican los defaults aca — si los defaults cambian en el
  * codigo, cambian para todos sin migrar datos.
@@ -42,8 +42,8 @@ export class CreateTenantRules1723906800000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_rules TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_rules TO sentrycore_app;
         END IF;
       END
       $$

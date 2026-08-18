@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

@@ -32,7 +32,7 @@ export class DeviceSignatureService {
     config: ConfigService,
   ) {
     this.master = createHash('sha256')
-      .update('voxia:device-signing-keys:v1\0', 'utf8')
+      .update('sentrycore:device-signing-keys:v1\0', 'utf8')
       .update(config.getOrThrow<string>('JWT_SECRET'), 'utf8')
       .digest();
   }

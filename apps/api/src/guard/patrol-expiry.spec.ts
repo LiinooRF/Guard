@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 
 import { rondaVencida } from './patrol-expiry';
 

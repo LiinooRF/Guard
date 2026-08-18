@@ -46,7 +46,7 @@ export const crashReportingEnvSchema = z.object({
    * de produccion no se puede mapear a un commit y el reporte no sirve.
    * Dokploy la inyecta desde el tag o el sha del despliegue.
    */
-  SENTRY_RELEASE: z.string().min(1).max(120).default('voxia-api@dev'),
+  SENTRY_RELEASE: z.string().min(1).max(120).default('sentrycore-api@dev'),
 
   /**
    * Tope del envio hacia el proveedor. Es un limite de INFRAESTRUCTURA, no una
@@ -160,7 +160,7 @@ export function loadCrashReportingConfig(
   // Un release de mentira en produccion es peor que no tener Sentry: se ven los
   // errores pero no se sabe de que version son, y no se puede decidir si el
   // arreglo ya salio.
-  if (env.NODE_ENV === 'production' && env.SENTRY_RELEASE === 'voxia-api@dev') {
+  if (env.NODE_ENV === 'production' && env.SENTRY_RELEASE === 'sentrycore-api@dev') {
     throw new Error('en produccion CRASH_REPORT_DRIVER=sentry requiere SENTRY_RELEASE real');
   }
 

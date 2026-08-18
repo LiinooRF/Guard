@@ -55,8 +55,8 @@ describe('migracion de feature flags', () => {
 
   it('el techo no se puede escribir con SQL suelto del rol de aplicacion', () => {
     for (const tabla of ['plan_feature_flags', 'tenant_feature_grants']) {
-      expect(SQL).toContain(`GRANT SELECT ON ${tabla} TO voxia_app`);
-      expect(SQL).toContain(`REVOKE INSERT, UPDATE, DELETE ON ${tabla} FROM voxia_app`);
+      expect(SQL).toContain(`GRANT SELECT ON ${tabla} TO sentrycore_app`);
+      expect(SQL).toContain(`REVOKE INSERT, UPDATE, DELETE ON ${tabla} FROM sentrycore_app`);
     }
   });
 
@@ -85,7 +85,7 @@ describe('migracion de feature flags', () => {
   });
 
   it('los grants estan detras del chequeo del rol de aplicacion', () => {
-    expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+    expect(SQL).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
   });
 
   it('no siembra un paquete comercial: el modelo de licencias sigue abierto (#2)', () => {

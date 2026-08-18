@@ -3,7 +3,7 @@ import {
   resolveRulesWithSource,
   ruleCatalogForScope,
   type PatrolRules,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 import { DataSource, type EntityManager, QueryFailedError } from 'typeorm';
 
 import { overridesComoObjeto, sanitizeOverrides } from './rule-overrides';

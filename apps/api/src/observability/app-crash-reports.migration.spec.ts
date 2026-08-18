@@ -43,7 +43,7 @@ describe('migracion de reportes de caida', () => {
   });
 
   it('los grants estan detras del chequeo del rol de aplicacion', () => {
-    expect(MIGRACION).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app')");
+    expect(MIGRACION).toContain("IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app')");
     expect(MIGRACION).toContain('GRANT SELECT, INSERT, UPDATE, DELETE ON app_crash_reports');
   });
 

@@ -3,7 +3,7 @@ import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
 import type { DataSource } from 'typeorm';
 import type Redis from 'ioredis';
-import { PERMISSIONS, ROLES, ROLE_PERMISSIONS, type Role } from '@voxia/shared';
+import { PERMISSIONS, ROLES, ROLE_PERMISSIONS, type Role } from '@sentrycore/shared';
 
 import { AuthGuard, type AuthenticatedUser } from './auth.guard';
 
@@ -59,7 +59,7 @@ describe('AuthGuard', () => {
   it('cierra un endpoint nuevo sin decorador incluso con sesión', async () => {
     const { guard } = createGuard({});
     await expect(
-      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+      guard.canActivate(context({ cookies: { sentrycore_access: 'valid' } })),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -69,7 +69,7 @@ describe('AuthGuard', () => {
   });
 
   it('adjunta identidad válida cuando rol y tenant coinciden', async () => {
-    const request = { headers: {}, cookies: { voxia_access: 'valid' } };
+    const request = { headers: {}, cookies: { sentrycore_access: 'valid' } };
     const { guard } = createGuard({
       'auth:requiredPermissions': ['patrols:execute'],
       'auth:requiresTenant': true,
@@ -89,7 +89,7 @@ describe('AuthGuard', () => {
         },
         payload,
       );
-      const result = guard.canActivate(context({ cookies: { voxia_access: 'valid' } }));
+      const result = guard.canActivate(context({ cookies: { sentrycore_access: 'valid' } }));
 
       if ((ROLE_PERMISSIONS[role] as readonly string[]).includes(permission)) {
         await expect(result).resolves.toBe(true);
@@ -107,7 +107,7 @@ describe('AuthGuard', () => {
     jest.mocked(dataSource.query).mockResolvedValue([{ active: false }]);
 
     await expect(
-      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+      guard.canActivate(context({ cookies: { sentrycore_access: 'valid' } })),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -119,7 +119,7 @@ describe('AuthGuard', () => {
     jest.mocked(redis.exists).mockResolvedValue(1);
 
     await expect(
-      guard.canActivate(context({ cookies: { voxia_access: 'valid' } })),
+      guard.canActivate(context({ cookies: { sentrycore_access: 'valid' } })),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

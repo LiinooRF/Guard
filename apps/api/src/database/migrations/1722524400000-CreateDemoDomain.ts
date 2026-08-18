@@ -143,10 +143,10 @@ export class CreateDemoDomain1722524400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           GRANT SELECT, INSERT, UPDATE, DELETE
             ON sites, checkpoints, routes, route_checkpoints, patrols
-            TO voxia_app;
+            TO sentrycore_app;
         END IF;
       END
       $$

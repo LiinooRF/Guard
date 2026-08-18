@@ -101,4 +101,4 @@ export async function reportarPermisoUbicacion(
  * Un evento del DOM y no una prop, porque entre los dos componentes hay tres
  * capas que no tienen por que enterarse del permiso de ubicacion.
  */
-export const EVENTO_CONSENTIMIENTO_ACEPTADO = 'voxia:consentimiento-aceptado';
+export const EVENTO_CONSENTIMIENTO_ACEPTADO = 'sentrycore:consentimiento-aceptado';
