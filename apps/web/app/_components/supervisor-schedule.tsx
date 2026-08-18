@@ -66,7 +66,8 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
 
   async function createShift(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const rawWeekdays = form.getAll('weekday').map(Number);
     const weekdays = rawWeekdays.length ? rawWeekdays : [0, 1, 2, 3, 4, 5, 6];
     try {
@@ -77,7 +78,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
         }),
       });
       setMessage('Turno reutilizable creado. Ya puedes seleccionarlo en el paso 2 para programar la semana.');
-      event.currentTarget.reset(); await loadWeek();
+      formElement.reset(); await loadWeek();
     } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
   }
 
@@ -96,14 +97,14 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
 
   async function programWeek(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const shiftId = String(form.get('shiftId'));
     const guardId = String(form.get('guardId'));
     const routeId = String(form.get('routeId'));
     const selectedDates = form.getAll('date').map(String);
     try {
       if (!selectedDates.length) throw new Error('Selecciona al menos un día de la semana.');
-      // Preflight explícito: ningún PUT/POST de programación ocurre si una fecha choca.
       for (const serviceDate of selectedDates) {
         const check = await request<{ conflict: boolean; message?: string }>(
           apiUrl, `/supervisor/shifts/${shiftId}/conflicts`, {
@@ -126,22 +127,25 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
           method: 'POST', body: JSON.stringify({ serviceDate, siteId }),
         }).catch(() => undefined);
       }
-      setMessage(`${selectedDates.length} turno(s) y ronda(s) programados sin solapamientos.`);
+      setMessage(`${selectedDates.length} turnos y rondas programados sin solapamientos.`);
       await loadWeek();
     } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
   }
 
-  async function reassign(assignment: Assignment, guardId: string) {
-    if (!guardId || guardId === assignment.guardId) return;
+  async function reassign(assignmentId: string, guardId: string) {
+    if (!guardId) return;
     setBusy(true); setError(''); setMessage('');
     try {
-      const check = await request<{ conflict: boolean; message?: string }>(
-        apiUrl, `/supervisor/shifts/${assignment.shiftId}/conflicts`, {
-          method: 'POST', body: JSON.stringify({ guardId, serviceDate: assignment.serviceDate }),
-        },
-      );
-      if (check.conflict) throw new Error(check.message ?? 'El reemplazo tiene un solapamiento.');
-      await request(apiUrl, `/supervisor/assignments/${assignment.id}`, {
+      const assignment = assignments.find((a) => a.id === assignmentId);
+      if (assignment) {
+        const check = await request<{ conflict: boolean; message?: string }>(
+          apiUrl, `/supervisor/shifts/${assignment.shiftId}/conflicts`, {
+            method: 'POST', body: JSON.stringify({ guardId, serviceDate: assignment.serviceDate, assignmentId }),
+          },
+        );
+        if (check.conflict) throw new Error(check.message ?? 'El guardia tiene un solapamiento.');
+      }
+      await request(apiUrl, `/supervisor/assignments/${assignmentId}`, {
         method: 'PATCH', body: JSON.stringify({ guardId }),
       });
       setMessage('Guardia reasignado.'); await loadWeek();
@@ -172,7 +176,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
                 <article key={assignment.id}>
                   <strong>{assignment.startsAt.slice(0, 5)}–{assignment.endsAt.slice(0, 5)}</strong>
                   <span>{assignment.shiftName}</span><small>{assignment.routeName ?? 'Sin ruta'} · {assignment.guardName}</small>
-                  {assignment.status === 'asignado' && <select aria-label={`Reasignar ${assignment.shiftName}`} disabled={busy} value={assignment.guardId} onChange={(e) => void reassign(assignment, e.target.value)}>
+                  {assignment.status === 'asignado' && <select aria-label={`Reasignar ${assignment.shiftName}`} disabled={busy} value={assignment.guardId} onChange={(e) => void reassign(assignment.id, e.target.value)}>
                     {guards.map((guard) => <option key={guard.id} value={guard.id}>{guard.name}</option>)}
                   </select>}
                 </article>
@@ -188,7 +192,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
               <label>Nombre del turno<input name="name" required minLength={2} placeholder="Ej: Diurno, Noche, Ronda Continua" /></label>
               <div className="schedule-inline"><label>Inicio<input name="startsAt" type="time" required /></label><label>Fin<input name="endsAt" type="time" required /></label></div>
               <fieldset><legend>Recurrencia semanal</legend>{DAY_NAMES.map((day, i) => <label key={day}><input type="checkbox" name="weekday" value={(i + 1) % 7} defaultChecked={i < 5} />{day}</label>)}</fieldset>
-              <button disabled={busy || !siteId} type="submit">Crear turno</button>
+              <button disabled={busy || !siteId} type="submit">{busy ? 'Creando...' : 'Crear turno'}</button>
             </form>
             <form onSubmit={programWeek}>
               <h3>2. Programar semana completa</h3>
@@ -228,7 +232,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
               </div>
               <fieldset key={`${selectedShiftId}-${monday}`}><legend>Días de esta semana</legend>{dates.map((date, i) => <label key={date}><input type="checkbox" name="date" value={date} defaultChecked={shifts.find((shift) => shift.id === selectedShiftId)?.weekdays.includes(weekdaySundayZero(date)) ?? false} />{DAY_NAMES[i]}</label>)}</fieldset>
               <button disabled={busy || !shifts.length || !routes.length || !guards.length} type="submit">
-                {!shifts.length ? 'Crea un turno en paso 1 primero' : !routes.length ? 'Crea una ruta activa primero' : !guards.length ? 'Sin guardias disponibles' : 'Revisar choques y programar'}
+                {busy ? 'Programando...' : !shifts.length ? 'Crea un turno en paso 1 primero' : !routes.length ? 'Crea una ruta activa primero' : !guards.length ? 'Sin guardias disponibles' : 'Revisar choques y programar'}
               </button>
             </form>
           </div>
@@ -266,7 +270,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
                         disabled={busy}
                         onClick={() => void saveGuardNfc(guard.id)}
                       >
-                        Guardar
+                        {busy ? '...' : 'Guardar'}
                       </button>
                       <button
                         style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', backgroundColor: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '0.25rem', cursor: 'pointer' }}

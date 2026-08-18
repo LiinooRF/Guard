@@ -775,6 +775,10 @@ export class SupervisorService {
       `UPDATE shift_assignments SET guard_id = $2 WHERE id = $1`,
       [assignmentId, guardId],
     );
+    await this.tenantContext.manager.query(
+      `UPDATE patrols SET guard_id = $2 WHERE shift_assignment_id = $1 AND status = 'pendiente'`,
+      [assignmentId, guardId],
+    );
     return { id: assignmentId, guardId };
   }
 

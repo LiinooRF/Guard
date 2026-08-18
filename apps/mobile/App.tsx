@@ -222,10 +222,14 @@ export default function App() {
     if (enPantallaLogin && !failed && !bloqueo) {
       void iniciarEscuchaNfcLogin((uid) => {
         const script = `
-          if (window.__sentrycoreNfcLogin) {
-            window.__sentrycoreNfcLogin(${JSON.stringify(uid)});
-          }
-          window.dispatchEvent(new CustomEvent('sentrycore:nfc:login', { detail: { uid: ${JSON.stringify(uid)} } }));
+          (function() {
+            var uid = ${JSON.stringify(uid)};
+            window.__sentrycoreLastNfcUid = uid;
+            if (typeof window.__sentrycoreNfcLogin === 'function') {
+              window.__sentrycoreNfcLogin(uid);
+            }
+            window.dispatchEvent(new CustomEvent('sentrycore:nfc:login', { detail: { uid: uid } }));
+          })();
           true;
         `;
         webView.current?.injectJavaScript(script);
