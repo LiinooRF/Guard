@@ -21,6 +21,12 @@ import { crearCamaraQr, VistaCamaraQr } from './src/qr/camara';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import { sincronizarCola } from './src/offline/sync-queue';
 import { registrarSincronizacionBackground } from './src/offline/sync-task';
+import { ErrorBoundary } from './src/observability/ErrorBoundary';
+import {
+  configurarApiUrl,
+  instalarReportadorGlobal,
+  registrarArranqueYVerificarCierre,
+} from './src/observability/crash-reporter';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -92,6 +98,21 @@ function configuredPortal(): URL {
 
 export default function App() {
   const portal = useMemo(configuredPortal, []);
+
+  useEffect(() => {
+    configurarApiUrl(portal.origin);
+    instalarReportadorGlobal(() => portal.origin);
+    void registrarArranqueYVerificarCierre(portal.origin);
+  }, [portal.origin]);
+
+  return (
+    <ErrorBoundary apiUrl={portal.origin}>
+      <AppShell portal={portal} />
+    </ErrorBoundary>
+  );
+}
+
+function AppShell({ portal }: { portal: URL }) {
   const webView = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
