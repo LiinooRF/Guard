@@ -2,7 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  AppState,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -14,7 +13,6 @@ import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
 
 import { normalizarConexion } from './src/bridge/default-handlers';
-import { persistirCookies } from './src/sesion/persistir-cookies';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
 import { crearManejadoresNfc } from './src/nfc/handlers';
 import { puertoNfcAndroid } from './src/nfc/native-port';
@@ -166,20 +164,6 @@ export default function App() {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
 
-  /*
-   * El instante anterior a que el sistema pueda matar el proceso.
-   *
-   * Android mata apps en segundo plano de rutina, y el WebView todavia puede
-   * tener la cookie de sesion solo en memoria. Volcarla aca es lo que evita que
-   * el guardia vuelva del segundo plano a la pantalla de login. Cubre ademas la
-   * renovacion del token, que ocurre por `fetch` y no dispara navegacion.
-   */
-  useEffect(() => {
-    const suscripcion = AppState.addEventListener('change', (estado) => {
-      if (estado !== 'active') void persistirCookies();
-    });
-    return () => suscripcion.remove();
-  }, []);
 
   /*
    * El permiso de camara YA NO se pide al arrancar.
@@ -238,6 +222,7 @@ export default function App() {
         source={{ uri: portal.href }}
         applicationNameForUserAgent="SentryCoreAndroid/0.1"
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
+        injectedJavaScript={puente.guionPrevio}
         onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}
@@ -246,13 +231,6 @@ export default function App() {
           setFailed(false);
         }}
         onLoadEnd={() => setLoading(false)}
-        // Entrar al panel es la señal de que el login funciono y de que hay
-        // cookie nueva que conservar: `/app/` solo se alcanza con sesion.
-        onNavigationStateChange={(navegacion) => {
-          if (!navegacion.loading && navegacion.url.startsWith(`${portal.origin}/app/`)) {
-            void persistirCookies();
-          }
-        }}
         onError={({ nativeEvent }) => {
           setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
           mostrarFallo();
