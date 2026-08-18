@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from 'react';
 
 import { MapaBase } from './mapa-base';
-import { leyendaDeRuta, marcasDeRuta } from './guard-mapa-modelo';
+import { leyendaDeRuta, marcasDeRuta, trazaDeRutaPatron } from './guard-mapa-modelo';
 import { precacheTilesDeRuta } from './guard-tiles-offline';
 import { useOrigenTiles } from './mapa-origen-tiles';
 import type { PuntoRuta, RegistroPunto } from './guard-shift-state';
@@ -44,6 +44,10 @@ export function GuardMapa({
     () => marcasDeRuta(puntos, escaneados, siguienteId),
     [puntos, escaneados, siguienteId],
   );
+  const trazaPatron = useMemo(
+    () => trazaDeRutaPatron(puntos),
+    [puntos],
+  );
   const leyenda = useMemo(
     () => leyendaDeRuta(puntos, escaneados, siguienteId),
     [puntos, escaneados, siguienteId],
@@ -68,6 +72,7 @@ export function GuardMapa({
       <MapaBase
         etiqueta={`Ruta de la ronda en ${siteName}`}
         puntos={marcas}
+        trazas={trazaPatron ? [trazaPatron] : []}
         leyenda={leyenda}
         alto="260px"
       />
