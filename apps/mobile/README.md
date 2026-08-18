@@ -191,10 +191,19 @@ EXPO_PUBLIC_WEB_URL=http://<IP_DE_TU_PC>:13000 npm start
 | **Respaldo por escaneo QR** (`expo-camera` / #226-#227) | ✅ Sí | ✅ Sí (con cámara virtual/webcam) | ✅ Sí |
 | **Ubicación GPS y telemetría** (`expo-location`) | ✅ Sí (GPS de precisión) | ✅ Sí (coordenadas simuladas) | ✅ Sí |
 | **Firma criptográfica de hardware** (`device-signature.ts`) | ✅ Sí (`expo-crypto`) | ✅ Sí (`expo-crypto`) | ✅ Sí |
-| **Base de datos cifrada offline** (`expo-sqlite` / SQLCipher) | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Base de datos cifrada offline** (`expo-sqlite` / SQLCipher) | ✅ Sí | ✅ Sí | ❌ No (sin SQLCipher, ver nota) |
 | **Tareas en segundo plano** (`expo-background-task`) | ✅ Sí | ✅ Sí (con trigger manual) | ❌ No (requiere build nativo) |
 | **Reportador de caídas y ErrorBoundary** (`observability/`) | ✅ Sí | ✅ Sí | ✅ Sí |
-| **Ronda completa de punta a punta** | ✅ Sí (NFC o QR) | ✅ Sí (vía QR de respaldo) | ✅ Sí (vía QR de respaldo) |
+| **Ronda completa de punta a punta** | ✅ Sí (NFC o QR) | ✅ Sí (vía QR de respaldo) | ⚠️ Solo con red (la cola offline depende de la base cifrada) |
+
+> **Por qué la base cifrada no funciona en Expo Go.** `abrirBaseOperativa()`
+> ejecuta `PRAGMA key` y enseguida comprueba `PRAGMA cipher_version`; el
+> `expo-sqlite` que trae Expo Go viene **sin SQLCipher**, así que esa consulta
+> devuelve vacío y la apertura falla con `sqlcipher-no-disponible`
+> (`src/offline/route-store.ts`). Como la cola offline (`src/offline/sync-queue.ts`)
+> abre esa misma base, en Expo Go se puede recorrer una ronda **con red**, pero no
+> probar el modo avión ni la sincronización posterior. Para eso hace falta un
+> development build, igual que para el NFC.
 
 ---
 
