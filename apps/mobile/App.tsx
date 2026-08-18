@@ -226,6 +226,7 @@ export default function App() {
         source={{ uri: portal.href }}
         applicationNameForUserAgent="SentryCoreAndroid/0.1"
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
+        injectedJavaScript={puente.guionPrevio}
         onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}

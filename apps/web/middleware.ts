@@ -8,6 +8,20 @@ const ROLE_PATHS = {
   GUARDIA: 'guardia',
 } as const;
 
+function esClienteAndroidGuardia(request: NextRequest): boolean {
+  const ua = request.headers.get('user-agent') ?? '';
+  const xRequestedWith = request.headers.get('x-requested-with') ?? '';
+  const secChUa = request.headers.get('sec-ch-ua') ?? '';
+  const isSentryCoreUA = /sentrycoreandroid/i.test(ua) || /sentrycore/i.test(ua);
+  const isSentryCorePackage =
+    /com\.voxtilabs\.sentrycore/i.test(xRequestedWith) ||
+    /sentrycore/i.test(xRequestedWith) ||
+    /sentrycore/i.test(secChUa);
+  const hasAppHeader =
+    request.headers.has('x-sentrycore-app') || request.cookies.has('sentrycore_native_app');
+  return isSentryCoreUA || isSentryCorePackage || hasAppHeader;
+}
+
 export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('sentrycore_access')?.value;
   const refreshToken = request.cookies.get('sentrycore_refresh')?.value;
@@ -20,10 +34,7 @@ export async function middleware(request: NextRequest) {
 
   const role = await resolveSession(request, accessToken);
   if (role) {
-    if (
-      role === 'GUARDIA' &&
-      !request.headers.get('user-agent')?.includes('SentryCoreAndroid/')
-    ) {
+    if (role === 'GUARDIA' && !esClienteAndroidGuardia(request)) {
       return clearSessionAndRedirect(request);
     }
 

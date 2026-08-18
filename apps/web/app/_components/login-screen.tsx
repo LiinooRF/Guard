@@ -99,10 +99,14 @@ export function LoginScreen() {
         return;
       }
 
-      if (
-        result.user.role === 'GUARDIA' &&
-        !navigator.userAgent.includes('SentryCoreAndroid/')
-      ) {
+      const esAndroidValido =
+        typeof window !== 'undefined' &&
+        (Boolean((window as unknown as { __sentrycorePuente?: unknown }).__sentrycorePuente) ||
+          Boolean((window as unknown as { ReactNativeWebView?: unknown }).ReactNativeWebView) ||
+          /sentrycoreandroid/i.test(navigator.userAgent) ||
+          /sentrycore/i.test(navigator.userAgent));
+
+      if (result.user.role === 'GUARDIA' && !esAndroidValido) {
         await fetch(`${apiUrl}/auth/logout`, {
           method: 'POST',
           credentials: 'include',
