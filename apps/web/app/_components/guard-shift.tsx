@@ -870,10 +870,10 @@ function Ronda({
       ) : null}
 
       <section className="guardia-cabecera">
-        <p className="guardia-eyebrow">{patrol.siteName}</p>
+        <p className="guardia-eyebrow">Ronda en {patrol.siteName}</p>
         <h1 className="guardia-titulo">{patrol.routeName}</h1>
         <p className="guardia-turno">
-          Turno {hora.format(new Date(shift.scheduledStartAt))} a{' '}
+          Ronda {hora.format(new Date(shift.scheduledStartAt))} a{' '}
           {hora.format(new Date(shift.scheduledEndAt))} · {patrol.estimatedDurationMin} min
           estimados
         </p>

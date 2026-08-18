@@ -35,6 +35,7 @@ export interface TenantUser {
   username: string | null;
   givenName: string;
   familyName: string;
+  nfcCardUid?: string | null;
   role: 'ADMIN' | 'SUPERVISOR' | 'GUARDIA';
   isActive: boolean;
   siteIds: string[];
@@ -291,6 +292,7 @@ export function AdminManagement({
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
+    const nfcCardUid = data.get('nfcCardUid')?.toString().trim();
     const response = await apiRequest(`${apiUrl}/admin/users`, 'POST', {
       givenName: data.get('givenName'),
       familyName: data.get('familyName'),
@@ -298,6 +300,7 @@ export function AdminManagement({
       username: data.get('username') || undefined,
       role: data.get('role'),
       password: data.get('password') || undefined,
+      nfcCardUid: nfcCardUid || undefined,
     });
     if (!response.ok) return setMessage(await responseMessage(response));
     const result = (await response.json()) as { invitationSent: boolean };
@@ -322,6 +325,7 @@ export function AdminManagement({
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const nextRole = data.get('role');
+    const nfcCardUid = data.get('nfcCardUid')?.toString().trim();
     if (
       user.role === 'SUPERVISOR'
       && nextRole === 'GUARDIA'
@@ -335,6 +339,7 @@ export function AdminManagement({
       givenName: data.get('givenName'),
       familyName: data.get('familyName'),
       role: data.get('role'),
+      nfcCardUid: nfcCardUid ?? null,
     });
     if (!response.ok) return setMessage(await responseMessage(response));
     const result = (await response.json()) as {
@@ -360,14 +365,27 @@ export function AdminManagement({
     setMessage(`${result.revokedSessions} sesión(es) cerrada(s) para ${user.givenName}.`);
   }
 
-  async function assign(supervisor: TenantUser, siteId: string) {
-    const assigned = !supervisor.siteIds.includes(siteId);
+  async function assign(user: TenantUser, siteId: string) {
+    const assigned = !user.siteIds.includes(siteId);
     const response = await apiRequest(
-      `${apiUrl}/admin/users/${supervisor.id}/sites/${siteId}`,
+      `${apiUrl}/admin/users/${user.id}/sites/${siteId}`,
       'PATCH',
       { assigned },
     );
     if (!response.ok) return setMessage(await responseMessage(response));
+    startTransition(() => router.refresh());
+  }
+
+  async function toggleAllSites(user: TenantUser, activeSites: TenantSite[]) {
+    const allAssigned = activeSites.every((site) => user.siteIds.includes(site.id));
+    const targetState = !allAssigned;
+    for (const site of activeSites) {
+      if (user.siteIds.includes(site.id) !== targetState) {
+        await apiRequest(`${apiUrl}/admin/users/${user.id}/sites/${site.id}`, 'PATCH', {
+          assigned: targetState,
+        });
+      }
+    }
     startTransition(() => router.refresh());
   }
 
@@ -395,6 +413,7 @@ export function AdminManagement({
             <label>Nombre<input name="givenName" required /></label>
             <label>Apellido<input name="familyName" required /></label>
             <label>Rol<select name="role"><option value="GUARDIA">Guardia</option><option value="SUPERVISOR">Supervisor</option></select></label>
+            <label>Tarjeta NFC (código físico opcional)<input name="nfcCardUid" placeholder="Ej: 04A1B2C3D4" /></label>
             <label>Correo (opcional)<input name="email" type="email" /></label>
             <label>Usuario (si no tiene correo)<input name="username" minLength={4} /></label>
             <label>Clave inicial (solo sin correo)<input name="password" type="password" minLength={12} autoComplete="new-password" /></label>
@@ -410,7 +429,7 @@ export function AdminManagement({
             <input
               value={userQuery}
               onChange={(event) => setUserQuery(event.target.value)}
-              placeholder="Nombre, correo o usuario"
+              placeholder="Nombre, correo, usuario o tarjeta NFC"
             />
           </label>
           <label>
@@ -431,13 +450,18 @@ export function AdminManagement({
                   <label>Nombre<input name="givenName" defaultValue={user.givenName} required minLength={2} /></label>
                   <label>Apellido<input name="familyName" defaultValue={user.familyName} required minLength={2} /></label>
                   <label>Rol<select name="role" defaultValue={user.role}><option value="GUARDIA">Guardia</option><option value="SUPERVISOR">Supervisor</option></select></label>
+                  <label>Tarjeta NFC (UID)<input name="nfcCardUid" defaultValue={user.nfcCardUid ?? ''} placeholder="Ej: 04A1B2C3D4" /></label>
                   <div className="row-actions">
                     <button className="primary-button" disabled={pending}>Guardar</button>
                     <button className="secondary-button" type="button" onClick={() => setEditingUserId(null)}>Cancelar</button>
                   </div>
                 </form>
               ) : (
-                <div><strong>{user.givenName} {user.familyName}</strong><small>{user.email ?? user.username} · {user.role}</small></div>
+                <div>
+                  <strong>{user.givenName} {user.familyName}</strong>
+                  <small>{user.email ?? user.username} · {user.role}</small>
+                  {user.nfcCardUid ? <small style={{ color: '#2563eb', fontWeight: 600 }}> · 📇 NFC: {user.nfcCardUid}</small> : null}
+                </div>
               )}
               <span className={`state-chip ${user.isActive ? 'active' : 'suspended'}`}>{user.isActive ? 'Activo' : 'Inactivo'}</span>
               {user.role !== 'ADMIN' ? (
@@ -447,8 +471,25 @@ export function AdminManagement({
                   <button className="secondary-button" onClick={() => toggleUser(user)} disabled={pending}>{user.isActive ? 'Desactivar' : 'Activar'}</button>
                 </div>
               ) : null}
-              {user.role === 'SUPERVISOR' && (
+              {(user.role === 'SUPERVISOR' || user.role === 'GUARDIA') && (
                 <div className="site-assignment">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <small style={{ fontWeight: 600, color: '#475569' }}>
+                      {user.role === 'GUARDIA' ? 'Recintos asignados al guardia:' : 'Recintos supervisados:'}
+                    </small>
+                    {sites.filter((s) => s.isActive).length > 1 ? (
+                      <button
+                        type="button"
+                        style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '0.25rem', cursor: 'pointer' }}
+                        onClick={() => void toggleAllSites(user, sites.filter((s) => s.isActive))}
+                        disabled={pending}
+                      >
+                        {sites.filter((s) => s.isActive).every((site) => user.siteIds.includes(site.id))
+                          ? 'Desmarcar todos'
+                          : 'Asignar todos los recintos'}
+                      </button>
+                    ) : null}
+                  </div>
                   {sites.filter((site) => site.isActive).map((site) => (
                     <label key={site.id}>
                       <input type="checkbox" checked={user.siteIds.includes(site.id)} onChange={() => assign(user, site.id)} />

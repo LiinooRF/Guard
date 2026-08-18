@@ -11,6 +11,12 @@ import { useGuardBridge } from './use-guard-bridge';
 export interface GuardHomeData {
   hasAssignment: boolean;
   message?: string;
+  assignedSites?: Array<{
+    id: string;
+    name: string;
+    branchName?: string;
+  }>;
+  selectedSiteId?: string;
   shift?: {
     scheduledStartAt: string;
     scheduledEndAt: string;
@@ -32,6 +38,7 @@ export interface GuardHomeData {
   patrol?: {
     id: string;
     status: 'pendiente' | 'en_curso';
+    siteId?: string;
     siteName: string;
     /** Zona horaria del RECINTO. La marca de agua de la foto la usa. */
     timezone?: string;
@@ -109,7 +116,27 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
     return (
       <section className="empty-assignment" aria-live="polite">
         <span className="empty-icon">✓</span>
-        <h2>No tienes un turno asignado</h2>
+        {data.assignedSites && data.assignedSites.length > 1 ? (
+          <div className="guard-site-selector-row" style={{ marginBottom: '1.25rem', width: '100%', maxWidth: '340px' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', display: 'flex', flexDirection: 'column', gap: '0.35rem', textAlign: 'left' }}>
+              <span>📍 Seleccionar recinto asignado:</span>
+              <select
+                value={data.selectedSiteId ?? ''}
+                onChange={(e) => {
+                  router.push(`/app/guardia?siteId=${e.target.value}`);
+                }}
+                style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.95rem', backgroundColor: '#f8fafc', color: '#0f172a' }}
+              >
+                {data.assignedSites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.branchName ? `${site.branchName} · ${site.name}` : site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        <h2>No tienes una ronda asignada</h2>
         <p>{data.message ?? 'Cuando te asignen una ronda, aparecerá aquí automáticamente.'}</p>
         <ConnectionStatus pendingItems={data.synchronization.pendingItems} />
       </section>
@@ -173,13 +200,37 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           </span>
           <ConnectionStatus pendingItems={data.synchronization.pendingItems} compact />
         </div>
+
+        {data.assignedSites && data.assignedSites.length > 1 ? (
+          <div className="guard-site-selector-row" style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span>📍 Cambiar de recinto asignado:</span>
+              <select
+                value={data.selectedSiteId ?? patrol.siteId ?? ''}
+                onChange={(e) => {
+                  router.push(`/app/guardia?siteId=${e.target.value}`);
+                }}
+                style={{ padding: '0.45rem 0.7rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: '#f8fafc', color: '#0f172a' }}
+              >
+                {data.assignedSites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.branchName ? `${site.branchName} · ${site.name}` : site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+
         <span className="eyebrow">Tu tarea ahora</span>
-        <h2>{patrol.routeName}</h2>
-        <p className="guard-site">{patrol.siteName}</p>
+        <h2>Ronda en {patrol.siteName}</h2>
+        <p className="guard-site" style={{ fontSize: '1.05rem', fontWeight: 600, color: '#1e293b' }}>
+          {patrol.routeName}
+        </p>
 
         {pending ? (
           <button className="guard-primary-action" type="button" onClick={startPatrol} disabled={starting}>
-            {starting ? 'Iniciando…' : 'Iniciar ronda'}
+            {starting ? 'Iniciando…' : `Iniciar ronda en ${patrol.siteName}`}
           </button>
         ) : null}
         {/* No hay boton de escanear aca: con la ronda en curso, la pagina monta
@@ -189,7 +240,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
         {error ? <p className="guard-action-error" role="alert">{error}</p> : null}
 
         <div className="guard-shift-grid">
-          <span><small>Turno</small><strong>{time.format(new Date(shift.scheduledStartAt))} — {time.format(new Date(shift.scheduledEndAt))}</strong></span>
+          <span><small>Ronda</small><strong>{time.format(new Date(shift.scheduledStartAt))} — {time.format(new Date(shift.scheduledEndAt))}</strong></span>
           <span><small>Progreso</small><strong>{completed} de {total} puntos</strong></span>
           <span><small>Duración estimada</small><strong>{patrol.estimatedDurationMin} min</strong></span>
         </div>

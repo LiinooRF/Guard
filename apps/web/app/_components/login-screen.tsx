@@ -2,7 +2,7 @@
 
 import type { Role } from '@sentrycore/shared';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
 import { esAppDelGuardia } from '../_lib/app-del-guardia';
@@ -28,6 +28,7 @@ export function LoginScreen() {
   const [tenantChoices, setTenantChoices] = useState<
     Array<{ tenantId: string; tenantName: string; role: Role }>
   >([]);
+  const [nfcFeedback, setNfcFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     function readActionLink() {
@@ -46,6 +47,84 @@ export function LoginScreen() {
     window.addEventListener('hashchange', readActionLink);
     return () => window.removeEventListener('hashchange', readActionLink);
   }, []);
+
+  const loginWithNfc = useCallback(
+    async (cardUid: string) => {
+      if (!cardUid) return;
+      if (!navigator.onLine) {
+        setStatus('offline');
+        return;
+      }
+      setStatus('loading');
+      setErrorMessage('');
+      setNfcFeedback(`Tarjeta NFC detectada (${cardUid}) · Iniciando sesión…`);
+
+      try {
+        const response = await fetch(`${apiUrl}/auth/nfc-login`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cardUid,
+            ...(tenantId ? { tenantId } : {}),
+          }),
+        });
+
+        const result = (await response.json()) as {
+          requiresTenantSelection?: boolean;
+          tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
+          user?: { role: Role };
+          code?: string;
+          message?: string | string[];
+        };
+
+        if (result.requiresTenantSelection && result.tenants) {
+          setTenantChoices(result.tenants);
+          setStatus('idle');
+          setNfcFeedback(null);
+          return;
+        }
+        if (!response.ok || !result.user) {
+          setErrorMessage(
+            result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
+              ? result.message
+              : 'No se reconoció la tarjeta NFC o el guardia no está activo.',
+          );
+          setStatus('error');
+          setNfcFeedback(null);
+          return;
+        }
+
+        router.push(`/app/${result.user.role.toLowerCase()}`);
+        router.refresh();
+      } catch {
+        setStatus(navigator.onLine ? 'error' : 'offline');
+        setNfcFeedback(null);
+      }
+    },
+    [apiUrl, router, tenantId],
+  );
+
+  useEffect(() => {
+    function alDetectarTarjetaNfc(uid: string) {
+      if (mode !== 'login') return;
+      void loginWithNfc(uid);
+    }
+
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<{ uid: string }>;
+      if (custom.detail?.uid) alDetectarTarjetaNfc(custom.detail.uid);
+    };
+
+    (window as unknown as { __sentrycoreNfcLogin?: (uid: string) => void }).__sentrycoreNfcLogin =
+      alDetectarTarjetaNfc;
+    window.addEventListener('sentrycore:nfc:login', handler);
+
+    return () => {
+      delete (window as unknown as { __sentrycoreNfcLogin?: unknown }).__sentrycoreNfcLogin;
+      window.removeEventListener('sentrycore:nfc:login', handler);
+    };
+  }, [mode, loginWithNfc]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -218,11 +297,30 @@ export function LoginScreen() {
           </h2>
           <p className="login-intro">
             {mode === 'login'
-              ? 'Ingresa con las credenciales entregadas por tu organización.'
+              ? 'Ingresa tus credenciales o acerca tu tarjeta NFC.'
               : mode === 'recovery'
                 ? 'Te enviaremos un enlace si el correo está registrado.'
                 : 'Define una contraseña segura para continuar.'}
           </p>
+
+          {nfcFeedback ? (
+            <div
+              className="form-message info"
+              role="status"
+              style={{
+                marginBottom: '1rem',
+                backgroundColor: '#eff6ff',
+                color: '#1d4ed8',
+                border: '1px solid #bfdbfe',
+                borderRadius: '0.5rem',
+                padding: '0.75rem',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
+            >
+              <span>📇 {nfcFeedback}</span>
+            </div>
+          ) : null}
 
           {mode === 'login' ? <form className="login-form" noValidate onSubmit={submit}>
             <label>

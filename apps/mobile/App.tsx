@@ -20,6 +20,7 @@ import { crearCamaraQr, VistaCamaraQr } from './src/qr/camara';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import { sincronizarCola } from './src/offline/sync-queue';
 import { registrarSincronizacionBackground } from './src/offline/sync-task';
+import { iniciarEscuchaNfcLogin, detenerEscuchaNfcLogin } from './src/nfc/login-nfc-listener';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -89,6 +90,45 @@ function configuredPortal(): URL {
   return parsed;
 }
 
+/**
+ * Determina si un error HTTP es un fallo fatal de carga del portal o un evento
+ * normal de subrecursos / autenticacion que debe manejar el JavaScript web.
+ */
+function esErrorHttpFatalPortal(
+  url: string | undefined,
+  statusCode: number,
+  portalOrigin: string,
+): boolean {
+  // Codigos 4xx son controlados por la app web (401 en auth/logout, 403, 404 en assets, 429, etc.)
+  if (statusCode < 500) {
+    return false;
+  }
+
+  if (!url) {
+    return true;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.origin !== portalOrigin) return false;
+    const path = urlObj.pathname;
+    if (
+      path.startsWith('/api/') ||
+      path.startsWith('/auth/') ||
+      path.startsWith('/_next/') ||
+      path.includes('favicon') ||
+      /\.(svg|png|jpg|jpeg|gif|webp|ico|css|js|map|json)$/i.test(path)
+    ) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  // Fallos 5xx en el documento HTML raiz
+  return true;
+}
+
 export default function App() {
   const portal = useMemo(configuredPortal, []);
   const webView = useRef<WebView>(null);
@@ -105,6 +145,8 @@ export default function App() {
   const [motivoFallo, setMotivoFallo] = useState<string>();
   /** Solo se recarga sola UNA vez: en bucle taparia un fallo de verdad. */
   const reintentado = useRef(false);
+  const cargadoInicialmente = useRef(false);
+  const [urlActual, setUrlActual] = useState(portal.href);
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -140,7 +182,7 @@ export default function App() {
    * suele ser mala. Menos que eso convierte una red lenta en un falso error.
    */
   useEffect(() => {
-    if (!loading || failed) return undefined;
+    if (!loading || failed || cargadoInicialmente.current) return undefined;
     const aviso = setTimeout(() => {
       // Primero se reintenta SOLO. Comprobado en varios telefonos: la primera
       // carga se queda colgada y la recarga entra sin problema — o sea que es
@@ -164,22 +206,6 @@ export default function App() {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
 
-
-  /*
-   * El permiso de camara YA NO se pide al arrancar.
-   *
-   * Se pedia aca porque la foto la toma el portal con `<input type="file"
-   * capture>` y ese camino no pide el permiso por su cuenta: sin el concedido,
-   * el boton "Tomar foto" no hace nada. Pero pedirlo en una pantalla en blanco,
-   * antes del login, es preguntarle a alguien por fotos y videos cuando todavia
-   * no hay ningun motivo en pantalla —y en Android son dos negativas y se acabo
-   * el dialogo para siempre—.
-   *
-   * Ahora lo pide el portal por el puente, en `pedirFotoDelPunto`: el instante
-   * en que el guardia va a fotografiar el acceso critico, con el punto ya
-   * escaneado y el motivo a la vista. Sigue llegando ANTES de que el boton
-   * exista, que es la condicion que hacia falta.
-   */
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
       puente.notificarConexion(normalizarConexion(estado));
@@ -190,9 +216,36 @@ export default function App() {
     return () => subscription.remove();
   }, [puente]);
 
+  // Escaneo continuo NFC en la pantalla de Login
+  useEffect(() => {
+    const enPantallaLogin = !urlActual.includes('/app');
+    if (enPantallaLogin && !failed && !bloqueo) {
+      void iniciarEscuchaNfcLogin((uid) => {
+        const script = `
+          if (window.__sentrycoreNfcLogin) {
+            window.__sentrycoreNfcLogin(${JSON.stringify(uid)});
+          }
+          window.dispatchEvent(new CustomEvent('sentrycore:nfc:login', { detail: { uid: ${JSON.stringify(uid)} } }));
+          true;
+        `;
+        webView.current?.injectJavaScript(script);
+      });
+    } else {
+      detenerEscuchaNfcLogin();
+    }
+    return () => {
+      detenerEscuchaNfcLogin();
+    };
+  }, [urlActual, failed, bloqueo]);
+
   const allowNavigation = (navigation: WebViewNavigation) => {
     try {
-      return new URL(navigation.url).origin === portal.origin;
+      const target = new URL(navigation.url);
+      if (target.origin === portal.origin) {
+        setUrlActual(navigation.url);
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -226,17 +279,31 @@ export default function App() {
         onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}
-        onLoadStart={() => {
-          setLoading(true);
-          setFailed(false);
+        onNavigationStateChange={(navState) => {
+          setUrlActual(navState.url);
         }}
-        onLoadEnd={() => setLoading(false)}
+        onLoadStart={() => {
+          if (!cargadoInicialmente.current) {
+            setLoading(true);
+            setFailed(false);
+          }
+        }}
+        onLoadEnd={() => {
+          cargadoInicialmente.current = true;
+          setLoading(false);
+        }}
         onError={({ nativeEvent }) => {
-          setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
-          mostrarFallo();
+          // Ignorar abortos/cancelaciones de peticiones intermedias
+          if (nativeEvent.code === -3 || nativeEvent.code === -999) {
+            return;
+          }
+          if (!cargadoInicialmente.current) {
+            setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
+            mostrarFallo();
+          }
         }}
         onHttpError={({ nativeEvent }) => {
-          if (nativeEvent.statusCode >= 400) {
+          if (esErrorHttpFatalPortal(nativeEvent.url, nativeEvent.statusCode, portal.origin)) {
             setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
             mostrarFallo();
           }
