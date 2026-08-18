@@ -47,7 +47,7 @@ describe('leerEvidencia', () => {
   let raiz: string;
 
   beforeEach(async () => {
-    raiz = await mkdtemp(join(tmpdir(), 'voxia-evidencia-'));
+    raiz = await mkdtemp(join(tmpdir(), 'sentrycore-evidencia-'));
     await mkdir(join(raiz, 'tenant', 'ronda'), { recursive: true });
   });
 
@@ -171,7 +171,7 @@ describe('leerLogoMarca', () => {
   let raiz: string;
 
   beforeEach(async () => {
-    raiz = await mkdtemp(join(tmpdir(), 'voxia-logo-'));
+    raiz = await mkdtemp(join(tmpdir(), 'sentrycore-logo-'));
   });
 
   afterEach(async () => {

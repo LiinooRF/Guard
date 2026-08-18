@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { hasPermission } from '@voxia/shared';
+import { hasPermission } from '@sentrycore/shared';
 
 import type { AuditService } from '../audit/audit.service';
 import type { AuthService } from '../auth/auth.service';

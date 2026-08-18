@@ -13,7 +13,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * cosas y sobrevive a cualquier limpieza de Redis.
  *
  * ES BITACORA, NO ESTADO: se inserta y se lee, nunca se modifica ni se borra.
- * Por eso voxia_app recibe SELECT e INSERT y nada mas. Que el correo se haya
+ * Por eso sentrycore_app recibe SELECT e INSERT y nada mas. Que el correo se haya
  * entregado de verdad lo sabe la cola de mail; aca queda registrado que el
  * sistema lo despacho, que es lo que hace falta para no despacharlo de nuevo.
  *
@@ -76,12 +76,12 @@ export class CreateReportDeliveries1725462086000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Sin UPDATE ni DELETE: es el registro de que el informe ya salio.
           -- Si se pudiera borrar, se podria reenviar, y la idempotencia seria
           -- una recomendacion en vez de una garantia.
-          GRANT SELECT, INSERT ON report_deliveries TO voxia_app;
-          REVOKE UPDATE, DELETE ON report_deliveries FROM voxia_app;
+          GRANT SELECT, INSERT ON report_deliveries TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON report_deliveries FROM sentrycore_app;
         END IF;
       END
       $$

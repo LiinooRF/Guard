@@ -1,5 +1,5 @@
 ﻿/**
- * Contrato del puente nativo <-> WebView de VoxIA Control.
+ * Contrato del puente nativo <-> WebView de SentryCore.
  *
  * ---------------------------------------------------------------------------
  * POR QUE ESTE ARCHIVO ESTA VERSIONADO Y POR QUE IMPORTA TANTO
@@ -44,7 +44,7 @@
  * problema que este archivo existe para evitar.
  */
 
-export const PUENTE = 'voxia.bridge' as const;
+export const PUENTE = 'sentrycore.bridge' as const;
 
 /**
  * Version que habla ESTE build del shell.
@@ -498,7 +498,7 @@ export function verificarCompatibilidad(requiere: HolaPayload['requiere']): Vere
         ok: false,
         motivo: 'app-antigua',
         mensaje:
-          'Tu version de VoxIA Control es muy antigua para este portal. ' +
+          'Tu version de SentryCore es muy antigua para este portal. ' +
           'Actualizala desde Google Play para poder escanear.',
       };
     }

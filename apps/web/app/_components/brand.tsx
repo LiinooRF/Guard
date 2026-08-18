@@ -4,7 +4,7 @@
  * Con `nombre` o `logoUri` dibuja la marca DE LA EMPRESA; sin ellos, la del
  * producto. La distincion importa: en un producto white-label el cliente final
  * no deberia notar que el sistema es de un tercero, asi que en cuanto el tenant
- * tiene marca propia, "VoxIA" desaparece de su pantalla.
+ * tiene marca propia, "SentryCore" desaparece de su pantalla.
  *
  * El logo llega como data URI desde `tenant_branding.logo_uri` (nunca una URL
  * externa: el panel no le cuenta a un tercero cuando se abre) y se dibuja con
@@ -22,7 +22,7 @@ export function Brand({
   /** Logo del tenant como data URI; sin el, el escudo del producto. */
   logoUri?: string | null;
 }) {
-  const etiqueta = nombre ?? 'VoxIA Control';
+  const etiqueta = nombre ?? 'SentryCore';
   return (
     <div className="brand" aria-label={etiqueta}>
       {logoUri ? (
@@ -43,7 +43,7 @@ export function Brand({
           <strong>{nombre}</strong>
         ) : (
           <>
-            <strong>VoxIA</strong>
+            <strong>SentryCore</strong>
             {!compact ? <small>Control</small> : null}
           </>
         )}

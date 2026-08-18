@@ -24,10 +24,10 @@ contexto transaccional por request.
 ## Operación
 
 ```bash
-npm run db:migrate --workspace @voxia/api
-npm run db:revert --workspace @voxia/api
-npm run seed --workspace @voxia/api
+npm run db:migrate --workspace @sentrycore/api
+npm run db:revert --workspace @sentrycore/api
+npm run seed --workspace @sentrycore/api
 ```
 
-Las migraciones corren antes del despliegue con credenciales de migración. La API usa `voxia_app`,
+Las migraciones corren antes del despliegue con credenciales de migración. La API usa `sentrycore_app`,
 sin superusuario ni `BYPASSRLS`.

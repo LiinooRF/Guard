@@ -8,7 +8,7 @@ import {
 import { TraductorContratoInterno } from './registro-envios.traductor-interno';
 
 const SECRETO = 'secreto-de-pruebas-que-no-esta-en-ningun-entorno';
-const MESSAGE_ID = 'abc123@voxia.example';
+const MESSAGE_ID = 'abc123@sentrycore.example';
 const AHORA_SEG = 1_756_000_000;
 const AHORA_MS = AHORA_SEG * 1000;
 
@@ -121,7 +121,7 @@ describe('TraductorContratoInterno · una peticion', () => {
     const original = elemento();
 
     for (const alterado of [
-      { ...original, messageId: 'otro@voxia.example' },
+      { ...original, messageId: 'otro@sentrycore.example' },
       { ...original, evento: 'rebotado' },
       { ...original, timestamp: AHORA_SEG - 1 },
     ]) {
@@ -201,14 +201,14 @@ describe('TraductorContratoInterno · lotes', () => {
   it('traduce un lote donde cada elemento trae su propia firma', async () => {
     const lote = [
       elemento(),
-      elemento({ messageId: 'def456@voxia.example', evento: 'rebotado', motivo: '550 rechazado' }),
+      elemento({ messageId: 'def456@sentrycore.example', evento: 'rebotado', motivo: '550 rechazado' }),
     ];
 
     await expect(traducir(lote)).resolves.toEqual({
       ok: true,
       eventos: [
         expect.objectContaining({ messageId: MESSAGE_ID, evento: 'entregado' }),
-        expect.objectContaining({ messageId: 'def456@voxia.example', evento: 'rebotado' }),
+        expect.objectContaining({ messageId: 'def456@sentrycore.example', evento: 'rebotado' }),
       ],
     });
   });
@@ -216,7 +216,7 @@ describe('TraductorContratoInterno · lotes', () => {
   it('un solo elemento mal firmado tumba el lote completo', async () => {
     // Aplicar los buenos y callar el malo le devolveria 202 a quien inyecto el
     // evento falso, y el rechazo no quedaria en ninguna parte.
-    const lote = [elemento(), { ...elemento({ messageId: 'colado@voxia.example' }), firma: 'f'.repeat(64) }];
+    const lote = [elemento(), { ...elemento({ messageId: 'colado@sentrycore.example' }), firma: 'f'.repeat(64) }];
 
     await expect(traducir(lote)).resolves.toEqual({ ok: false, motivo: 'firma_invalida' });
   });

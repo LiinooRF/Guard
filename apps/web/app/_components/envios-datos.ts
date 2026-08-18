@@ -95,7 +95,7 @@ export interface RecintoConocido {
  * lo compartido vive en `packages/shared`, y estos estados todavia no estan ahi.
  * Mientras sigan duplicados, una lista que se quede corta NO rompe la pantalla
  * —`describirEstado` arma una ficha legible para lo que no conoce— pero si deja
- * el estado nuevo fuera del selector. Moverlos a `@voxia/shared` esta propuesto
+ * el estado nuevo fuera del selector. Moverlos a `@sentrycore/shared` esta propuesto
  * en INTEGRACION.md.
  */
 export const ESTADOS_ENVIO = [

@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ROLES, type Role } from '@voxia/shared';
+import { ROLES, type Role } from '@sentrycore/shared';
 import { argon2id, hash, verify } from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';

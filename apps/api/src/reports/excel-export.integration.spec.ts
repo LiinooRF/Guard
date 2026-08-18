@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { DataSource, type QueryRunner } from 'typeorm';
 
 import { BrandingService } from '../branding/branding.service';

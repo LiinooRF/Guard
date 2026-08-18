@@ -1,6 +1,6 @@
 'use client';
 
-import type { Role } from '@voxia/shared';
+import type { Role } from '@sentrycore/shared';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
@@ -101,7 +101,7 @@ export function LoginScreen() {
 
       if (
         result.user.role === 'GUARDIA' &&
-        !navigator.userAgent.includes('VoxIAAndroid/')
+        !navigator.userAgent.includes('SentryCoreAndroid/')
       ) {
         await fetch(`${apiUrl}/auth/logout`, {
           method: 'POST',
@@ -394,7 +394,7 @@ export function LoginScreen() {
             </form>
           ) : null}
         </div>
-        <footer>VoxIA Control · Acceso seguro</footer>
+        <footer>SentryCore · Acceso seguro</footer>
       </section>
     </main>
   );

@@ -1,4 +1,4 @@
-# Tamaño de la app y arranque en gama baja — VoxIA Control (issue #137)
+# Tamaño de la app y arranque en gama baja — SentryCore (issue #137)
 
 El presupuesto de tamaño de la app Android, cómo se mide, cómo lo verifica la CI
 y el protocolo para probar una ronda completa en un teléfono de gama baja real.
@@ -164,8 +164,8 @@ Contra un teléfono conectado por `adb`:
 
 ```bash
 # Tamano instalado real, sumando base y splits
-adb shell pm path com.voxtilabs.voxiacontrol
-adb shell du -sh /data/app/*voxiacontrol*/
+adb shell pm path com.voxtilabs.sentrycore
+adb shell du -sh /data/app/*sentrycore*/
 ```
 
 ### 4.3 Payload de JavaScript
@@ -377,7 +377,7 @@ el reloj A.
 | Sin red: que aparezca la pantalla "Sin conexión" | 3 s | **5 s** |
 
 El tercero es el que más se olvida y el que más soporte genera. Hoy `App.tsx`
-muestra "Abriendo VoxIA Control…" mientras el WebView intenta cargar y recién
+muestra "Abriendo SentryCore…" mientras el WebView intenta cargar y recién
 pasa a "Sin conexión" cuando el WebView falla. Si ese fallo tarda 30 segundos en
 un subterráneo, el guardia ve una pantalla que no dice nada y llama por radio.
 **Cuánto tarda ese timeout hay que medirlo, no suponerlo.**
@@ -385,7 +385,7 @@ un subterráneo, el guardia ve una pantalla que no dice nada y llama por radio.
 ### Cómo se mide el reloj A
 
 ```bash
-PKG=com.voxtilabs.voxiacontrol
+PKG=com.voxtilabs.sentrycore
 
 # Resolver la actividad de lanzamiento sin adivinar el nombre de la clase
 ACT=$(adb shell cmd package resolve-activity --brief \
@@ -506,7 +506,7 @@ idénticos):
 ### Vigilar mientras corre
 
 ```bash
-PKG=com.voxtilabs.voxiacontrol
+PKG=com.voxtilabs.sentrycore
 
 # Memoria: en un equipo de 2 GB, un PSS total sobre ~250 MB es zona de riesgo
 adb shell dumpsys meminfo "$PKG" | head -30
@@ -528,7 +528,7 @@ permanente. El nombre de la opción cambia por marca y por versión ("inicio
 automático", "apps en suspensión", "optimización de batería", "apps
 protegidas").
 
-Consecuencia operativa: **excluir VoxIA Control del ahorro de batería tiene que
+Consecuencia operativa: **excluir SentryCore del ahorro de batería tiene que
 ser un paso de la entrega de cada teléfono al guardia**, con instrucciones por
 marca escritas para el jefe de operaciones. Un equipo entregado sin ese paso
 produce rondas con la traza cortada que después nadie sabe explicar.

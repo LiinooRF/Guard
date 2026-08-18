@@ -211,13 +211,13 @@ export default async function PantallaDeMapa({
  */
 async function pedir<T>(ruta: string, respaldo: T): Promise<T> {
   const galletas = await cookies();
-  const acceso = galletas.get('voxia_access');
+  const acceso = galletas.get('sentrycore_access');
   if (!acceso) return respaldo;
 
   const base = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '/api';
   try {
     const respuesta = await fetch(`${base}${ruta}`, {
-      headers: { cookie: `voxia_access=${acceso.value}` },
+      headers: { cookie: `sentrycore_access=${acceso.value}` },
       cache: 'no-store',
     });
     if (!respuesta.ok) return respaldo;

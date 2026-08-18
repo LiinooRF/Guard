@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import type { CSSProperties } from 'react';
 
-import type { ContrastCheck, TenantBranding } from '@voxia/shared';
-import { brandingCssVariables, tenantBrandingSchema } from '@voxia/shared';
+import type { ContrastCheck, TenantBranding } from '@sentrycore/shared';
+import { brandingCssVariables, tenantBrandingSchema } from '@sentrycore/shared';
 
 /**
  * La marca del tenant, resuelta EN EL SERVIDOR antes del primer render (#117).
@@ -40,13 +40,13 @@ export function marcaPorDefecto(): MarcaDelTenant {
  */
 export async function marcaDelTenant(): Promise<MarcaDelTenant> {
   const galletas = await cookies();
-  const acceso = galletas.get('voxia_access');
+  const acceso = galletas.get('sentrycore_access');
   if (!acceso) return marcaPorDefecto();
 
   const base = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '/api';
   try {
     const respuesta = await fetch(`${base}/branding`, {
-      headers: { cookie: `voxia_access=${acceso.value}` },
+      headers: { cookie: `sentrycore_access=${acceso.value}` },
       cache: 'no-store',
     });
     if (!respuesta.ok) return marcaPorDefecto();

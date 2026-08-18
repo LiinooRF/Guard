@@ -6,7 +6,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { patrolRulesSchema } from '@voxia/shared';
+import { patrolRulesSchema } from '@sentrycore/shared';
 import { argon2id, hash } from 'argon2';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DataSource, QueryFailedError } from 'typeorm';

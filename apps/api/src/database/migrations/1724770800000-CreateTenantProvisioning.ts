@@ -9,7 +9,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * El SUPERADMIN corre SIN contexto de tenant. `app_tenant_id()` es NULL, y toda
  * tabla de negocio tiene RLS con FORCE y politica `tenant_id = app_tenant_id()`,
- * que falla cerrada. Es decir: voxia_app sin contexto NO VE NI ESCRIBE NADA en
+ * que falla cerrada. Es decir: sentrycore_app sin contexto NO VE NI ESCRIBE NADA en
  * tenants, users, memberships, sites, tenant_rules ni patrols. Un alta de empresa
  * hecha con SQL suelto desde la API simplemente no insertaria.
  *
@@ -27,7 +27,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * politicas RLS quedan intactas.
  *
  * Supuesto del que dependen estas funciones (el mismo de platform_create_tenant):
- * el dueño del esquema —el rol que corre las migraciones, separado de voxia_app
+ * el dueño del esquema —el rol que corre las migraciones, separado de sentrycore_app
  * segun CONTRIBUTING.md— se salta RLS. Si algun dia las migraciones pasaran a
  * correr con un rol sin BYPASSRLS, estas funciones dejarian de ver filas y habria
  * que revisarlas junto con platform_list_tenants y platform_purge_tenant.
@@ -339,13 +339,13 @@ export class CreateTenantProvisioning1724770800000 implements MigrationInterface
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           GRANT EXECUTE ON FUNCTION platform_provision_tenant(
             uuid, uuid, text, text, text, text, uuid, citext, text, text, text,
             text, timestamptz, jsonb, uuid, text, text, text
-          ) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_tenant_metrics(uuid, integer) TO voxia_app;
-          GRANT EXECUTE ON FUNCTION platform_global_metrics(uuid, integer) TO voxia_app;
+          ) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_tenant_metrics(uuid, integer) TO sentrycore_app;
+          GRANT EXECUTE ON FUNCTION platform_global_metrics(uuid, integer) TO sentrycore_app;
         END IF;
       END
       $$

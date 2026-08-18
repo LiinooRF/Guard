@@ -6,7 +6,7 @@ import {
   hasPermission,
   isScopedToAssignedSites,
   type Permission,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 describe('matriz RBAC', () => {
   it('solo SUPERADMIN cruza tenants', () => {

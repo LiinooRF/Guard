@@ -1,5 +1,5 @@
 {
-  "name": "@voxia/shared",
+  "name": "@sentrycore/shared",
   "version": "0.1.0",
   "private": true,
   "description": "Tipos, roles y reglas de negocio compartidos entre api, web y movil",

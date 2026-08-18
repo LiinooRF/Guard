@@ -61,12 +61,12 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * puede setear `app.tenant_id` porque justamente lo que necesita saber es de
  * que tenants hay rondas pendientes. Con `patrols`, `tenants`,
  * `report_deliveries` y `report_dispatch_attempts` bajo RLS con FORCE, una
- * consulta directa desde voxia_app devolveria cero filas siempre (la politica
+ * consulta directa desde sentrycore_app devolveria cero filas siempre (la politica
  * falla cerrada, que es lo correcto).
  *
  * Es SECURITY DEFINER, igual que `platform_list_tenants`: corre como el dueño de
  * las tablas —el rol de migraciones, que es superusuario y por eso si se salta
- * RLS— y no como voxia_app, que sigue sin BYPASSRLS.
+ * RLS— y no como sentrycore_app, que sigue sin BYPASSRLS.
  *
  * QUE DEVUELVE, Y QUE NO
  * ----------------------
@@ -139,13 +139,13 @@ export class CreateReportDispatchBacklog1725472900000 implements MigrationInterf
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- Sin UPDATE ni DELETE, por la misma razon que report_deliveries: si
           -- la marca se pudiera borrar, el barrido volveria a rescatar rondas
           -- que ya se atendieron. El script de init deja ALTER DEFAULT
           -- PRIVILEGES con los cuatro verbos, asi que el REVOKE no es adorno.
-          GRANT SELECT, INSERT ON report_dispatch_attempts TO voxia_app;
-          REVOKE UPDATE, DELETE ON report_dispatch_attempts FROM voxia_app;
+          GRANT SELECT, INSERT ON report_dispatch_attempts TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON report_dispatch_attempts FROM sentrycore_app;
         END IF;
       END
       $$
@@ -216,8 +216,8 @@ export class CreateReportDispatchBacklog1725472900000 implements MigrationInterf
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION report_dispatch_backlog(integer, integer, integer) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION report_dispatch_backlog(integer, integer, integer) TO sentrycore_app;
         END IF;
       END
       $$

@@ -105,8 +105,8 @@ export class CreateProgressiveBilling1723302000000 implements MigrationInterface
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT EXECUTE ON FUNCTION platform_current_billing(uuid) TO voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT EXECUTE ON FUNCTION platform_current_billing(uuid) TO sentrycore_app;
         END IF;
       END
       $$

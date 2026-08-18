@@ -26,7 +26,7 @@ import type { CrashEvent } from './crash-event';
 const SENTRY_VERSION = 7;
 
 /** Se ve en el evento; ayuda a distinguir estos eventos de los de un SDK real. */
-export const SENTRY_CLIENT = 'voxia-crash-reporter/1.0';
+export const SENTRY_CLIENT = 'sentrycore-crash-reporter/1.0';
 
 interface SentryFrame {
   filename: string;
@@ -93,7 +93,7 @@ export function construirEventoSentry(evento: CrashEvent): Record<string, unknow
     timestamp: evento.occurredAt.toISOString(),
     platform: evento.tags.source === 'app' ? 'javascript' : 'node',
     level: evento.level,
-    logger: `voxia.${evento.tags.source}`,
+    logger: `sentrycore.${evento.tags.source}`,
     release: evento.release,
     environment: evento.environment,
     // Agrupacion nuestra y no la de Sentry: la nuestra ya ignora los numeros

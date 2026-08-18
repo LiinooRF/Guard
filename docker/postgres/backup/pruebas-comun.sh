@@ -6,7 +6,7 @@
 # ni tzdata, y las dos cosas son justamente lo que se esta probando.
 #
 #   docker run --rm -e TZ=America/Santiago -v "$PWD/docker/postgres/backup:/scripts:ro" \
-#     voxia-backup:ci sh /scripts/pruebas-comun.sh
+#     sentrycore-backup:ci sh /scripts/pruebas-comun.sh
 #
 # Las corre .github/workflows/backup-restore.yml en cada PR que toque esta
 # carpeta. Salida 0 si todo pasa.
@@ -62,7 +62,7 @@ for MALA in "2026-13-01" "2026-02-30" "2026-02-31" "2026-04-31" "2026-1-1" "no-e
 done
 
 echo "== 3. secretos fuera del log (regla 5) =="
-igual "destino normal" "$(redactar_remoto 'r2:voxia-respaldos/postgres')" "r2:voxia-respaldos/postgres"
+igual "destino normal" "$(redactar_remoto 'r2:sentrycore-respaldos/postgres')" "r2:sentrycore-respaldos/postgres"
 REDACTADO=$(redactar_remoto ':s3,access_key_id=AKIA_SECRETA,secret_access_key=CLAVE_SECRETA:balde/ruta')
 igual "cadena de conexion" "$REDACTADO" ":s3,(parametros ocultos):balde/ruta"
 case "$REDACTADO" in

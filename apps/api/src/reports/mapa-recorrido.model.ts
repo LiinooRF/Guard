@@ -1,4 +1,4 @@
-import type { ScanAnomaly } from '@voxia/shared';
+import type { ScanAnomaly } from '@sentrycore/shared';
 
 import { haversineM } from '../geo/haversine';
 import type { FilaPunto } from './patrol-report.model';

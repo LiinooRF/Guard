@@ -108,7 +108,7 @@ export interface GuardShiftData {
   qrFallbackEnabled?: boolean;
   /**
    * Horario hábil del recinto y las reglas de foto, para que la pantalla decida
-   * sin señal con `isPhotoRequired()` de `@voxia/shared`. Ver guard-shift-state.
+   * sin señal con `isPhotoRequired()` de `@sentrycore/shared`. Ver guard-shift-state.
    */
   photoPolicy?: PoliticaFoto;
   patrol?: {
@@ -1037,12 +1037,12 @@ function describirFalloDeEscaneo(causa: unknown): string | undefined {
     // texto dice DÓNDE se arregla en vez de repetir el código del error.
     if (causa.codigo === 'permiso-denegado') {
       return 'La app no tiene permiso para usar la cámara. Actívalo en los ajustes del ' +
-        'teléfono, en Aplicaciones › VoxIA Control › Permisos, y vuelve a intentarlo.';
+        'teléfono, en Aplicaciones › SentryCore › Permisos, y vuelve a intentarlo.';
     }
     return causa.message;
   }
   if (causa instanceof Error && causa.message === 'sin-puente') {
-    return 'Esta pantalla solo escanea desde la app VoxIA Control del teléfono.';
+    return 'Esta pantalla solo escanea desde la app SentryCore del teléfono.';
   }
   if (causa instanceof Error && causa.message === 'puente-incompatible') {
     return 'Tu app quedó desactualizada para este portal. Actualízala desde Google Play.';

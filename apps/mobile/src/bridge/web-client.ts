@@ -62,9 +62,9 @@ interface PuenteInyectado {
 }
 
 function puenteInyectado(): PuenteInyectado | undefined {
-  const global = globalThis as unknown as { __voxiaPuente?: PuenteInyectado };
-  const candidato = global.__voxiaPuente;
-  return candidato !== undefined && candidato.protocolo === 'voxia.bridge' ? candidato : undefined;
+  const global = globalThis as unknown as { __sentrycorePuente?: PuenteInyectado };
+  const candidato = global.__sentrycorePuente;
+  return candidato !== undefined && candidato.protocolo === 'sentrycore.bridge' ? candidato : undefined;
 }
 
 export type EstadoPuente =

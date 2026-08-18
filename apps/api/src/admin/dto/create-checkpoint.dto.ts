@@ -43,7 +43,7 @@ export class CreateCheckpointDto {
 
   /**
    * Sobreescribe la regla de foto SOLO para este punto. Si no viene, manda la
-   * regla del tenant (`isPhotoRequired()` en @voxia/shared).
+   * regla del tenant (`isPhotoRequired()` en @sentrycore/shared).
    */
   @IsOptional()
   @IsBoolean()

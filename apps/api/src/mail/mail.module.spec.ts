@@ -12,7 +12,7 @@ import { MailQueueService } from './mail-queue.service';
 import { SmtpProvider } from './smtp.provider';
 
 const baseEnvironment = {
-  MAIL_FROM: 'VoxIA <no-reply@example.test>',
+  MAIL_FROM: 'SentryCore <no-reply@example.test>',
   MAILPIT_HOST: 'localhost',
   MAILPIT_PORT: 1025,
   SMTP_HOST: 'smtp.example.test',
@@ -57,12 +57,12 @@ describe('createDominiosNoDespachables', () => {
 
   it('MAIL_BLOCKED_DOMAINS suma dominios propios', () => {
     const lista = createDominiosNoDespachables({
-      MAIL_BLOCKED_DOMAINS: 'demo-andina.cl, staging.voxia.cl',
+      MAIL_BLOCKED_DOMAINS: 'demo-andina.cl, staging.sentrycore.cl',
       MAIL_ALLOW_RESERVED_DOMAINS: false,
     });
 
     expect(esDespachable('a@demo-andina.cl', lista)).toBe(false);
-    expect(esDespachable('a@staging.voxia.cl', lista)).toBe(false);
+    expect(esDespachable('a@staging.sentrycore.cl', lista)).toBe(false);
     expect(esDespachable('a@demo-andina.test', lista)).toBe(false);
   });
 

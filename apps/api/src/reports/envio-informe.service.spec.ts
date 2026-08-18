@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { patrolRulesSchema, type PatrolRules } from '@voxia/shared';
+import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 import type { Queue } from 'bullmq';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

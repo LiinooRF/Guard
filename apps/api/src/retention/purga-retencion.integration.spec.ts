@@ -6,7 +6,7 @@ import { Client } from 'pg';
  * Es el unico lugar donde se puede comprobar lo que sostiene todo el carril y
  * que ningun mock puede confirmar:
  *
- *   1. voxia_app SIGUE sin poder borrar la evidencia append-only.
+ *   1. sentrycore_app SIGUE sin poder borrar la evidencia append-only.
  *   2. Y sin embargo la purga borra — porque pasa por funciones SECURITY
  *      DEFINER que corren como el dueño de las tablas.
  *   3. El piso de retencion se aplica en la base, no en el codigo.
@@ -14,7 +14,7 @@ import { Client } from 'pg';
  *   5. La rotacion de empresas avanza: es el bug por el que, con el techo en
  *      500, la empresa 501 no se purgaba nunca.
  *
- * `admin` es la credencial de migraciones (superusuario) y `app` es voxia_app,
+ * `admin` es la credencial de migraciones (superusuario) y `app` es sentrycore_app,
  * el mismo rol restringido que usa la API. Igual que
  * tenant-isolation.integration.spec.ts.
  */
@@ -41,7 +41,7 @@ describeDatabase('purga por retencion (esquema real)', () => {
     await Promise.all([admin.end(), app.end()]);
   });
 
-  it('voxia_app sigue SIN poder borrar la evidencia append-only', async () => {
+  it('sentrycore_app sigue SIN poder borrar la evidencia append-only', async () => {
     // Si esto deja de fallar, la purga se llevo puesta la propiedad que hace que
     // el libro de novedades sirva como prueba en un juicio laboral.
     for (const tabla of APPEND_ONLY) {
@@ -51,7 +51,7 @@ describeDatabase('purga por retencion (esquema real)', () => {
     }
   });
 
-  it('voxia_app no puede escribir la bitacora de purgas', async () => {
+  it('sentrycore_app no puede escribir la bitacora de purgas', async () => {
     await expect(
       app.query(
         `INSERT INTO retention_purge_runs (tenant_id, dataset, retention_days, cutoff, rows_deleted)
@@ -60,7 +60,7 @@ describeDatabase('purga por retencion (esquema real)', () => {
     ).rejects.toMatchObject({ code: '42501' });
   });
 
-  it('voxia_app no puede tocar el cursor del barrido', async () => {
+  it('sentrycore_app no puede tocar el cursor del barrido', async () => {
     // Con UPDATE directo, una empresa podria atrasarse la marca a si misma y
     // salirse de la rotacion: dejar de purgar sus datos sin que nadie lo note.
     await expect(
@@ -274,7 +274,7 @@ describeDatabase('purga por retencion (esquema real)', () => {
     }
   });
 
-  it('purga una foto de escaneo vencida aunque voxia_app no pueda borrarla', async () => {
+  it('purga una foto de escaneo vencida aunque sentrycore_app no pueda borrarla', async () => {
     const { rows: escaneos } = await admin.query<{
       tenant_id: string;
       id: string;

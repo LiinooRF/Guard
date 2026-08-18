@@ -4,7 +4,7 @@ import {
   patrolRulesSchema,
   type PatrolRules,
   type RuleScope,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 import type { z } from 'zod';
 
 /** Validadores campo a campo: un override invalido no arrastra al resto. */

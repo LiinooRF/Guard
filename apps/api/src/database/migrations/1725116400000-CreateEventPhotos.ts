@@ -70,9 +70,9 @@ export class CreateEventPhotos1725116400000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
-          GRANT SELECT, INSERT ON event_photos TO voxia_app;
-          REVOKE UPDATE, DELETE ON event_photos FROM voxia_app;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
+          GRANT SELECT, INSERT ON event_photos TO sentrycore_app;
+          REVOKE UPDATE, DELETE ON event_photos FROM sentrycore_app;
         END IF;
       END
       $$

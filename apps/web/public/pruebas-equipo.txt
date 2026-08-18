@@ -1,5 +1,5 @@
 =============================================================================
- VOXIA CONTROL - PROTOCOLO DE PRUEBAS DEL EQUIPO (4 personas)
+ SENTRYCORE - PROTOCOLO DE PRUEBAS DEL EQUIPO (4 personas)
  staging: https://test-sentrycore.voxtilabs.cl
  actualizado: 2026-08-08
 =============================================================================
@@ -37,7 +37,7 @@ CREDENCIALES (empresa de demostracion "Seguridad Andina")
 
 [ROL: ADMIN] ---------------------------------------------------------------
 [ ] 1.1  Entrar. El panel muestra la marca "Seguridad Andina" (logo verde,
-         no el escudo VoxIA).
+         no el escudo SentryCore).
 [ ] 1.2  Menu "Marca": cambiar el color primario a otro oscuro, guardar,
          recargar. El panel cambia de color SIN despliegue. Volver a dejarlo.
 [ ] 1.3  Menu "Usuarios": crear un guardia SIN correo (usuario+clave).

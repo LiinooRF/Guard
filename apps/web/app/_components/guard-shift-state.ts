@@ -6,7 +6,7 @@ import {
   type CheckpointKind,
   type PatrolRules,
   type ScanAnomaly,
-} from '@voxia/shared';
+} from '@sentrycore/shared';
 
 import { borrarClave, escribirJson, leerJson } from './guard-storage';
 import type { MetodoEscaneo } from './guard-escaneo-modelo';
@@ -28,7 +28,7 @@ import type { Criticidad, VeredictoSync } from './guard-outbox';
  *    escaneos o dé por perdido lo que sí se guardó.
  */
 
-const CLAVE_RONDA = 'voxia.guard.patrol.v1';
+const CLAVE_RONDA = 'sentrycore.guard.patrol.v1';
 
 /** Textos en español de las marcas de `scanAnomalySchema`. El sistema marca, no rechaza. */
 const ETIQUETAS_ANOMALIA: Record<ScanAnomaly, string> = {
@@ -91,7 +91,7 @@ export interface PoliticaFoto {
 
 /**
  * ¿Este punto exige foto? La decisión NO se reimplementa acá: se delega en
- * `isPhotoRequired()` de `@voxia/shared`, que es la misma función que corre en
+ * `isPhotoRequired()` de `@sentrycore/shared`, que es la misma función que corre en
  * el servidor. Esto solo adapta la forma del punto que manda la API.
  *
  * Sin `politica` —API vieja frente a un portal nuevo— se asume horario hábil.

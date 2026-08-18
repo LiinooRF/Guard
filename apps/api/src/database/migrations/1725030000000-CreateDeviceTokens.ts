@@ -89,11 +89,11 @@ export class CreateDeviceTokens1725030000000 implements MigrationInterface {
     await queryRunner.query(`
       DO $$
       BEGIN
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'voxia_app') THEN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sentrycore_app') THEN
           -- CON DELETE, a diferencia de las tablas de evidencia: un token no es
           -- prueba de nada, es estado de enrutamiento. Borrarlo es la respuesta
           -- correcta a "este dispositivo ya no existe" y al cierre de sesion.
-          GRANT SELECT, INSERT, UPDATE, DELETE ON device_tokens TO voxia_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON device_tokens TO sentrycore_app;
         END IF;
       END
       $$

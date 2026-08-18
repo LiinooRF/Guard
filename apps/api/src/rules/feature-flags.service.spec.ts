@@ -1,5 +1,5 @@
 import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
-import { DEFAULT_FEATURE_FLAGS } from '@voxia/shared';
+import { DEFAULT_FEATURE_FLAGS } from '@sentrycore/shared';
 import { QueryFailedError } from 'typeorm';
 
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';

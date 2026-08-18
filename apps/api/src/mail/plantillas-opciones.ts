@@ -3,7 +3,7 @@ import { z, type ZodIssue } from 'zod';
 /**
  * Los dos parametros de negocio que este issue agrega a rules.ts.
  *
- * POR QUE ESTAN ACA Y NO IMPORTADOS DE @voxia/shared: `rules.ts` es un archivo
+ * POR QUE ESTAN ACA Y NO IMPORTADOS DE @sentrycore/shared: `rules.ts` es un archivo
  * que este entregable no puede tocar. El zod exacto y la ficha de catalogo de
  * `mailIncludeHtml` y `mailLogoMaxKB` estan escritos en INTEGRACION.md y los
  * aplica el integrador.

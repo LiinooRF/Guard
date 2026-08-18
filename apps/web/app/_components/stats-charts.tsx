@@ -1,7 +1,7 @@
 /**
  * Informes con graficas por sucursal (#87) — ADMIN y SUPERVISOR.
  *
- * Componente de SERVIDOR. Lee la cookie `voxia_access` y pide las cuatro series
+ * Componente de SERVIDOR. Lee la cookie `sentrycore_access` y pide las cuatro series
  * a `/api/stats/charts/*` por la red interna, igual que hace
  * `app/app/[role]/page.tsx`. Al navegador no viaja ni un token, ni una llamada
  * a la API, ni una libreria de graficos: llega HTML con SVG dentro.
@@ -86,14 +86,14 @@ function apiPublica() {
 
 async function pedir<T>(ruta: string, parametros: URLSearchParams): Promise<Resultado<T>> {
   const almacen = await cookies();
-  const acceso = almacen.get('voxia_access');
+  const acceso = almacen.get('sentrycore_access');
   if (!acceso) return { estado: 'sin-sesion' };
 
   try {
     const respuesta = await fetch(
       `${process.env.API_INTERNAL_URL ?? apiPublica()}${ruta}?${parametros.toString()}`,
       {
-        headers: { cookie: `voxia_access=${acceso.value}` },
+        headers: { cookie: `sentrycore_access=${acceso.value}` },
         cache: 'no-store',
       },
     );
@@ -125,12 +125,12 @@ async function pedir<T>(ruta: string, parametros: URLSearchParams): Promise<Resu
  */
 async function moduloGraficasEncendido(): Promise<boolean> {
   const almacen = await cookies();
-  const acceso = almacen.get('voxia_access');
+  const acceso = almacen.get('sentrycore_access');
   if (!acceso) return true;
   try {
     const respuesta = await fetch(
       `${process.env.API_INTERNAL_URL ?? apiPublica()}/features`,
-      { headers: { cookie: `voxia_access=${acceso.value}` }, cache: 'no-store' },
+      { headers: { cookie: `sentrycore_access=${acceso.value}` }, cache: 'no-store' },
     );
     if (!respuesta.ok) return true;
     const cuerpo = (await respuesta.json()) as { enabled?: { chartsBySite?: boolean } };
