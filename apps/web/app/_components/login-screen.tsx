@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
+import { esAppDelGuardia } from '../_lib/app-del-guardia';
 import { leerCredenciales } from './login-form-data';
 
 export function LoginScreen() {
@@ -99,10 +100,7 @@ export function LoginScreen() {
         return;
       }
 
-      if (
-        result.user.role === 'GUARDIA' &&
-        !navigator.userAgent.includes('SentryCoreAndroid/')
-      ) {
+      if (result.user.role === 'GUARDIA' && !esAppDelGuardia(navigator.userAgent)) {
         await fetch(`${apiUrl}/auth/logout`, {
           method: 'POST',
           credentials: 'include',
