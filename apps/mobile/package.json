@@ -19,6 +19,7 @@
     "credentials": "npx eas-cli credentials --platform android"
   },
   "dependencies": {
+    "@react-native-cookies/cookies": "^6.2.1",
     "expo": "~57.0.9",
     "expo-background-task": "~57.0.7",
     "expo-build-properties": "~57.0.8",

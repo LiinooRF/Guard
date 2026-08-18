@@ -70,6 +70,22 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
 
+  /*
+   * El permiso de notificaciones se pide al ver el turno, no al arrancar.
+   *
+   * Aca ya hay contexto: el guardia esta mirando su ronda, y los avisos que va
+   * a recibir son de eso —el pánico de un companero, un cambio de turno—.
+   * Pedirlo en la pantalla de carga, sin que sepa para que, es la forma mas
+   * eficiente de quemar los dos intentos que Android concede antes de dejar de
+   * mostrar el dialogo para siempre.
+   *
+   * Se pide una sola vez por montaje y no bloquea nada: si dice que no, la
+   * ronda funciona igual.
+   */
+  useEffect(() => {
+    void puente.pedirPermiso('notificaciones', true).catch(() => undefined);
+  }, [puente]);
+
   useEffect(() => {
     if (!data.hasAssignment || !data.patrol || !data.shift) return;
     void guardarRutaOffline({
@@ -104,6 +120,23 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
     setStarting(true);
     setError(undefined);
     try {
+      /*
+       * El permiso de segundo plano se pide ACA y no antes.
+       *
+       * El aviso de geolocalizacion promete una posicion por minuto durante la
+       * ronda; sin este permiso esa promesa se rompe apenas el guardia bloquea
+       * la pantalla o abre otra app, que es lo que hace cualquiera caminando.
+       * Y no se puede pedir al arrancar: Google Play rechaza la ficha si el
+       * dialogo de segundo plano aparece sin una divulgacion previa. Iniciar la
+       * ronda es ese momento: el guardia ya acepto el aviso de geolocalizacion
+       * —que dice cada cuanto, por cuanto tiempo y para que— y esta por empezar
+       * a recorrer.
+       *
+       * No bloquea el inicio: si lo niega, la ronda arranca igual y la traza
+       * queda limitada a la app en primer plano. Una ronda sin registrar es
+       * peor que una traza incompleta.
+       */
+      await puente.pedirPermiso('ubicacion-segundo-plano', true).catch(() => undefined);
       const response = await fetch(`${apiUrl}/guard/patrols/${patrol.id}/start`, {
         method: 'POST',
         credentials: 'include',

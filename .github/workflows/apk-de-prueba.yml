@@ -12,6 +12,7 @@
 #
 # Lo mismo que hace `Tamano de la app Android`, pero con `assembleRelease` en vez
 # de `bundleRelease`: un APK se instala, un AAB no.
+# Build para verificar los permisos en contexto y el volcado de cookies.
 name: APK de prueba
 
 on:
