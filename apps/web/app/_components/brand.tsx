@@ -12,11 +12,9 @@
  * componente tambien se usa en contextos sin optimizador.
  */
 export function Brand({
-  compact = false,
   nombre,
   logoUri,
 }: {
-  compact?: boolean;
   /** Nombre comercial del tenant; sin el, la marca del producto. */
   nombre?: string | null;
   /** Logo del tenant como data URI; sin el, el escudo del producto. */
@@ -39,14 +37,7 @@ export function Brand({
         </span>
       )}
       <span>
-        {nombre ? (
-          <strong>{nombre}</strong>
-        ) : (
-          <>
-            <strong>SentryCore</strong>
-            {!compact ? <small>Control</small> : null}
-          </>
-        )}
+        <strong>{nombre ?? 'SentryCore'}</strong>
       </span>
     </div>
   );
