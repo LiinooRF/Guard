@@ -5,8 +5,10 @@ import {
   ConsentimientoAdmin,
   ConsentimientoTrabajador,
 } from '../../_components/consentimiento-carga';
+import { CrashReportsSummary } from '../../_components/crash-reports-summary';
 import { DashboardShell, type MarcaDelShell } from '../../_components/dashboard-shell';
 import { EnviosPanel } from '../../_components/envios-panel';
+import { FuncionesConfiguracion } from '../../_components/funciones-configuracion';
 import { MarcaConfiguracion } from '../../_components/marca-configuracion';
 import { marcaDelTenant } from '../../_lib/marca-del-tenant';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
@@ -285,7 +287,12 @@ export default async function RoleDashboard({
       </div>
     );
   } else if (!isSupervisor && view === 'reglas') {
-    panel = <div className="panel-view" data-view="reglas"><ReglasConfiguracion apiUrl={publicApiUrl()} /></div>;
+    panel = (
+      <div className="panel-view" data-view="reglas">
+        <FuncionesConfiguracion apiUrl={publicApiUrl()} />
+        <ReglasConfiguracion apiUrl={publicApiUrl()} />
+      </div>
+    );
   } else if (!isSupervisor && view === 'marca') {
     panel = (
       <div className="panel-view" data-view="marca">
@@ -304,6 +311,12 @@ export default async function RoleDashboard({
     );
   } else if (!isSupervisor && view === 'cumplimiento') {
     panel = <div className="panel-view" data-view="cumplimiento"><ConsentimientoAdmin apiUrl={publicApiUrl()} /></div>;
+  } else if (!isSupervisor && view === 'diagnostico') {
+    panel = (
+      <div className="panel-view" data-view="diagnostico">
+        <CrashReportsSummary apiUrl={publicApiUrl()} />
+      </div>
+    );
   } else if (isSupervisor && view === 'consentimiento') {
     panel = (
       <div className="panel-view" data-view="consentimiento">

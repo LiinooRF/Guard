@@ -39,6 +39,7 @@ export const PANEL_NAVIGATION: Record<PanelRole, PanelNavigationGroup[]> = {
       label: 'Control',
       items: [
         { view: 'cumplimiento', icon: '⚖', label: 'Cumplimiento legal' },
+        { view: 'diagnostico', icon: '◇', label: 'Diagnóstico de la app' },
         { view: 'sesiones', icon: '◉', label: 'Sesiones' },
       ],
     },
@@ -93,6 +94,7 @@ export function panelViewCopy(role: PanelRole, view: string): { title: string; s
       reglas: { title: 'Reglas de operación', subtitle: 'Define cómo trabaja la empresa y qué evidencia exige.' },
       marca: { title: 'Marca de la empresa', subtitle: 'Controla la identidad que ve tu equipo y reciben tus clientes.' },
       cumplimiento: { title: 'Cumplimiento legal', subtitle: 'Gestiona el consentimiento y audita el uso de ubicación.' },
+      diagnostico: { title: 'Diagnóstico de la app', subtitle: 'Revisa fallas agregadas sin exponer datos de personas.' },
       sesiones: { title: 'Sesiones activas', subtitle: 'Revisa y revoca dispositivos con acceso a tu cuenta.' },
     },
     SUPERVISOR: {

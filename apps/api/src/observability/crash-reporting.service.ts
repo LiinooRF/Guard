@@ -8,8 +8,21 @@ import { RulesService } from '../rules/rules.service';
 import { CRASH_REPORTER, type CrashEvent, type CrashReporter } from './crash-event';
 import { CRASH_REPORTING_CONFIG, type CrashReportingConfig } from './crash-reporting.config';
 import { huellaDeCaida } from './crash-fingerprint';
+import {
+  ANDROID_NO_IDENTIFICADO,
+  DEVICE_MODELS_PERMITIDOS,
+  ERROR_NO_IDENTIFICADO,
+  ERROR_NAMES_PERMITIDOS,
+  MODELO_NO_IDENTIFICADO,
+  PATRON_VERSION_ANDROID,
+  PATRON_VERSION_APP,
+  VERSION_APP_NO_IDENTIFICADA,
+  proyectarGruposResumen,
+  type CrashReportSummaryRawGroup,
+} from './crash-report-summary.projection';
 import { depurarEtiqueta, depurarPila, depurarRuta, depurarTexto } from './crash-scrubber';
 import { requestLogContext } from './request-context';
+import type { CrashReportSummaryDto } from './dto/crash-report-summary.dto';
 import type { ReportCrashDto } from './dto/report-crash.dto';
 
 /**
@@ -64,16 +77,6 @@ const LARGO_MAX_PILA_GUARDADA = 20_000;
  */
 const MAX_GRUPOS_RESUMEN = 50;
 
-/**
- * `timestamptz` llega como Date con el driver de Postgres, pero como texto
- * cuando la consulta pasa por una agregacion en algunos entornos. Se acepta lo
- * que venga y se responde SIEMPRE en ISO con zona, que es lo unico que el
- * navegador puede convertir a la hora local sin adivinar.
- */
-function comoIso(valor: Date | string): string {
-  return valor instanceof Date ? valor.toISOString() : new Date(valor).toISOString();
-}
-
 /** Lee la retencion efectiva. Ver el comentario de RETENCION_CAIDAS_DIAS_DEFECTO. */
 export function retencionDeCaidas(reglas: PatrolRules): number {
   const valor: unknown = (reglas as unknown as Record<string, unknown>).crashReportRetentionDays;
@@ -101,13 +104,9 @@ interface FilaResumen {
   app_version: string;
   device_model: string;
   android_version: string;
-  fingerprint: string;
   error_name: string;
-  error_message: string;
   total: string | number;
   fatales: string | number;
-  primera: Date | string;
-  ultima: Date | string;
 }
 
 @Injectable()
@@ -255,13 +254,13 @@ export class CrashReportingService {
   /**
    * Resumen agrupado para el panel del ADMIN.
    *
-   * Devuelve la primera y la ultima vez en ISO con zona (UTC). NO agrupa por
-   * dia y es a proposito: un dia calendario solo existe dentro de una zona
-   * horaria, y una caida no ocurre en un recinto —ocurre en el telefono de
-   * alguien que puede estar en cualquier parte—. Agrupar por dia obligaria a
-   * elegir una zona arbitraria y a mostrar cortes que no significan nada.
+   * La consulta usa la huella para separar causas, pero NO la selecciona ni la
+   * devuelve. Tampoco selecciona mensaje, pila, fechas o ids hacia el servicio:
+   * `received_at` queda dentro de PostgreSQL para filtrar y ordenar. La primera
+   * proyeccion segura se fusiona ANTES del limite; el servicio la repite como
+   * defensa en profundidad y construye el DTO publico de lista cerrada.
    */
-  async resumen(dias?: number) {
+  async resumen(dias?: number): Promise<CrashReportSummaryDto> {
     const reglas = await this.rules.effective();
     const retencionDias = retencionDeCaidas(reglas);
     // Nunca mas alla de la retencion: pedir 90 dias cuando se guardan 30 daria
@@ -273,38 +272,83 @@ export class CrashReportingService {
         `SELECT app_version,
                 device_model,
                 android_version,
-                fingerprint,
-                min(error_name) AS error_name,
-                min(error_message) AS error_message,
-                count(*) AS total,
-                count(*) FILTER (WHERE fatal) AS fatales,
-                min(received_at) AS primera,
-                max(received_at) AS ultima
-           FROM app_crash_reports
-          WHERE tenant_id = app_tenant_id()
-            AND received_at > now() - make_interval(days => $1::int)
-          GROUP BY app_version, device_model, android_version, fingerprint
-          ORDER BY count(*) DESC, max(received_at) DESC
-          LIMIT $2`,
-        [ventana, MAX_GRUPOS_RESUMEN],
+                error_name,
+                total,
+                fatales
+           FROM (
+             SELECT error_name,
+                    app_version,
+                    device_model,
+                    android_version,
+                    sum(total) AS total,
+                    sum(fatales) AS fatales,
+                    max(ultima) AS ultima
+               FROM (
+                 SELECT CASE
+                          WHEN trim(error_name) = ANY($2::text[]) THEN trim(error_name)
+                          ELSE $3::text
+                        END AS error_name,
+                        CASE
+                          WHEN app_version ~ $4 THEN app_version
+                          ELSE $5::text
+                        END AS app_version,
+                        CASE
+                          WHEN trim(device_model) = ANY($6::text[]) THEN trim(device_model)
+                          ELSE $7::text
+                        END AS device_model,
+                        CASE
+                          WHEN trim(android_version) ~ $8 THEN trim(android_version)
+                          ELSE $9::text
+                        END AS android_version,
+                        total,
+                        fatales,
+                        ultima
+                   FROM (
+                     SELECT app_version,
+                            device_model,
+                            android_version,
+                            min(error_name) AS error_name,
+                            count(*) AS total,
+                            count(*) FILTER (WHERE fatal) AS fatales,
+                            max(received_at) AS ultima
+                       FROM app_crash_reports
+                      WHERE tenant_id = app_tenant_id()
+                        AND received_at > now() - make_interval(days => $1::int)
+                      GROUP BY app_version, device_model, android_version, fingerprint
+                   ) AS crudos
+              ) AS seguros
+              GROUP BY error_name, app_version, device_model, android_version
+           ) AS fusionados
+          ORDER BY total DESC, ultima DESC
+          LIMIT $10`,
+        [
+          ventana,
+          [...ERROR_NAMES_PERMITIDOS],
+          ERROR_NO_IDENTIFICADO,
+          PATRON_VERSION_APP.source,
+          VERSION_APP_NO_IDENTIFICADA,
+          [...DEVICE_MODELS_PERMITIDOS],
+          MODELO_NO_IDENTIFICADO,
+          PATRON_VERSION_ANDROID.source,
+          ANDROID_NO_IDENTIFICADO,
+          MAX_GRUPOS_RESUMEN,
+        ],
       ),
     );
+
+    const crudos: CrashReportSummaryRawGroup[] = filas.map((fila) => ({
+      errorName: fila.error_name,
+      appVersion: fila.app_version,
+      deviceModel: fila.device_model,
+      androidVersion: fila.android_version,
+      total: fila.total,
+      fatales: fila.fatales,
+    }));
 
     return {
       ventanaDias: ventana,
       retencionDias,
-      grupos: filas.map((fila) => ({
-        huella: fila.fingerprint,
-        appVersion: fila.app_version,
-        deviceModel: fila.device_model,
-        androidVersion: fila.android_version,
-        errorName: fila.error_name,
-        errorMessage: fila.error_message,
-        total: comoEntero(fila.total),
-        fatales: comoEntero(fila.fatales),
-        primera: comoIso(fila.primera),
-        ultima: comoIso(fila.ultima),
-      })),
+      grupos: proyectarGruposResumen(crudos, MAX_GRUPOS_RESUMEN),
     };
   }
 
