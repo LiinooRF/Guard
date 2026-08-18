@@ -108,6 +108,38 @@ SEGUNDOS_DUMP=$(($(date +%s) - INICIO_DUMP))
 BYTES_DUMP=$(wc -c < "$DESTINO" | tr -d ' ')
 registrar "dump listo: $(du -h "$DESTINO" | cut -f1) ($BYTES_DUMP bytes) en ${SEGUNDOS_DUMP}s"
 
+# Generar checksum de integridad SHA256
+generar_checksum "$DESTINO"
+
+# Cifrado opcional (age / openssl / gpg)
+HERRAMIENTA_CIFRADO=$(detectar_herramienta_cifrado)
+DESTINO_SUBIR="$DESTINO"
+ARCHIVO_SUBIR="$ARCHIVO"
+BYTES_SUBIR="$BYTES_DUMP"
+
+if [ "$HERRAMIENTA_CIFRADO" != "none" ]; then
+  EXT_CIFRADO=$(extension_cifrado "$HERRAMIENTA_CIFRADO")
+  DESTINO_CIFRADO="$DESTINO$EXT_CIFRADO"
+  ARCHIVO_CIFRADO="$ARCHIVO$EXT_CIFRADO"
+  registrar "cifrando dump con $HERRAMIENTA_CIFRADO -> $ARCHIVO_CIFRADO"
+  if cifrar_archivo "$DESTINO" "$DESTINO_CIFRADO" "$HERRAMIENTA_CIFRADO"; then
+    generar_checksum "$DESTINO_CIFRADO"
+    BYTES_CIFRADO=$(wc -c < "$DESTINO_CIFRADO" | tr -d ' ')
+    registrar "dump cifrado con exito ($BYTES_CIFRADO bytes)"
+    DESTINO_SUBIR="$DESTINO_CIFRADO"
+    ARCHIVO_SUBIR="$ARCHIVO_CIFRADO"
+    BYTES_SUBIR="$BYTES_CIFRADO"
+    # Si no se pide conservar el dump en texto plano local, se descarta por seguridad
+    if [ "${BACKUP_KEEP_LOCAL_PLAINTEXT:-no}" != "si" ]; then
+      rm -f "$DESTINO" "$DESTINO.sha256"
+    fi
+  else
+    registrar_error "fallo el cifrado con $HERRAMIENTA_CIFRADO; se aborta subida por seguridad"
+    printf '%s|FALLIDO|cifrado-%s\n' "$FECHA" "$HERRAMIENTA_CIFRADO" >> "$ESTADO"
+    exit 1
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 3. El dump, fuera del VPS
 # ---------------------------------------------------------------------------
@@ -121,15 +153,15 @@ elif ! command -v rclone > /dev/null 2>&1; then
 else
   INICIO_SUBIDA=$(date +%s)
   registrar "copiando el dump a $(redactar_remoto "$REMOTO_PG")"
-  if ejecutar_rclone copy "$DESTINO" "$REMOTO_PG/"; then
+  if ejecutar_rclone copy "$DESTINO_SUBIR" "$REMOTO_PG/" && { [ ! -f "$DESTINO_SUBIR.sha256" ] || ejecutar_rclone copy "$DESTINO_SUBIR.sha256" "$REMOTO_PG/"; }; then
     SEGUNDOS_SUBIDA=$(($(date +%s) - INICIO_SUBIDA))
     # Copiar y no mirar es la forma clasica de tener un respaldo remoto vacio.
-    BYTES_REMOTO=$(tamano_remoto "$REMOTO_PG" "$ARCHIVO")
+    BYTES_REMOTO=$(tamano_remoto "$REMOTO_PG" "$ARCHIVO_SUBIR")
     if [ -z "$BYTES_REMOTO" ]; then
       registrar_error "el dump no aparece en el destino remoto despues de copiarlo"
       PROBLEMAS_REMOTO=$((PROBLEMAS_REMOTO + 1))
-    elif [ "$BYTES_REMOTO" != "$BYTES_DUMP" ]; then
-      registrar_error "tamaño distinto: local $BYTES_DUMP bytes, remoto $BYTES_REMOTO bytes"
+    elif [ "$BYTES_REMOTO" != "$BYTES_SUBIR" ]; then
+      registrar_error "tamaño distinto: local $BYTES_SUBIR bytes, remoto $BYTES_REMOTO bytes"
       PROBLEMAS_REMOTO=$((PROBLEMAS_REMOTO + 1))
     else
       registrar "copia fuera del VPS confirmada: $BYTES_REMOTO bytes en ${SEGUNDOS_SUBIDA}s"
@@ -192,7 +224,7 @@ fi
 # superan la retencion y el find los borra de una sola pasada, dejando el VPS
 # con el dump de hoy y nada mas.
 #
-# El orden alfabetico de 'sentrycore-AAAA-MM-DD.dump' es el orden cronologico —el
+# El orden alfabetico de 'sentrycore-AAAA-MM-DD.dump*' es el orden cronologico —el
 # nombre lleva la fecha en ISO—, asi que `sort` alcanza y no hace falta pedirle
 # a find una opcion de ordenamiento que busybox no tiene.
 #
@@ -200,12 +232,12 @@ fi
 # regla de ciclo de vida del proveedor: si este contenedor pudiera borrar en el
 # destino, cualquiera que entre al VPS se lleva tambien los respaldos.
 # ---------------------------------------------------------------------------
-CANTIDAD=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f | wc -l | tr -d ' ')
+CANTIDAD=$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'sentrycore-*.dump' -o -name 'sentrycore-*.dump.*' \) ! -name '*.sha256' ! -name '*.part' -type f | wc -l | tr -d ' ')
 BORRABLES=$((CANTIDAD - MINIMO_LOCAL))
 if [ "$BORRABLES" -le 0 ]; then
   registrar "retencion: hay $CANTIDAD dump(s), el minimo es $MINIMO_LOCAL; no se borra nada"
 else
-  VIEJOS=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f -mtime "+$RETENCION" | sort)
+  VIEJOS=$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'sentrycore-*.dump' -o -name 'sentrycore-*.dump.*' \) ! -name '*.sha256' ! -name '*.part' -type f -mtime "+$RETENCION" | sort)
   VENCIDOS=0
   BORRADOS=0
   if [ -n "$VIEJOS" ]; then
@@ -220,26 +252,26 @@ else
       if [ "$BORRADOS" -ge "$BORRABLES" ]; then
         continue
       fi
-      rm -f "$VIEJO"
+      rm -f "$VIEJO" "$VIEJO.sha256"
       BORRADOS=$((BORRADOS + 1))
     done
     IFS=$IFS_ORIGINAL
   fi
-  QUEDAN=$(find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.dump' -type f | wc -l | tr -d ' ')
+  QUEDAN=$(find "$BACKUP_DIR" -maxdepth 1 \( -name 'sentrycore-*.dump' -o -name 'sentrycore-*.dump.*' \) ! -name '*.sha256' ! -name '*.part' -type f | wc -l | tr -d ' ')
   if [ "$VENCIDOS" -gt "$BORRADOS" ]; then
     registrar_aviso "retencion: $VENCIDOS dump(s) pasaron los $RETENCION dias pero solo se borraron $BORRADOS; manda el minimo de $MINIMO_LOCAL"
   fi
   registrar "retencion $RETENCION dias: se borraron $BORRADOS, quedan $QUEDAN dumps (habia $CANTIDAD, minimo $MINIMO_LOCAL)"
 fi
 
-# Restos de un dump cortado a la mitad por un reinicio; no son respaldos.
+# Limpieza de checksums huerfanos y temporales
 find "$BACKUP_DIR" -maxdepth 1 -name 'sentrycore-*.part' -type f -mtime +1 -delete 2> /dev/null || true
 
 # ---------------------------------------------------------------------------
 # Estado, para que el monitoreo no tenga que leer el log
 # ---------------------------------------------------------------------------
 if [ "$PROBLEMAS_REMOTO" -eq 0 ]; then
-  printf '%s|OK|dump=%ss,%sB\n' "$FECHA" "$SEGUNDOS_DUMP" "$BYTES_DUMP" >> "$ESTADO"
+  printf '%s|OK|dump=%ss,%sB\n' "$FECHA" "$SEGUNDOS_DUMP" "$BYTES_SUBIR" >> "$ESTADO"
   registrar "respaldo del $FECHA completo (base y copias fuera del VPS)"
   exit 0
 fi

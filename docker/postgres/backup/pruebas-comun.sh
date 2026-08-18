@@ -147,6 +147,81 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# 5. Cifrado e integridad de respaldos (issue #24 / #224)
+# ---------------------------------------------------------------------------
+echo "== 5. cifrado e integridad (checksum sha256, openssl, age, gpg) =="
+DIR_PRUEBA=$(mktemp -d)
+trap 'rm -rf "$DIR_PRUEBA"' EXIT INT TERM
+
+# 5.1 Checksum sha256
+printf 'contenido de prueba para checksum\n' > "$DIR_PRUEBA/datos.txt"
+if generar_checksum "$DIR_PRUEBA/datos.txt" && [ -f "$DIR_PRUEBA/datos.txt.sha256" ]; then
+  printf '  [ok]    generar_checksum creo archivo .sha256\n'
+else
+  printf '  [FALLA] generar_checksum no creo el archivo .sha256\n' >&2
+  FALLAS=$((FALLAS + 1))
+fi
+
+if verificar_checksum "$DIR_PRUEBA/datos.txt"; then
+  printf '  [ok]    verificar_checksum valido archivo integro\n'
+else
+  printf '  [FALLA] verificar_checksum fallo en archivo valido\n' >&2
+  FALLAS=$((FALLAS + 1))
+fi
+
+printf 'contenido adulterado\n' > "$DIR_PRUEBA/datos.txt"
+if verificar_checksum "$DIR_PRUEBA/datos.txt" > /dev/null 2>&1; then
+  printf '  [FALLA] verificar_checksum acepto archivo corrupto\n' >&2
+  FALLAS=$((FALLAS + 1))
+else
+  printf '  [ok]    verificar_checksum rechazo archivo corrupto\n'
+fi
+
+# 5.2 OpenSSL aes-256-cbc
+printf 'datos confidenciales para openssl\n' > "$DIR_PRUEBA/secreto-openssl.txt"
+CLAVE_PRUEBA="ClaveSuperSecreta12345!"
+BACKUP_OPENSSL_PASSPHRASE="$CLAVE_PRUEBA" cifrar_archivo "$DIR_PRUEBA/secreto-openssl.txt" "$DIR_PRUEBA/secreto-openssl.enc" "openssl"
+BACKUP_OPENSSL_PASSPHRASE="$CLAVE_PRUEBA" descifrar_archivo "$DIR_PRUEBA/secreto-openssl.enc" "$DIR_PRUEBA/descifrado-openssl.txt" "openssl"
+if diff -u "$DIR_PRUEBA/secreto-openssl.txt" "$DIR_PRUEBA/descifrado-openssl.txt" > /dev/null 2>&1; then
+  printf '  [ok]    cifrado y descifrado openssl coinciden byte a byte\n'
+else
+  printf '  [FALLA] openssl no recupero el contenido original\n' >&2
+  FALLAS=$((FALLAS + 1))
+fi
+
+# 5.3 age (asimetrico con age-keygen y recipient)
+if command -v age-keygen > /dev/null 2>&1 && command -v age > /dev/null 2>&1; then
+  printf 'datos confidenciales para age\n' > "$DIR_PRUEBA/secreto-age.txt"
+  age-keygen -o "$DIR_PRUEBA/age.key" 2> /dev/null
+  AGE_REC=$(age-keygen -y "$DIR_PRUEBA/age.key")
+  BACKUP_AGE_RECIPIENT="$AGE_REC" cifrar_archivo "$DIR_PRUEBA/secreto-age.txt" "$DIR_PRUEBA/secreto-age.age" "age"
+  BACKUP_AGE_IDENTITY_FILE="$DIR_PRUEBA/age.key" descifrar_archivo "$DIR_PRUEBA/secreto-age.age" "$DIR_PRUEBA/descifrado-age.txt" "age"
+  if diff -u "$DIR_PRUEBA/secreto-age.txt" "$DIR_PRUEBA/descifrado-age.txt" > /dev/null 2>&1; then
+    printf '  [ok]    cifrado y descifrado age coinciden byte a byte\n'
+  else
+    printf '  [FALLA] age no recupero el contenido original\n' >&2
+    FALLAS=$((FALLAS + 1))
+  fi
+else
+  printf '  [aviso] age o age-keygen no disponible para prueba\n'
+fi
+
+# 5.4 gpg (simetrico)
+if command -v gpg > /dev/null 2>&1; then
+  printf 'datos confidenciales para gpg\n' > "$DIR_PRUEBA/secreto-gpg.txt"
+  BACKUP_GPG_PASSPHRASE="$CLAVE_PRUEBA" cifrar_archivo "$DIR_PRUEBA/secreto-gpg.txt" "$DIR_PRUEBA/secreto-gpg.gpg" "gpg"
+  BACKUP_GPG_PASSPHRASE="$CLAVE_PRUEBA" descifrar_archivo "$DIR_PRUEBA/secreto-gpg.gpg" "$DIR_PRUEBA/descifrado-gpg.txt" "gpg"
+  if diff -u "$DIR_PRUEBA/secreto-gpg.txt" "$DIR_PRUEBA/descifrado-gpg.txt" > /dev/null 2>&1; then
+    printf '  [ok]    cifrado y descifrado gpg coinciden byte a byte\n'
+  else
+    printf '  [FALLA] gpg no recupero el contenido original\n' >&2
+    FALLAS=$((FALLAS + 1))
+  fi
+else
+  printf '  [aviso] gpg no disponible para prueba\n'
+fi
+
 echo ""
 if [ "$FALLAS" -eq 0 ]; then
   echo "PRUEBAS OK"

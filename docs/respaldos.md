@@ -1,9 +1,8 @@
 # Respaldos de PostgreSQL y de la evidencia fotográfica
 
-Issue #24. Respaldo diario automático, **copia fuera del VPS**, retención de 30 días, restore
-documentado y una prueba de restore que **corre sola todas las semanas** y termina arrancando
-la API contra la base restaurada. Este documento dice cómo funciona, dónde quedan las copias,
-cómo se restaura, cómo se lee el resultado y — sin maquillaje — qué queda pendiente.
+Issue #24 / #224. Respaldo diario automático, **copia fuera del VPS**, **cifrado de datos** (OpenSSL, age, GPG), **verificación de integridad SHA-256**, retención de 30 días, restore documentado y una prueba de restore que **corre sola todas las semanas** y termina arrancando la API contra la base restaurada.
+
+> **Manual de Operaciones**: El runbook completo y detallado para administración y recuperación ante desastres se encuentra en [docs/operations/backup-restore.md](file:///home/bruno/Guard/docs/operations/backup-restore.md).
 
 > **Lo primero, porque es lo que se olvida**: un respaldo que vive en el mismo disco que la base
 > no protege del incendio, del borrado de la cuenta ni del secuestro del VPS. Sirve para un
@@ -12,9 +11,10 @@ cómo se restaura, cómo se lee el resultado y — sin maquillaje — qué queda
 
 ## Cómo funciona
 
-El servicio `postgres-backup` de `docker-compose.dokploy.yml` corre **igual en staging y en
-producción** (no tiene perfil a propósito: el respaldo no es opcional) y vive solo en la red
-interna. Su imagen es `docker/postgres/backup/Dockerfile`: `postgres:17-alpine` más `rclone`.
+El servicio `postgres-backup` de `docker-compose.dokploy.yml` y `docker-compose.production.yml` corre
+**igual en staging y en producción** (no tiene perfil a propósito: el respaldo no es opcional) y vive
+solo en la red interna. Su imagen es `docker/postgres/backup/Dockerfile`: `postgres:17-alpine` más
+`rclone`, `tzdata`, `openssl`, `age` y `gnupg`.
 
 El contenedor ejecuta `respaldo-diario.sh`, que es **solo el reloj**. Cada día a las **04:00 de
 America/Santiago** llama a `respaldar-una-vez.sh`, que es el respaldo de verdad:
@@ -24,10 +24,13 @@ America/Santiago** llama a `respaldar-una-vez.sh`, que es el respaldo de verdad:
    al terminar, así un corte a mitad de dump nunca deja un archivo con nombre válido.
 2. **Lee el índice del dump recién escrito** con `pg_restore -l`. Un dump truncado se descubre esa
    misma noche y no la madrugada en que haya que restaurarlo.
-3. **Copia el dump fuera del VPS** con rclone y **comprueba que el tamaño del archivo remoto
+3. **Genera checksum SHA-256** para verificación de integridad previa a la subida y en el restore.
+4. **Cifra el volcado** (si `BACKUP_ENCRYPTION_TOOL` o variables de clave están configuradas) usando
+   OpenSSL (AES-256-CBC con PBKDF2), `age` o `GPG`.
+5. **Copia el dump fuera del VPS** con rclone y **comprueba que el tamaño del archivo remoto
    coincide con el local**. Copiar sin mirar es la forma clásica de tener un respaldo remoto vacío.
-4. **Copia la evidencia fotográfica fuera del VPS**, incremental, y la verifica con `rclone check`.
-5. Aplica la retención local: borra los dumps de más de `BACKUP_RETENTION_DAYS` días, **pero nunca
+6. **Copia la evidencia fotográfica fuera del VPS**, incremental, y la verifica con `rclone check`.
+7. Aplica la retención local: borra los dumps de más de `BACKUP_RETENTION_DAYS` días, **pero nunca
    deja menos de `BACKUP_MINIMO_LOCAL` (3)**. El mínimo se aplica borrando *por exceso* —cuántos
    dumps sobran por encima del piso, del más viejo al más nuevo— y no como un simple `find -mtime
    -delete`, que el día que el servicio estuvo caído un mes encuentra **todos** los dumps vencidos y

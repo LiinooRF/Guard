@@ -190,3 +190,220 @@ proximo_objetivo() {
   fi
   printf '%s\n' "$O_OBJETIVO"
 }
+
+# ---------------------------------------------------------------------------
+# Cifrado de respaldos e integridad (issue #24 / #224).
+#
+# Soporta age, openssl y gpg. Las claves viajan por variables de entorno y
+# nunca se imprimen ni se escriben en logs (regla 5).
+# ---------------------------------------------------------------------------
+
+detectar_herramienta_cifrado() {
+  D_HERRAMIENTA="${BACKUP_ENCRYPTION_TOOL:-auto}"
+  case "$D_HERRAMIENTA" in
+    age | openssl | gpg | none)
+      printf '%s\n' "$D_HERRAMIENTA"
+      return 0
+      ;;
+    auto)
+      if [ -n "${BACKUP_AGE_RECIPIENT:-}" ] || [ -n "${BACKUP_AGE_RECIPIENTS_FILE:-}" ] || [ -n "${BACKUP_AGE_IDENTITY:-}" ] || [ -n "${BACKUP_AGE_IDENTITY_FILE:-}" ]; then
+        printf 'age\n'
+      elif [ -n "${BACKUP_GPG_RECIPIENT:-}" ] || [ -n "${BACKUP_GPG_PASSPHRASE:-}" ]; then
+        printf 'gpg\n'
+      elif [ -n "${BACKUP_OPENSSL_PASSPHRASE:-}" ] || [ -n "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ] || [ -n "${BACKUP_ENCRYPTION_KEY:-}" ]; then
+        printf 'openssl\n'
+      else
+        printf 'none\n'
+      fi
+      ;;
+    *)
+      registrar_error "herramienta de cifrado desconocida: '$D_HERRAMIENTA' (usar age, openssl, gpg o none)"
+      return 1
+      ;;
+  esac
+}
+
+extension_cifrado() {
+  case "$1" in
+    age) printf '.age\n' ;;
+    openssl) printf '.enc\n' ;;
+    gpg) printf '.gpg\n' ;;
+    *) printf '\n' ;;
+  esac
+}
+
+detectar_herramienta_por_archivo() {
+  case "$1" in
+    *.age) printf 'age\n' ;;
+    *.enc) printf 'openssl\n' ;;
+    *.gpg) printf 'gpg\n' ;;
+    *) printf 'none\n' ;;
+  esac
+}
+
+cifrar_archivo() {
+  C_ORIGEN="$1"
+  C_DESTINO="$2"
+  C_HERRAMIENTA="${3:-$(detectar_herramienta_cifrado)}"
+
+  case "$C_HERRAMIENTA" in
+    none)
+      if [ "$C_ORIGEN" != "$C_DESTINO" ]; then
+        cp -f "$C_ORIGEN" "$C_DESTINO"
+      fi
+      return 0
+      ;;
+    age)
+      exigir_binarios age || return 1
+      if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
+        age -r "$BACKUP_AGE_RECIPIENT" -o "$C_DESTINO" "$C_ORIGEN"
+      elif [ -n "${BACKUP_AGE_RECIPIENTS_FILE:-}" ]; then
+        age -R "$BACKUP_AGE_RECIPIENTS_FILE" -o "$C_DESTINO" "$C_ORIGEN"
+      elif [ -n "${BACKUP_AGE_IDENTITY_FILE:-}" ]; then
+        if command -v age-keygen > /dev/null 2>&1; then
+          AGE_PUB=$(age-keygen -y "$BACKUP_AGE_IDENTITY_FILE" 2> /dev/null) || true
+          if [ -n "$AGE_PUB" ]; then
+            age -r "$AGE_PUB" -o "$C_DESTINO" "$C_ORIGEN"
+            return $?
+          fi
+        fi
+        registrar_error "age requiere BACKUP_AGE_RECIPIENT o BACKUP_AGE_RECIPIENTS_FILE para cifrar"
+        return 1
+      elif [ -n "${BACKUP_AGE_IDENTITY:-}" ]; then
+        TMP_ID=$(mktemp)
+        chmod 600 "$TMP_ID"
+        printf '%s\n' "$BACKUP_AGE_IDENTITY" > "$TMP_ID"
+        if command -v age-keygen > /dev/null 2>&1; then
+          AGE_PUB=$(age-keygen -y "$TMP_ID" 2> /dev/null) || true
+          rm -f "$TMP_ID"
+          if [ -n "$AGE_PUB" ]; then
+            age -r "$AGE_PUB" -o "$C_DESTINO" "$C_ORIGEN"
+            return $?
+          fi
+        else
+          rm -f "$TMP_ID"
+        fi
+        registrar_error "age requiere BACKUP_AGE_RECIPIENT o BACKUP_AGE_RECIPIENTS_FILE para cifrar"
+        return 1
+      else
+        registrar_error "para cifrar con age configure BACKUP_AGE_RECIPIENT o BACKUP_AGE_RECIPIENTS_FILE"
+        return 1
+      fi
+      ;;
+    openssl)
+      exigir_binarios openssl || return 1
+      CLAVE="${BACKUP_OPENSSL_PASSPHRASE:-${BACKUP_ENCRYPTION_PASSPHRASE:-${BACKUP_ENCRYPTION_KEY:-}}}"
+      if [ -z "$CLAVE" ]; then
+        registrar_error "para cifrar con openssl configure BACKUP_OPENSSL_PASSPHRASE o BACKUP_ENCRYPTION_PASSPHRASE"
+        return 1
+      fi
+      openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -in "$C_ORIGEN" -out "$C_DESTINO" -pass "pass:$CLAVE"
+      ;;
+    gpg)
+      exigir_binarios gpg || return 1
+      if [ -n "${BACKUP_GPG_RECIPIENT:-}" ]; then
+        gpg --batch --yes --trust-model always --encrypt --recipient "$BACKUP_GPG_RECIPIENT" -o "$C_DESTINO" "$C_ORIGEN"
+      else
+        CLAVE="${BACKUP_GPG_PASSPHRASE:-${BACKUP_ENCRYPTION_PASSPHRASE:-${BACKUP_ENCRYPTION_KEY:-}}}"
+        if [ -z "$CLAVE" ]; then
+          registrar_error "para cifrar con gpg configure BACKUP_GPG_RECIPIENT o BACKUP_GPG_PASSPHRASE"
+          return 1
+        fi
+        gpg --batch --yes --pinentry-mode loopback --passphrase "$CLAVE" --symmetric --cipher-algo AES256 -o "$C_DESTINO" "$C_ORIGEN"
+      fi
+      ;;
+    *)
+      registrar_error "herramienta de cifrado no soportada: '$C_HERRAMIENTA'"
+      return 1
+      ;;
+  esac
+}
+
+descifrar_archivo() {
+  D_ORIGEN="$1"
+  D_DESTINO="$2"
+  D_HERRAMIENTA="${3:-$(detectar_herramienta_por_archivo "$D_ORIGEN")}"
+
+  if [ "$D_HERRAMIENTA" = "none" ] || [ "$D_HERRAMIENTA" = "auto" ]; then
+    D_HERRAMIENTA=$(detectar_herramienta_cifrado)
+  fi
+
+  case "$D_HERRAMIENTA" in
+    none)
+      if [ "$D_ORIGEN" != "$D_DESTINO" ]; then
+        cp -f "$D_ORIGEN" "$D_DESTINO"
+      fi
+      return 0
+      ;;
+    age)
+      exigir_binarios age || return 1
+      if [ -n "${BACKUP_AGE_IDENTITY_FILE:-}" ] && [ -f "$BACKUP_AGE_IDENTITY_FILE" ]; then
+        age -d -i "$BACKUP_AGE_IDENTITY_FILE" -o "$D_DESTINO" "$D_ORIGEN"
+      elif [ -n "${BACKUP_AGE_IDENTITY:-}" ]; then
+        TMP_ID=$(mktemp)
+        chmod 600 "$TMP_ID"
+        printf '%s\n' "$BACKUP_AGE_IDENTITY" > "$TMP_ID"
+        age -d -i "$TMP_ID" -o "$D_DESTINO" "$D_ORIGEN"
+        R_AGE=$?
+        rm -f "$TMP_ID"
+        return "$R_AGE"
+      else
+        registrar_error "para descifrar con age configure BACKUP_AGE_IDENTITY_FILE o BACKUP_AGE_IDENTITY"
+        return 1
+      fi
+      ;;
+    openssl)
+      exigir_binarios openssl || return 1
+      CLAVE="${BACKUP_OPENSSL_PASSPHRASE:-${BACKUP_ENCRYPTION_PASSPHRASE:-${BACKUP_ENCRYPTION_KEY:-}}}"
+      if [ -z "$CLAVE" ]; then
+        registrar_error "para descifrar con openssl configure BACKUP_OPENSSL_PASSPHRASE o BACKUP_ENCRYPTION_PASSPHRASE"
+        return 1
+      fi
+      openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$D_ORIGEN" -out "$D_DESTINO" -pass "pass:$CLAVE"
+      ;;
+    gpg)
+      exigir_binarios gpg || return 1
+      CLAVE="${BACKUP_GPG_PASSPHRASE:-${BACKUP_ENCRYPTION_PASSPHRASE:-${BACKUP_ENCRYPTION_KEY:-}}}"
+      if [ -n "$CLAVE" ]; then
+        gpg --batch --yes --pinentry-mode loopback --passphrase "$CLAVE" --decrypt -o "$D_DESTINO" "$D_ORIGEN"
+      else
+        gpg --batch --yes --decrypt -o "$D_DESTINO" "$D_ORIGEN"
+      fi
+      ;;
+    *)
+      registrar_error "herramienta de descifrado no soportada: '$D_HERRAMIENTA'"
+      return 1
+      ;;
+  esac
+}
+
+generar_checksum() {
+  G_ARCH="$1"
+  if [ ! -f "$G_ARCH" ]; then
+    registrar_error "archivo no encontrado para generar checksum: $G_ARCH"
+    return 1
+  fi
+  G_DIR=$(dirname "$G_ARCH")
+  G_BASE=$(basename "$G_ARCH")
+  ( cd "$G_DIR" && sha256sum "$G_BASE" > "$G_BASE.sha256" )
+}
+
+verificar_checksum() {
+  V_ARCH="$1"
+  V_DIR=$(dirname "$V_ARCH")
+  V_BASE=$(basename "$V_ARCH")
+  V_CHECKSUM="$V_ARCH.sha256"
+
+  if [ ! -f "$V_CHECKSUM" ]; then
+    registrar_aviso "no existe archivo de checksum: $V_CHECKSUM (se omite verificacion sha256)"
+    return 0
+  fi
+
+  if ( cd "$V_DIR" && sha256sum -c "$V_BASE.sha256" > /dev/null 2>&1 ); then
+    registrar "integridad verificada con exito (sha256): $V_BASE"
+    return 0
+  else
+    registrar_error "FALLA DE INTEGRIDAD: el checksum sha256 de $V_BASE no coincide"
+    return 1
+  fi
+}

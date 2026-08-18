@@ -204,13 +204,13 @@ where not exists (
 SQL
 )
 
-SQL_GRANTS=$(cat <<'SQL'
+SQL_GRANTS=$(cat <<SQL
 select c.relname::text || '|' || a.privilege_type
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 cross join lateral aclexplode(c.relacl) a
 join pg_roles r on r.oid = a.grantee
-where n.nspname = 'public' and c.relkind = 'r' and r.rolname = :'rol_app'
+where n.nspname = 'public' and c.relkind = 'r' and r.rolname = '$ROL_APP'
 SQL
 )
 
@@ -322,10 +322,10 @@ else
   # Que esten en pg_proc no prueba que el cuerpo sobrevivio. El tercer
   # parametro de set_config en true es SET LOCAL: no ensucia la sesion.
   PRUEBA=$(consultar "$DESTINO" "select (app_tenant_id() = '$UUID_PRUEBA'::uuid)::text || '|' || app_has_audited_support_access('$UUID_PRUEBA'::uuid)::text from (select set_config('app.tenant_id', '$UUID_PRUEBA', true)) as contexto")
-  if [ "$PRUEBA" = "t|f" ]; then
+  if [ "$PRUEBA" = "t|f" ] || [ "$PRUEBA" = "true|false" ]; then
     ok "las funciones corren: app_tenant_id lee el contexto y el acceso de soporte falla cerrado"
   else
-    falla "las funciones no se comportan como deben (esperado 't|f', obtenido '$PRUEBA')"
+    falla "las funciones no se comportan como deben (esperado 'true|false' o 't|f', obtenido '$PRUEBA')"
   fi
 fi
 

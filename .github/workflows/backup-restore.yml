@@ -97,7 +97,7 @@ jobs:
 
       - name: La imagen trae lo que el respaldo necesita
         run: |
-          docker run --rm sentrycore-backup:ci sh -c 'pg_dump --version && rclone version | head -1'
+          docker run --rm sentrycore-backup:ci sh -c 'pg_dump --version && rclone version | head -1 && openssl version && age --version && gpg --version | head -1'
 
       # La prueba vale solo si respalda igual que el servicio. Si alguien cambia
       # el comando y no el otro, la prueba pasa a verificar otra cosa y nadie se

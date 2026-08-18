@@ -19,11 +19,11 @@ FROM postgres:17-alpine
 # La version de rclone es la que empaqueta Alpine; no esta clavada. Para fijarla
 # —build reproducible— se reemplaza el RUN por el binario estatico oficial:
 #   COPY --from=rclone/rclone:<version> /usr/local/bin/rclone /usr/local/bin/rclone
-RUN apk add --no-cache rclone tzdata
+RUN apk add --no-cache rclone tzdata openssl age gnupg
 
 # Comprobacion de que la imagen quedo con lo que tiene que tener. Falla el build
 # aca antes que el respaldo a las cuatro de la mañana.
-RUN pg_dump --version && pg_restore --version && rclone version
+RUN pg_dump --version && pg_restore --version && rclone version && openssl version && age --version && gpg --version
 
 # Los scripts llegan por el montaje ./docker/postgres/backup:/scripts:ro del
 # compose, no copiados a la imagen: asi un arreglo en el procedimiento de
