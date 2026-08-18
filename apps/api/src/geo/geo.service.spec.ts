@@ -268,7 +268,10 @@ describe('GeoService — distancia y duración de la traza', () => {
         { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'completada' },
       ])
       .mockResolvedValueOnce([{ present: true }]) // recinto asignado al supervisor
-      .mockResolvedValueOnce(filas);
+      .mockResolvedValueOnce(filas)
+      // patrolTrack lee ademas los puntos de la ruta: esta prueba mira la
+      // distancia, asi que la superposicion va vacia.
+      .mockResolvedValue([]);
 
     const traza = await servicio(query).patrolTrack('patrol-1', {
       sub: 'supervisor-1',
@@ -362,7 +365,10 @@ describe('GeoService — distancia y duración de la traza', () => {
         { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'completada' },
       ])
       .mockResolvedValueOnce([{ present: true }])
-      .mockResolvedValueOnce(conRuido);
+      .mockResolvedValueOnce(conRuido)
+      // patrolTrack lee ademas los puntos de la ruta: esta prueba mira la
+      // distancia, asi que la superposicion va vacia.
+      .mockResolvedValue([]);
 
     const traza = await servicio(query).patrolTrack('patrol-1', {
       sub: 'supervisor-1',
@@ -386,7 +392,9 @@ describe('GeoService — distancia y duración de la traza', () => {
         { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'completada' },
       ])
       .mockResolvedValueOnce([{ present: true }])
-      .mockResolvedValueOnce(filas);
+      .mockResolvedValueOnce(filas)
+      // patrolTrack lee ademas los puntos de la ruta.
+      .mockResolvedValue([]);
 
     // El recinto exige 10 m; el punto de 12.00 m del medio deja de contar.
     const { servicio: reglasServicio } = reglasPorRecinto(
@@ -413,7 +421,9 @@ describe('GeoService — distancia y duración de la traza', () => {
         { id: 'patrol-1', site_id: 'site-1', guard_id: 'guard-1', status: 'en_curso' },
       ])
       .mockResolvedValueOnce([{ present: true }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      // patrolTrack lee ademas los puntos de la ruta.
+      .mockResolvedValue([]);
 
     await expect(
       servicio(query).patrolTrack('patrol-1', { sub: 'supervisor-1', role: 'SUPERVISOR' }),
@@ -467,7 +477,9 @@ describe('GeoService — consentimiento', () => {
           accuracy_m: null,
           battery_pct: null,
         },
-      ]);
+      ])
+      // patrolTrack lee ademas los puntos de la ruta.
+      .mockResolvedValue([]);
     await expect(
       servicio(lectura).patrolTrack('patrol-1', { sub: 'supervisor-1', role: 'SUPERVISOR' }),
     ).resolves.toMatchObject({ pointCount: 1 });

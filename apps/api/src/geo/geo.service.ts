@@ -51,6 +51,34 @@ interface PuntoTraza {
  * La POLITICA de ubicacion (obligatorio vs opcional, arranque de ronda, plan de
  * muestreo, bateria) vive en GpsPolicyService — issue #77.
  */
+/**
+ * Los puntos de control de la ruta de una ronda, con si ya fueron escaneados.
+ *
+ * Va como constante exportada para que
+ * `checkpoints-de-la-ronda.integration.spec.ts` ejecute contra PostgreSQL de
+ * verdad exactamente la cadena que se despliega. Un mock que devuelve la fila
+ * que el autor espera no prueba que la base acepte la consulta: asi llegaron a
+ * staging un SELECT de una columna inexistente y una tabla que no existia.
+ */
+export const SQL_PUNTOS_DE_LA_RONDA = `SELECT
+   c.id,
+   c.name,
+   COALESCE(rc.position, 0)::int AS position,
+   c.latitude,
+   c.longitude,
+   c.kind,
+   EXISTS(
+     SELECT 1 FROM scans sc
+     WHERE sc.tenant_id = p.tenant_id
+       AND sc.patrol_id = p.id
+       AND sc.checkpoint_id = c.id
+   ) AS scanned
+ FROM patrols p
+ JOIN route_checkpoints rc ON rc.tenant_id = p.tenant_id AND rc.route_id = p.route_id
+ JOIN checkpoints c ON c.tenant_id = rc.tenant_id AND c.id = rc.checkpoint_id
+ WHERE p.id = $1
+ ORDER BY rc.position`;
+
 @Injectable()
 export class GeoService {
   constructor(
@@ -247,52 +275,36 @@ export class GeoService {
     const duracionMs =
       primero && ultimo ? ultimo.recordedAt.getTime() - primero.recordedAt.getTime() : 0;
 
-    let checkpointsRows: Array<{
-      id: string;
-      name: string;
-      position: number | string;
-      latitude: string | null;
-      longitude: string | null;
-      kind: string | null;
-      scanned: boolean;
-    }> = [];
-    try {
-      const resultado = await this.tenantContext.manager.query<
-        Array<{
-          id: string;
-          name: string;
-          position: number | string;
-          latitude: string | null;
-          longitude: string | null;
-          kind: string | null;
-          scanned: boolean;
-        }>
-      >(
-        `SELECT
-           c.id,
-           c.name,
-           COALESCE(rc.position, 0)::int AS position,
-           c.latitude,
-           c.longitude,
-           c.kind,
-           EXISTS(
-             SELECT 1 FROM scans sc
-             WHERE sc.tenant_id = p.tenant_id
-               AND sc.patrol_id = p.id
-               AND sc.checkpoint_id = c.id
-           ) AS scanned
-         FROM patrols p
-         JOIN routes r ON r.tenant_id = p.tenant_id AND r.id = p.route_id
-         JOIN route_checkpoints rc ON rc.tenant_id = p.tenant_id AND rc.route_id = p.route_id
-         JOIN checkpoints c ON c.tenant_id = rc.tenant_id AND c.id = rc.checkpoint_id
-         WHERE p.id = $1
-         ORDER BY rc.position`,
-        [patrolId],
-      );
-      if (Array.isArray(resultado)) checkpointsRows = resultado;
-    } catch {
-      checkpointsRows = [];
-    }
+    /*
+     * Los puntos de la ruta planificada, para superponer la ronda patron sobre
+     * el recorrido real.
+     *
+     * NO va envuelto en un try/catch mudo, y la razon es la trampa de
+     * PostgreSQL que el CLAUDE.md documenta: tragarse la excepcion de
+     * JavaScript **no desaborta la transaccion**. Toda peticion corre dentro de
+     * una (`tenant-context.interceptor.ts`), asi que un `catch` que devuelve
+     * lista vacia no deja el mapa sin puntos: deja el `commit` reventando al
+     * final, con un 500 mudo y sin rastro de cual consulta lo causo. Ya perdimos
+     * una noche entera con exactamente esa forma de error.
+     *
+     * Si esta consulta falla, que falle a la vista. Devolver el recorrido
+     * diciendo en silencio que la ronda no tiene puntos tampoco seria correcto:
+     * el supervisor leeria una ronda vacia donde hay una ruta.
+     */
+    const checkpointsRows = await this.tenantContext.manager.query<
+      Array<{
+        id: string;
+        name: string;
+        position: number | string;
+        latitude: string | null;
+        longitude: string | null;
+        kind: string | null;
+        scanned: boolean;
+      }>
+    >(
+      SQL_PUNTOS_DE_LA_RONDA,
+      [patrolId],
+    );
 
     const checkpoints = checkpointsRows.map((row) => ({
       id: row.id,
