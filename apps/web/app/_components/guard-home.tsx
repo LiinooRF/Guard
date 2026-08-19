@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import type { CheckpointKind } from '@sentrycore/shared';
 
 import type { PoliticaFoto } from './guard-shift-state';
+import { traducirEstadoPermiso } from './guard-permiso-ubicacion';
 import { useGuardBridge } from './use-guard-bridge';
 
 export interface GuardHomeData {
@@ -153,22 +154,33 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
     setError(undefined);
     try {
       /*
-       * El permiso de segundo plano se pide ACA y no antes.
-       *
-       * El aviso de geolocalizacion promete una posicion por minuto durante la
-       * ronda; sin este permiso esa promesa se rompe apenas el guardia bloquea
-       * la pantalla o abre otra app, que es lo que hace cualquiera caminando.
-       * Y no se puede pedir al arrancar: Google Play rechaza la ficha si el
-       * dialogo de segundo plano aparece sin una divulgacion previa. Iniciar la
-       * ronda es ese momento: el guardia ya acepto el aviso de geolocalizacion
-       * —que dice cada cuanto, por cuanto tiempo y para que— y esta por empezar
-       * a recorrer.
-       *
-       * No bloquea el inicio: si lo niega, la ronda arranca igual y la traza
-       * queda limitada a la app en primer plano. Una ronda sin registrar es
-       * peor que una traza incompleta.
+       * Sincronizar el estado de permiso de ubicación con el backend antes de iniciar.
+       * Si el puente está activo, se solicita ubicación en segundo plano y se
+       * reporta el estado actualizado a POST /geo/permission para que el backend
+       * (assertPatrolStartAllowed) no rebote con 'sin_reporte_de_permiso'.
        */
-      await puente.pedirPermiso('ubicacion-segundo-plano', true).catch(() => undefined);
+      if (puente.fase === 'listo') {
+        const resultadoSegundoPlano = await puente
+          .pedirPermiso('ubicacion-segundo-plano', true)
+          .catch(() => undefined);
+        if (resultadoSegundoPlano) {
+          const estadoApi = traducirEstadoPermiso(resultadoSegundoPlano.estado);
+          await fetch(`${apiUrl}/geo/permission`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              status: estadoApi,
+              deviceInfo: puente.infoEquipo ?? 'android app',
+            }),
+          }).catch(() => undefined);
+        } else {
+          await puente.refrescarPermisoUbicacion().catch(() => undefined);
+        }
+      } else {
+        await puente.refrescarPermisoUbicacion().catch(() => undefined);
+      }
+
       const response = await fetch(`${apiUrl}/guard/patrols/${patrol.id}/start`, {
         method: 'POST',
         credentials: 'include',
