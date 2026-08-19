@@ -6,6 +6,13 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
 import { esAppDelGuardia } from '../_lib/app-del-guardia';
+import {
+  esCodigoEmpresaValido,
+  guardarCodigoEmpresa,
+  leerCodigoEmpresa,
+  normalizarCodigoEmpresa,
+  olvidarCodigoEmpresa,
+} from '../_lib/codigo-empresa';
 import { leerCredenciales } from './login-form-data';
 
 export function LoginScreen() {
@@ -26,11 +33,24 @@ export function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [tenantId, setTenantId] = useState('');
   const [tenantChoices, setTenantChoices] = useState<
-    Array<{ tenantId: string; tenantName: string; role: Role }>
+    Array<{ tenantId: string; tenantName: string; tenantSlug: string; role: Role }>
   >([]);
+  /*
+   * El codigo de empresa fijado en ESTE telefono. Se lee en un efecto y no en
+   * el estado inicial porque `localStorage` no existe durante el render del
+   * servidor de Next: leerlo ahi haria que el HTML del servidor y el del
+   * cliente no coincidan.
+   */
+  const [codigoEmpresa, setCodigoEmpresa] = useState('');
+  const [editandoCodigoEmpresa, setEditandoCodigoEmpresa] = useState(false);
+  const [codigoEmpresaBorrador, setCodigoEmpresaBorrador] = useState('');
   const [nfcFeedback, setNfcFeedback] = useState<string | null>(null);
   const [pendingCardUid, setPendingCardUid] = useState<string | null>(null);
   const [nfcPin, setNfcPin] = useState('');
+
+  useEffect(() => {
+    setCodigoEmpresa(leerCodigoEmpresa());
+  }, []);
 
   useEffect(() => {
     function readActionLink() {
@@ -48,6 +68,32 @@ export function LoginScreen() {
     readActionLink();
     window.addEventListener('hashchange', readActionLink);
     return () => window.removeEventListener('hashchange', readActionLink);
+  }, []);
+
+  /**
+   * Abrir el campo del codigo con lo que hubiera fijado: el guardia corrige una
+   * letra en vez de escribirlo entero, que es lo que suele fallar en la garita.
+   */
+  const abrirEdicionDeCodigo = useCallback(() => {
+    setCodigoEmpresaBorrador(codigoEmpresa);
+    setEditandoCodigoEmpresa(true);
+  }, [codigoEmpresa]);
+
+  const fijarCodigoEmpresa = useCallback((valor: string) => {
+    const normalizado = normalizarCodigoEmpresa(valor);
+    if (!esCodigoEmpresaValido(normalizado)) return;
+    guardarCodigoEmpresa(normalizado);
+    setCodigoEmpresa(normalizado);
+    setEditandoCodigoEmpresa(false);
+    setStatus('idle');
+    setErrorMessage('');
+  }, []);
+
+  const borrarCodigoEmpresa = useCallback(() => {
+    olvidarCodigoEmpresa();
+    setCodigoEmpresa('');
+    setCodigoEmpresaBorrador('');
+    setEditandoCodigoEmpresa(true);
   }, []);
 
   const loginWithNfc = useCallback(
@@ -70,12 +116,18 @@ export function LoginScreen() {
             cardUid,
             ...(pin ? { pin } : {}),
             ...(tenantId ? { tenantId } : {}),
+            ...(!tenantId && codigoEmpresa ? { tenantSlug: codigoEmpresa } : {}),
           }),
         });
 
         const result = (await response.json()) as {
           requiresTenantSelection?: boolean;
-          tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
+          tenants?: Array<{
+            tenantId: string;
+            tenantName: string;
+            tenantSlug: string;
+            role: Role;
+          }>;
           user?: { role: Role };
           code?: string;
           message?: string | string[];
@@ -99,6 +151,7 @@ export function LoginScreen() {
             return;
           }
           setPendingCardUid(null);
+          if (result.code === 'TENANT_CODE_MISMATCH') abrirEdicionDeCodigo();
           setErrorMessage(
             result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
               ? result.message
@@ -120,7 +173,7 @@ export function LoginScreen() {
         setNfcFeedback(null);
       }
     },
-    [apiUrl, router, status, tenantId],
+    [abrirEdicionDeCodigo, apiUrl, codigoEmpresa, router, status, tenantId],
   );
 
   useEffect(() => {
@@ -194,12 +247,20 @@ export function LoginScreen() {
             identity: credenciales.identity,
             password: credenciales.password,
             ...(credenciales.tenantId ? { tenantId: credenciales.tenantId } : {}),
+            ...(!credenciales.tenantId && codigoEmpresa
+              ? { tenantSlug: codigoEmpresa }
+              : {}),
           }),
         },
       );
       const result = (await response.json()) as {
         requiresTenantSelection?: boolean;
-        tenants?: Array<{ tenantId: string; tenantName: string; role: Role }>;
+        tenants?: Array<{
+          tenantId: string;
+          tenantName: string;
+          tenantSlug: string;
+          role: Role;
+        }>;
         user?: { role: Role };
         code?: string;
         message?: string | string[];
@@ -211,8 +272,10 @@ export function LoginScreen() {
         return;
       }
       if (!response.ok || !result.user) {
+        if (result.code === 'TENANT_CODE_MISMATCH') abrirEdicionDeCodigo();
         setErrorMessage(
-          result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
+          (result.code === 'TENANT_SUSPENDED' || result.code === 'TENANT_CODE_MISMATCH') &&
+          typeof result.message === 'string'
             ? result.message
             : 'No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.',
         );
@@ -411,6 +474,39 @@ export function LoginScreen() {
           ) : null}
 
           {mode === 'login' && !pendingCardUid ? <form className="login-form" noValidate onSubmit={submit}>
+            {editandoCodigoEmpresa || !codigoEmpresa ? (
+              <label className="codigo-empresa-campo">
+                Código de empresa
+                <input
+                  autoCapitalize="none"
+                  autoComplete="organization"
+                  autoCorrect="off"
+                  inputMode="text"
+                  name="tenantSlug"
+                  onChange={(event) => {
+                    setCodigoEmpresaBorrador(event.target.value);
+                    setStatus('idle');
+                    setErrorMessage('');
+                  }}
+                  onBlur={(event) => fijarCodigoEmpresa(event.target.value)}
+                  placeholder="tu-empresa"
+                  spellCheck={false}
+                  value={codigoEmpresaBorrador}
+                />
+                <small>
+                  Te lo da tu supervisor. Se guarda en este teléfono: no lo escribes de nuevo.
+                </small>
+              </label>
+            ) : (
+              <p className="codigo-empresa-fijado">
+                <span>
+                  Empresa: <strong>{codigoEmpresa}</strong>
+                </span>
+                <button className="text-button" onClick={borrarCodigoEmpresa} type="button">
+                  Cambiar
+                </button>
+              </p>
+            )}
             <label>
               Usuario o correo
               <input
@@ -457,7 +553,13 @@ export function LoginScreen() {
                 Empresa
                 <select
                   name="tenantId"
-                  onChange={(event) => setTenantId(event.target.value)}
+                  onChange={(event) => {
+                    setTenantId(event.target.value);
+                    const elegida = tenantChoices.find(
+                      (tenant) => tenant.tenantId === event.target.value,
+                    );
+                    if (elegida) fijarCodigoEmpresa(elegida.tenantSlug);
+                  }}
                   required
                   value={tenantId}
                 >

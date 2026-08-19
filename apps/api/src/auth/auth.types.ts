@@ -14,11 +14,15 @@ export interface AuthIdentityRow {
   max_lock_seconds: number;
   /** Hash argon2id del PIN del login por tarjeta. NULL = ese guardia no usa PIN. */
   nfc_pin_hash: string | null;
+  /** Slug de la empresa. NULL en los roles de plataforma, que no cuelgan de una. */
+  tenant_slug: string | null;
 }
 
 export interface TenantChoice {
   tenantId: string;
   tenantName: string;
+  /** Lo que el guardia deja fijado en su telefono para no volver a elegir. */
+  tenantSlug: string;
   role: Role;
 }
 
