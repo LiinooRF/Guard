@@ -1,4 +1,7 @@
+import { Transform } from 'class-transformer';
 import { IsOptional, IsString, Matches } from 'class-validator';
+
+import { normalizarUidNfc } from '../../admin/uid-nfc';
 
 export class AssignGuardNfcCardDto {
   /**
@@ -15,6 +18,9 @@ export class AssignGuardNfcCardDto {
   nfcPin?: string | null;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? (value.trim() ? normalizarUidNfc(value) : null) : value,
+  )
   @IsString()
   @Matches(/^[0-9a-fA-F]{4,64}$/, {
     message: 'El UID de la tarjeta NFC debe tener entre 4 y 64 caracteres hexadecimales.',

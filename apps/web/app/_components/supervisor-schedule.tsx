@@ -35,13 +35,21 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
   const [busy, setBusy] = useState(false);
   const dates = useMemo(() => weekDates(monday), [monday]);
 
-  const loadSites = useCallback(async () => {
-    try {
-      const data = await request<Site[]>(apiUrl, '/supervisor/sites');
-      setSites(data);
-      setSiteId((current) => current || data[0]?.id || '');
-    } catch (cause) { setError(messageOf(cause)); }
-  }, [apiUrl]);
+  const assignmentsByDate = useMemo(() => {
+    const map = new Map<string, Assignment[]>();
+    for (const d of dates) {
+      map.set(d, []);
+    }
+    for (const a of assignments) {
+      const list = map.get(a.serviceDate);
+      if (list) {
+        list.push(a);
+      } else {
+        map.set(a.serviceDate, [a]);
+      }
+    }
+    return map;
+  }, [assignments, dates]);
 
   const loadWeek = useCallback(async () => {
     if (!siteId) return;
@@ -53,16 +61,65 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
         request<Shift[]>(apiUrl, `/supervisor/sites/${siteId}/shifts`),
         request<Assignment[]>(apiUrl, `/supervisor/sites/${siteId}/schedule?from=${monday}`),
       ]);
-      setGuards(nextGuards); setRoutes(nextRoutes.filter((route) => route.isActive));
+      setGuards(nextGuards);
+      setRoutes(nextRoutes.filter((route) => route.isActive));
       const activeShifts = nextShifts.filter((shift) => shift.isActive);
       setShifts(activeShifts);
-      setSelectedShiftId((current) => activeShifts.some((shift) => shift.id === current) ? current : activeShifts[0]?.id ?? '');
+      setSelectedShiftId((current) =>
+        activeShifts.some((shift) => shift.id === current) ? current : activeShifts[0]?.id ?? '',
+      );
       setAssignments(nextAssignments);
-    } catch (cause) { setError(messageOf(cause)); }
+    } catch (cause) {
+      setError(messageOf(cause));
+    }
   }, [apiUrl, monday, siteId]);
 
-  useEffect(() => { void loadSites(); }, [loadSites]);
-  useEffect(() => { void loadWeek(); }, [loadWeek]);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const data = await request<Site[]>(apiUrl, '/supervisor/sites');
+        if (!alive) return;
+        setSites(data);
+        setSiteId((current) => current || data[0]?.id || '');
+      } catch (cause) {
+        if (alive) setError(messageOf(cause));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [apiUrl]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!siteId) return undefined;
+    setError('');
+    void (async () => {
+      try {
+        const [nextGuards, nextRoutes, nextShifts, nextAssignments] = await Promise.all([
+          request<Guard[]>(apiUrl, `/supervisor/sites/${siteId}/guards`),
+          request<Route[]>(apiUrl, `/supervisor/sites/${siteId}/routes`),
+          request<Shift[]>(apiUrl, `/supervisor/sites/${siteId}/shifts`),
+          request<Assignment[]>(apiUrl, `/supervisor/sites/${siteId}/schedule?from=${monday}`),
+        ]);
+        if (!alive) return;
+        setGuards(nextGuards);
+        setRoutes(nextRoutes.filter((route) => route.isActive));
+        const activeShifts = nextShifts.filter((shift) => shift.isActive);
+        setShifts(activeShifts);
+        setSelectedShiftId((current) =>
+          activeShifts.some((shift) => shift.id === current) ? current : activeShifts[0]?.id ?? '',
+        );
+        setAssignments(nextAssignments);
+      } catch (cause) {
+        if (alive) setError(messageOf(cause));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [apiUrl, monday, siteId]);
 
   async function createShift(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('');
@@ -180,7 +237,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
           <div className="schedule-calendar" aria-label="Calendario semanal">
             {dates.map((date, index) => <div className="schedule-day" key={date}>
               <h3><span>{DAY_NAMES[index]}</span><small>{date.slice(8, 10)}</small></h3>
-              {assignments.filter((a) => a.serviceDate === date).map((a) => (
+              {(assignmentsByDate.get(date) ?? []).map((a) => (
                 <article key={a.id}>
                   <strong>{a.shiftName}</strong>
                   <span>{a.startsAt.slice(0, 5)}–{a.endsAt.slice(0, 5)}</span>

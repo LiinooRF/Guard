@@ -95,3 +95,35 @@ export function trazaDePatronCheckpoints(checkpoints: readonly CheckpointTrack[]
 export function puntosDibujables(puntos: readonly PuntoTrack[]): number {
   return puntos.filter((p) => esCoordenadaValida(p.latitude, p.longitude)).length;
 }
+
+export interface ResumenCheckpointsRonda {
+  total: number;
+  conUbicacion: number;
+  sinUbicacion: number;
+  cumplidos: number;
+  pendientes: number;
+}
+
+/**
+ * Resumen de los puntos de control de la ronda para mostrar cuántos tienen GPS
+ * y cuántos son interiores/subterráneos.
+ */
+export function resumenDeCheckpoints(
+  checkpoints: readonly CheckpointTrack[],
+): ResumenCheckpointsRonda {
+  const total = checkpoints.length;
+  let conUbicacion = 0;
+  let cumplidos = 0;
+  for (const c of checkpoints) {
+    if (esCoordenadaValida(c.latitude, c.longitude)) conUbicacion += 1;
+    if (c.scanned) cumplidos += 1;
+  }
+  return {
+    total,
+    conUbicacion,
+    sinUbicacion: total - conUbicacion,
+    cumplidos,
+    pendientes: total - cumplidos,
+  };
+}
+

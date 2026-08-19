@@ -63,6 +63,12 @@ export class AdminController {
     return this.admin.listUsers();
   }
 
+  @Get('quota')
+  @Permissions('tenant:users:manage')
+  getQuota() {
+    return this.admin.getTenantQuota();
+  }
+
   @Get('security/policy')
   @Permissions('tenant:security:manage')
   getAuthPolicy() {

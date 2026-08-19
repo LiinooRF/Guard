@@ -23,7 +23,7 @@ export default defineConfig([
       '.agents/**',
       '.claude/**',
       'apps/mobile/**',
-      'coverage/**',
+      '**/coverage/**',
     ],
   },
   js.configs.recommended,

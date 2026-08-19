@@ -9,8 +9,10 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { normalizarUidNfc } from '../../admin/uid-nfc';
+
 export class NfcLoginDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @Transform(({ value }) => (typeof value === 'string' ? normalizarUidNfc(value) : value))
   @IsString()
   @IsNotEmpty()
   @Matches(/^[0-9A-F]{4,64}$/, {

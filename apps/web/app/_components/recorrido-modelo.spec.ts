@@ -1,6 +1,7 @@
 import {
   marcasDeCheckpoints,
   puntosDibujables,
+  resumenDeCheckpoints,
   trazaDePatronCheckpoints,
   trazaDeRecorrido,
   type CheckpointTrack,
@@ -104,5 +105,23 @@ describe('trazaDePatronCheckpoints', () => {
 describe('puntosDibujables', () => {
   it('cuenta solo los de coordenada válida', () => {
     expect(puntosDibujables([p(-33.45, -70.66), p(0, 0), p(-33.4, -70.6)])).toBe(2);
+  });
+});
+
+describe('resumenDeCheckpoints', () => {
+  it('calcula con precisión puntos con ubicación y subterráneos', () => {
+    const checkpoints = [
+      cp('1', 1, [-33.45, -70.66], true, false),
+      cp('subterraneo', 2, undefined, true, false),
+      cp('3', 3, [-33.452, -70.662], false, false),
+    ];
+    const resumen = resumenDeCheckpoints(checkpoints);
+    expect(resumen).toEqual({
+      total: 3,
+      conUbicacion: 2,
+      sinUbicacion: 1,
+      cumplidos: 2,
+      pendientes: 1,
+    });
   });
 });

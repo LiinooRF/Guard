@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CircleMarker, LayerGroup, Map as LeafletMap } from 'leaflet';
-import { resolverOrigenTiles } from './mapa-tiles';
+import { formatearAtribucionTileLayer, resolverOrigenTiles } from './mapa-tiles';
 import { COLOR_MARCA, COLOR_SECUNDARIO_MARCA } from './mapa-colores';
+import { esCoordenadaValida } from './mapa-modelo';
 
 const SANTIAGO: [number, number] = [-33.4489, -70.6693];
 
@@ -60,17 +61,21 @@ export function CoordinateMap({
     .join('|');
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
     if (!element.current || !tileUrl || map.current) return;
     let alive = true;
     void import('leaflet').then((leaflet) => {
       if (!alive || !element.current) return;
-      const initial: [number, number] = latitude !== null && longitude !== null
-        ? [latitude, longitude]
-        : SANTIAGO;
+      const initial: [number, number] =
+        latitude !== null && longitude !== null && esCoordenadaValida(latitude, longitude)
+          ? [latitude, longitude]
+          : SANTIAGO;
       const instance = leaflet.map(element.current, {
         center: initial,
         zoom: latitude === null ? 11 : 18,
         zoomControl: true,
+        scrollWheelZoom: false,
+        preferCanvas: true,
       });
       // El origen pasa por resolverOrigenTiles(): impide que un MAP_TILE_URL
       // apuntando a tile.openstreetmap.org sirva tiles publicos en produccion,
@@ -84,14 +89,16 @@ export function CoordinateMap({
       if (origen.url) {
         leaflet
           .tileLayer(origen.url, {
-            attribution: origen.atribucionProveedor ?? attribution,
+            attribution: formatearAtribucionTileLayer(origen.atribucionProveedor ?? attribution),
             maxZoom: origen.maxZoom,
+            updateWhenIdle: true,
+            keepBuffer: 1,
           })
           .on('tileerror', () => setError(true))
           .addTo(instance);
       }
       capa.current = leaflet.layerGroup().addTo(instance);
-      if (latitude !== null && longitude !== null) {
+      if (latitude !== null && longitude !== null && esCoordenadaValida(latitude, longitude)) {
         marker.current = leaflet.circleMarker([latitude, longitude], {
           radius: 8,
           color: '#ffffff',
@@ -101,7 +108,9 @@ export function CoordinateMap({
         }).addTo(instance);
       }
       instance.on('click', (event: { latlng: { lat: number; lng: number } }) => {
-        callback.current?.(event.latlng.lat, event.latlng.lng);
+        if (esCoordenadaValida(event.latlng.lat, event.latlng.lng)) {
+          callback.current?.(event.latlng.lat, event.latlng.lng);
+        }
       });
       map.current = instance;
       setListo(true);

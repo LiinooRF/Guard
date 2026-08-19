@@ -9,6 +9,8 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { normalizarUidNfc } from '../uid-nfc';
+
 export class CreateTenantUserDto {
   @IsOptional()
   @IsEmail()
@@ -41,6 +43,9 @@ export class CreateTenantUserDto {
   password?: string;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? (value.trim() ? normalizarUidNfc(value) : null) : value,
+  )
   @IsString()
   @Matches(/^[0-9a-fA-F]{4,64}$/, { message: 'El UID NFC debe ser una cadena hexadecimal' })
   nfcCardUid?: string | null;
@@ -63,6 +68,9 @@ export class UpdateTenantUserDto {
   role!: 'SUPERVISOR' | 'GUARDIA';
 
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? (value.trim() ? normalizarUidNfc(value) : null) : value,
+  )
   @IsString()
   @Matches(/^[0-9a-fA-F]{4,64}$/, { message: 'El UID NFC debe ser una cadena hexadecimal' })
   nfcCardUid?: string | null;

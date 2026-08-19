@@ -44,7 +44,8 @@ export function validarImagen(archivo: FotoSubida, maxSizeMB: number): ImagenVal
       'El contenido del archivo no corresponde al formato declarado',
     );
   }
-  if (archivo.size > maxSizeMB * 1024 * 1024) {
+  const pesoRealBytes = Math.max(archivo.size, archivo.buffer.length);
+  if (pesoRealBytes > maxSizeMB * 1024 * 1024) {
     throw new PayloadTooLargeException(
       `La foto supera el maximo de ${maxSizeMB} MB configurado para el tenant`,
     );

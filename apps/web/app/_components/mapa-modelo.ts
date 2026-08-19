@@ -71,6 +71,40 @@ export function esCoordenadaValida(lat: unknown, lng: unknown): boolean {
   return true;
 }
 
+/** Umbral en metros por sobre el cual la señal GPS se considera imprecisa / subterránea. */
+export const UMBRAL_GPS_IMPRECISO_M = 50;
+
+export type EstadoGpsPunto = 'optimo' | 'estimado' | 'sin_coordenada';
+
+/**
+ * Clasifica la precisión GPS para indicar elegancia visual (estado 'sin señal GPS' o 'coordenada estimada').
+ */
+export function clasificarPrecisionGps(
+  lat: unknown,
+  lng: unknown,
+  accuracyM?: number | null,
+): EstadoGpsPunto {
+  if (!esCoordenadaValida(lat, lng)) return 'sin_coordenada';
+  if (typeof accuracyM === 'number' && Number.isFinite(accuracyM) && accuracyM > UMBRAL_GPS_IMPRECISO_M) {
+    return 'estimado';
+  }
+  return 'optimo';
+}
+
+/**
+ * Formatea la etiqueta de precisión GPS para popups, tarjetas y resúmenes.
+ */
+export function formatearPrecisionGps(accuracyM: number | null | undefined): string {
+  if (accuracyM === null || accuracyM === undefined || !Number.isFinite(accuracyM)) {
+    return 'Precisión no informada';
+  }
+  const metros = Math.round(accuracyM);
+  if (metros > UMBRAL_GPS_IMPRECISO_M) {
+    return `±${metros} m · señal estimada (subterráneo o sin cobertura óptima)`;
+  }
+  return `±${metros} m`;
+}
+
 /**
  * La traza que devuelve `GET /api/geo/patrols/:patrolId/track` viene con
  * `latitude`/`longitude`, y el dominio compartido usa `GeoPoint` (`lat`/`lng`).

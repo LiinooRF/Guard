@@ -210,6 +210,8 @@ export class EvidenceService {
     await mkdir(join(this.evidencePath, scan.tenant_id, scan.patrol_id), { recursive: true });
     await writeFile(rutaAbsoluta, archivo.buffer);
 
+    const pesoBytes = Math.max(archivo.size, archivo.buffer.length);
+    const takenAtLimpio = takenAtDevice?.trim() || null;
     const insertadas = await this.tenantContext.manager.query<
       Array<{ id: string; created_at: Date }>
     >(
@@ -225,11 +227,11 @@ export class EvidenceService {
         scan.checkpoint_id,
         rutaRelativa,
         archivo.mimetype,
-        archivo.size,
+        pesoBytes,
         imagen.width,
         imagen.height,
         sha256,
-        takenAtDevice ?? null,
+        takenAtLimpio,
       ],
     );
     const foto = insertadas[0];
@@ -262,11 +264,11 @@ export class EvidenceService {
       patrolId: scan.patrol_id,
       checkpointId: scan.checkpoint_id,
       mimeType: archivo.mimetype,
-      sizeBytes: archivo.size,
+      sizeBytes: pesoBytes,
       width: imagen.width,
       height: imagen.height,
       sha256,
-      takenAtDevice: takenAtDevice ?? null,
+      takenAtDevice: takenAtLimpio,
       createdAt: foto.created_at,
     };
   }

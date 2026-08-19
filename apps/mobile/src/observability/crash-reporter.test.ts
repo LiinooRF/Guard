@@ -55,6 +55,21 @@ test('sanitizarTexto redacta las cookies REALES del producto, no solo connect.si
   assert.ok(!limpio.includes('eyJhbGciOi.eyJzdWIi.signature'));
 });
 
+test('sanitizarTexto elimina contraseñas, claves, pines, secretos y rutas personales', () => {
+  const texto =
+    'Failed login with password="super_secret_password" and pin: 9876 and api_key="secret_api_key" at /home/jorge_guard/project/src/index.ts';
+  const limpio = sanitizarTexto(texto);
+
+  assert.ok(!limpio.includes('super_secret_password'));
+  assert.ok(!limpio.includes('9876'));
+  assert.ok(!limpio.includes('secret_api_key'));
+  assert.ok(!limpio.includes('jorge_guard'));
+  assert.ok(limpio.includes('password=[REDACTED]'));
+  assert.ok(limpio.includes('pin=[REDACTED]'));
+  assert.ok(limpio.includes('api_key=[REDACTED]'));
+  assert.ok(limpio.includes('/home/[USUARIO_REDACTED]'));
+});
+
 test('formatearErrorParaReporte genera payload conforme al contrato de ReportCrashDto', () => {
   const error = new TypeError('Cannot read properties of undefined (reading scan)');
   const payload = formatearErrorParaReporte(error, { fatal: true });

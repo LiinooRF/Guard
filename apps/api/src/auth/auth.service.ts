@@ -517,10 +517,11 @@ export class AuthService {
   }
 
   private async lookupIdentity(identity: string): Promise<AuthIdentityRow[]> {
-    const rows = await this.dataSource.query<AuthIdentityRow[]>(
-      `SELECT * FROM authenticate_identity($1)`,
-      [identity],
-    );
+    const rows =
+      (await this.dataSource.query<AuthIdentityRow[]>(
+        `SELECT * FROM authenticate_identity($1)`,
+        [identity],
+      )) ?? [];
     return rows.filter((row) => ROLES.includes(row.role_key));
   }
 

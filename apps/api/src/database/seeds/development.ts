@@ -16,6 +16,7 @@ interface DemoTenant {
   users: DemoUser[];
   siteId: string;
   checkpointIds: [string, string];
+  tagUids: [string, string];
   routeId: string;
   patrolId: string;
 }
@@ -69,6 +70,10 @@ const DEMO_TENANTS: DemoTenant[] = [
       'a0000000-0000-4000-8000-000000000004',
       'a0000000-0000-4000-8000-000000000005',
     ],
+    tagUids: [
+      '04A1B2C3D4E5F0',
+      '04A1B2C3D4E5F1',
+    ],
     routeId: 'a0000000-0000-4000-8000-000000000006',
     patrolId: 'a0000000-0000-4000-8000-000000000007',
   },
@@ -89,6 +94,10 @@ const DEMO_TENANTS: DemoTenant[] = [
     checkpointIds: [
       'b0000000-0000-4000-8000-000000000004',
       'b0000000-0000-4000-8000-000000000005',
+    ],
+    tagUids: [
+      '04B1B2C3D4E5F0',
+      '04B1B2C3D4E5F1',
     ],
     routeId: 'b0000000-0000-4000-8000-000000000006',
     patrolId: 'b0000000-0000-4000-8000-000000000007',
@@ -174,6 +183,17 @@ async function seedTenant(
          requires_photo = EXCLUDED.requires_photo,
          instructions = EXCLUDED.instructions`,
       [demo.checkpointIds[0], demo.checkpointIds[1], demo.tenantId, demo.siteId],
+    );
+    await client.query(
+      `INSERT INTO tags (tenant_id, checkpoint_id, tech, uid)
+       VALUES
+         ($1, $2, 'nfc', $4),
+         ($1, $3, 'nfc', $5)
+       ON CONFLICT (uid) WHERE is_active DO UPDATE SET
+         tenant_id = EXCLUDED.tenant_id,
+         checkpoint_id = EXCLUDED.checkpoint_id,
+         tech = EXCLUDED.tech`,
+      [demo.tenantId, demo.checkpointIds[0], demo.checkpointIds[1], demo.tagUids[0], demo.tagUids[1]],
     );
     await client.query(
       `INSERT INTO routes

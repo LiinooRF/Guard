@@ -75,7 +75,7 @@ import {
   type TrazaMapa,
 } from './mapa-modelo';
 import { useOrigenTiles } from './mapa-origen-tiles';
-import { ZOOM_INICIAL, type OrigenTiles } from './mapa-tiles';
+import { formatearAtribucionTileLayer, ZOOM_INICIAL, type OrigenTiles } from './mapa-tiles';
 
 export type {
   LineaMapa,
@@ -244,6 +244,7 @@ export function MapaBase({
 
       if (urlTiles) {
         L.tileLayer(urlTiles, {
+          attribution: formatearAtribucionTileLayer(origenEfectivo.atribucionProveedor),
           maxZoom,
           // Con red movil mala, menos peticiones: los tiles se piden al soltar y
           // no en cada pixel de arrastre, y se guarda un anillo de reserva.
@@ -275,7 +276,7 @@ export function MapaBase({
       // "Map container is already initialized".
       mapa?.remove();
     };
-  }, [hayMapa, interactivo, urlTiles, maxZoom]);
+  }, [hayMapa, interactivo, urlTiles, maxZoom, origenEfectivo.atribucionProveedor]);
 
   /* -------- Sincronizar las capas -------- */
   useEffect(() => {

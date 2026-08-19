@@ -57,6 +57,20 @@ export const ATRIBUCION_OSM = 'colaboradores de OpenStreetMap';
 export const ENLACE_LICENCIA_OSM = 'https://www.openstreetmap.org/copyright';
 
 /**
+ * Atribución estándar obligatoria para la capa de tiles de Leaflet.
+ * OpenStreetMap exige atribución visible por licencia (ODbL).
+ */
+export function formatearAtribucionTileLayer(atribucionProveedor?: string | null): string {
+  const osm = `&copy; <a href="${ENLACE_LICENCIA_OSM}" target="_blank" rel="noreferrer noopener">${ATRIBUCION_OSM}</a>`;
+  const extra = (atribucionProveedor ?? '').trim();
+  if (!extra) return osm;
+  if (extra.toLowerCase().includes('openstreetmap') || extra.toLowerCase().includes('osm')) {
+    return extra;
+  }
+  return `${osm} · ${extra}`;
+}
+
+/**
  * Tiles publicos de OSM. SOLO desarrollo, y con aviso a la vista para que nadie
  * los confunda con una configuracion terminada.
  */

@@ -112,13 +112,14 @@ describeDatabase('ConsentService.publishPolicy (RLS y permisos reales)', () => {
     // commit revienta despues con 25P02 y el usuario ve 500 sin una sola linea
     // de error en el camino. Por eso se comprueba que la fila quede escrita.
     const registros = await comoAdmin(async (service, runner) => {
-      await service.publishPolicy(actor, {
+      const pub = await service.publishPolicy(actor, {
         version: 'integracion-3',
         body: AVISO,
         privacyPolicyUrl: 'https://ejemplo.test/privacidad',
       });
       return (await runner.query(
-        `SELECT action FROM audit_log WHERE action = 'consentimiento.aviso_publicado'`,
+        `SELECT action FROM audit_log WHERE action = 'consentimiento.aviso_publicado' AND entity_id = $1`,
+        [pub.id],
       )) as Array<{ action: string }>;
     });
 

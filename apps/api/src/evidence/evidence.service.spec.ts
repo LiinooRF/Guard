@@ -258,6 +258,43 @@ describe('EvidenceService.storePhoto', () => {
     expect(manager.query).not.toHaveBeenCalled();
   });
 
+  it('rechaza si el buffer real supera el limite aunque el campo size declare menos', async () => {
+    const manager = { query: jest.fn() };
+    const bufferGrande = Buffer.alloc(2 * 1024 * 1024);
+    // Firma PNG + IHDR
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bufferGrande, 0);
+    bufferGrande.writeUInt32BE(13, 8);
+    bufferGrande.write('IHDR', 12, 'ascii');
+    bufferGrande.writeUInt32BE(640, 16);
+    bufferGrande.writeUInt32BE(480, 20);
+
+    const archivoManipulado: FotoSubida = {
+      mimetype: 'image/png',
+      size: 100, // declaracion falsa
+      buffer: bufferGrande,
+    };
+
+    await expect(
+      servicio(manager, reglas({ photoMaxSizeMB: 1 })).storePhoto('scan-id', 'guard-id', archivoManipulado),
+    ).rejects.toThrow('supera el maximo de 1 MB');
+    expect(manager.query).not.toHaveBeenCalled();
+  });
+
+  it('sanitiza takenAtDevice vacio o con espacios a null', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([ESCANEO])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'foto-id', created_at: new Date('2026-08-03T04:00:00Z') }]);
+
+    const res = await servicio(manager).storePhoto('scan-id', 'guard-id', fotoPng(), '   ');
+    expect(res.takenAtDevice).toBeNull();
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO scan_photos'),
+      expect.arrayContaining([null]),
+    );
+  });
+
   it('rechaza con 409 la MISMA imagen reusada en otro punto (sha duplicado)', async () => {
     const manager = { query: jest.fn() };
     manager.query

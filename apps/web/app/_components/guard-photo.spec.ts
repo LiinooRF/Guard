@@ -124,3 +124,54 @@ describe('constantes de compresión', () => {
     expect(CALIDADES_JPEG[0]).toBeLessThanOrEqual(1);
   });
 });
+
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+describe('Seguridad V1: fotos solo cámara, nunca galería (CLAUDE.md)', () => {
+  const COMPONENTES_DIR = __dirname;
+  const COMPONENTES_CON_FOTO = [
+    'guard-scan-photo.tsx',
+    'guard-event-form.tsx',
+    'guard-tareas-punto.tsx',
+  ];
+
+  it.each(COMPONENTES_CON_FOTO)(
+    '%s exige captura directa de cámara con capture y accept image/*',
+    (archivo) => {
+      const ruta = join(COMPONENTES_DIR, archivo);
+      const fuente = readFileSync(ruta, 'utf8');
+
+      // Debe contener input de tipo file
+      expect(fuente).toMatch(/type=["']file["']/);
+      // Debe contener capture="environment" o capture="user"
+      expect(fuente).toMatch(/capture=["'](environment|user)["']/);
+      // Debe contener accept="image/*"
+      expect(fuente).toMatch(/accept=["']image\/\*["']/);
+    },
+  );
+
+  it('ningún componente del guardia permite seleccionar archivos de la galería', () => {
+    const archivosGuard = readdirSync(COMPONENTES_DIR).filter(
+      (f) => f.startsWith('guard-') && f.endsWith('.tsx'),
+    );
+
+    for (const archivo of archivosGuard) {
+      const rawFuente = readFileSync(join(COMPONENTES_DIR, archivo), 'utf8');
+      // Quitar comentarios de bloque y de linea antes de buscar elementos JSX
+      const fuenteSinComentarios = rawFuente
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+
+      // Buscar tags JSX <input ... />
+      const inputsFile = fuenteSinComentarios.match(/<input[^>]*type=["']file["'][^>]*>/g) ?? [];
+
+      for (const input of inputsFile) {
+        // Todo input file en la UI del guardia debe forzar la cámara
+        expect(input).toMatch(/capture=["'](environment|user)["']/);
+        expect(input).toMatch(/accept=["']image\/\*["']/);
+      }
+    }
+  });
+});
+
