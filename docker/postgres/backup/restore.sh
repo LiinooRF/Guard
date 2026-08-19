@@ -55,10 +55,14 @@ if [ "$DB" = "${PGDATABASE:-}" ] && [ "${CONFIRMO_RESTORE_PRODUCTIVO:-no}" != "s
   exit 1
 fi
 
-# 1. Verificar integridad (checksum SHA-256) si existe
-if [ -f "$DUMP.sha256" ]; then
-  verificar_checksum "$DUMP" || exit 1
-fi
+# 1. Verificar integridad (checksum SHA-256)
+#
+# Sin el `if` de antes: ese guard hacia que un .sha256 faltante pasara TOTAL
+# Y SILENCIOSAMENTE de largo, sin una sola linea en el log. verificar_checksum
+# ya sabe tolerar la ausencia (dumps de antes de #224 no la tienen) pero deja
+# un [aviso] -quien esta restaurando en un desastre real se entera de que la
+# integridad NO se pudo verificar, en vez de asumir que si.
+verificar_checksum "$DUMP" || exit 1
 
 # 2. Descifrar si el dump viene cifrado (.age, .enc, .gpg)
 TRABAJO_RESTORE=""

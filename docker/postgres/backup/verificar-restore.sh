@@ -204,13 +204,13 @@ where not exists (
 SQL
 )
 
-SQL_GRANTS=$(cat <<SQL
+SQL_GRANTS=$(cat <<'SQL'
 select c.relname::text || '|' || a.privilege_type
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 cross join lateral aclexplode(c.relacl) a
 join pg_roles r on r.oid = a.grantee
-where n.nspname = 'public' and c.relkind = 'r' and r.rolname = '$ROL_APP'
+where n.nspname = 'public' and c.relkind = 'r' and r.rolname = :'rol_app'
 SQL
 )
 

@@ -297,7 +297,12 @@ cifrar_archivo() {
         registrar_error "para cifrar con openssl configure BACKUP_OPENSSL_PASSPHRASE o BACKUP_ENCRYPTION_PASSPHRASE"
         return 1
       fi
-      openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -in "$C_ORIGEN" -out "$C_DESTINO" -pass "pass:$CLAVE"
+      # La clave va por VARIABLE DE ENTORNO (-pass env:), nunca en el argv: un
+      # argv es visible para CUALQUIER usuario del host via `ps` o
+      # /proc/*/cmdline, y esta es la llave del respaldo completo de una base
+      # multi-tenant de seguridad privada.
+      _CLAVE_CIFRADO="$CLAVE" openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+        -in "$C_ORIGEN" -out "$C_DESTINO" -pass env:_CLAVE_CIFRADO
       ;;
     gpg)
       exigir_binarios gpg || return 1
@@ -309,7 +314,11 @@ cifrar_archivo() {
           registrar_error "para cifrar con gpg configure BACKUP_GPG_RECIPIENT o BACKUP_GPG_PASSPHRASE"
           return 1
         fi
-        gpg --batch --yes --pinentry-mode loopback --passphrase "$CLAVE" --symmetric --cipher-algo AES256 -o "$C_DESTINO" "$C_ORIGEN"
+        # gpg no tiene un "env:" propio: la clave viaja por su stdin
+        # (--passphrase-fd 0), que --symmetric no usa para otra cosa porque el
+        # dato de entrada/salida va por archivo (-o / argumento), no por stdin.
+        printf '%s' "$CLAVE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+          --symmetric --cipher-algo AES256 -o "$C_DESTINO" "$C_ORIGEN"
       fi
       ;;
     *)
@@ -359,13 +368,16 @@ descifrar_archivo() {
         registrar_error "para descifrar con openssl configure BACKUP_OPENSSL_PASSPHRASE o BACKUP_ENCRYPTION_PASSPHRASE"
         return 1
       fi
-      openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in "$D_ORIGEN" -out "$D_DESTINO" -pass "pass:$CLAVE"
+      # Misma razon que en cifrar_archivo: -pass env:, nunca en el argv.
+      _CLAVE_CIFRADO="$CLAVE" openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \
+        -in "$D_ORIGEN" -out "$D_DESTINO" -pass env:_CLAVE_CIFRADO
       ;;
     gpg)
       exigir_binarios gpg || return 1
       CLAVE="${BACKUP_GPG_PASSPHRASE:-${BACKUP_ENCRYPTION_PASSPHRASE:-${BACKUP_ENCRYPTION_KEY:-}}}"
       if [ -n "$CLAVE" ]; then
-        gpg --batch --yes --pinentry-mode loopback --passphrase "$CLAVE" --decrypt -o "$D_DESTINO" "$D_ORIGEN"
+        printf '%s' "$CLAVE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+          --decrypt -o "$D_DESTINO" "$D_ORIGEN"
       else
         gpg --batch --yes --decrypt -o "$D_DESTINO" "$D_ORIGEN"
       fi
@@ -388,6 +400,15 @@ generar_checksum() {
   ( cd "$G_DIR" && sha256sum "$G_BASE" > "$G_BASE.sha256" )
 }
 
+# LIMITE CONOCIDO, no resuelto aca: el .sha256 vive AL LADO del dump, en el
+# mismo bucket. Sirve contra corrupcion de transporte (un byte que se pierde
+# subiendo o bajando), no contra manipulacion deliberada: quien pueda alterar
+# el dump remoto puede alterar igual de facil su checksum. Sumado a que
+# AES-256-CBC (el cifrado de "openssl") no autentica, no hay deteccion real de
+# alteracion en ese camino; `age` si autentica (ChaCha20-Poly1305) y por eso es
+# la opcion mas fuerte de las tres. Resolverlo de raiz (HMAC con clave aparte,
+# o age como unica opcion soportada) es una decision de diseño, no un fix de
+# una linea — queda para cuando el equipo lo decida.
 verificar_checksum() {
   V_ARCH="$1"
   V_DIR=$(dirname "$V_ARCH")

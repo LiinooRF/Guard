@@ -39,6 +39,10 @@
 #   BACKUP_REMOTE_POSTGRES  default "$BACKUP_REMOTE/postgres"
 #   BACKUP_REMOTE_EVIDENCIA default "$BACKUP_REMOTE/evidencia"
 #   BACKUP_COPIAR_EVIDENCIA default si
+#   BACKUP_ALLOW_UNENCRYPTED_REMOTE default no. Con BACKUP_REMOTE configurado,
+#                           el script se niega a subir el dump sin cifrar
+#                           (age/openssl/gpg, ver comun.sh). "si" es la unica
+#                           forma de saltarselo, y es a proposito explicito.
 #
 # Codigos de salida (los lee el monitoreo, no solo una persona):
 #   0  base y copias fuera del VPS confirmadas
@@ -72,6 +76,21 @@ PROBLEMAS_REMOTO=0
 if [ -z "${PGDATABASE:-}" ]; then
   registrar_error "PGDATABASE no esta definida: no se sabe que base respaldar"
   exit 1
+fi
+
+# Cifrado silenciosamente opcional es peor que ninguno: sin este freno,
+# detectar_herramienta_cifrado cae en "none" apenas falta alguna variable de
+# clave (BACKUP_ENCRYPTION_TOOL=auto es el default) y el dump COMPLETO de una
+# base multi-tenant de seguridad privada sube a R2/S3 en texto plano sin que
+# nada se queje. Se verifica ANTES del pg_dump, no despues: que falte la clave
+# no puede costar los minutos de un dump completo para recien avisar al final.
+if [ -n "$REMOTO_PG" ]; then
+  HERRAMIENTA_CIFRADO_PREVIA=$(detectar_herramienta_cifrado) || exit 1
+  if [ "$HERRAMIENTA_CIFRADO_PREVIA" = "none" ] && [ "${BACKUP_ALLOW_UNENCRYPTED_REMOTE:-no}" != "si" ]; then
+    registrar_error "BACKUP_REMOTE esta configurado pero no hay cifrado activo."
+    registrar_error "Configure age/openssl/gpg (ver docs/respaldos.md), o si es a proposito ponga BACKUP_ALLOW_UNENCRYPTED_REMOTE=si."
+    exit 1
+  fi
 fi
 
 exigir_binarios pg_dump pg_restore || exit 1
