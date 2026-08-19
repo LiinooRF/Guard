@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createReadStream } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
+import { mkdir, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { ComplianceResult } from '@sentrycore/shared';
@@ -338,63 +339,149 @@ export class PatrolReportService {
     return ['completada', 'incompleta', 'vencida'].includes(estado);
   }
 
+  /**
+   * Sirve el PDF cacheado si existe. `true` = ya se sirvió, el llamador no
+   * dibuja nada.
+   *
+   * Espera el `finish`/`close` de DESTINO, no el `end` del lector (#320): si
+   * el cliente corta la descarga a mitad de camino, `end` del lector nunca
+   * llega —el lector sigue produciendo hacia un destino que ya no drena— y la
+   * promesa se queda colgada. Es el mismo criterio que `esperarFin` del
+   * renderer para el camino normal.
+   */
+  private async servirDesdeCache(
+    rutaCache: string,
+    destino: NodeJS.WritableStream,
+  ): Promise<boolean> {
+    let stats;
+    try {
+      stats = await stat(rutaCache);
+    } catch {
+      return false; // No está en cache todavía: se dibuja y guarda en disco.
+    }
+    if (stats.size === 0) return false;
+
+    const lector = createReadStream(rutaCache);
+    await new Promise<void>((resolve, reject) => {
+      let resuelto = false;
+      const terminar = () => {
+        if (resuelto) return;
+        resuelto = true;
+        resolve();
+      };
+      const fallar = (error: unknown) => {
+        if (resuelto) return;
+        resuelto = true;
+        reject(error);
+      };
+      lector.on('error', fallar);
+      destino.on('error', fallar);
+      destino.on('finish', terminar);
+      destino.on('close', terminar);
+      lector.pipe(destino);
+    });
+    return true;
+  }
+
+  /**
+   * Abre el archivo TEMPORAL donde se va a volcar el PDF a medida que se
+   * genera (#320).
+   *
+   * Temporal en el MISMO directorio que el destino final: `rename()` solo es
+   * atómico dentro de un mismo filesystem, y el volumen de evidencia puede
+   * montar cada tenant por separado.
+   */
+  private async abrirEscritorCache(
+    tenantId: string,
+    patrolId: string,
+    rutaCache: string,
+  ): Promise<{ rutaTemporal: string; stream: WriteStream }> {
+    await mkdir(join(this.raizEvidencia, tenantId, patrolId), { recursive: true });
+    const rutaTemporal = `${rutaCache}.tmp-${randomUUID()}`;
+    return { rutaTemporal, stream: createWriteStream(rutaTemporal) };
+  }
+
+  /** Ronda exitosa: cierra el temporal y lo publica de un solo golpe. */
+  private async confirmarEscritorCache(
+    escritor: { rutaTemporal: string; stream: WriteStream },
+    rutaCache: string,
+    patrolId: string,
+  ): Promise<void> {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        escritor.stream.on('error', reject);
+        escritor.stream.end(resolve);
+      });
+      await rename(escritor.rutaTemporal, rutaCache);
+    } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'cache_informe_escritura_fallida',
+          patrolId,
+          message: error instanceof Error ? error.message : 'error desconocido',
+        }),
+      );
+      await unlink(escritor.rutaTemporal).catch(() => undefined);
+    }
+  }
+
+  /** El dibujo falló: el temporal no sirve, se descarta sin tocar la cache vigente. */
+  private descartarEscritorCache(escritor: { rutaTemporal: string; stream: WriteStream }): void {
+    escritor.stream.destroy();
+    void unlink(escritor.rutaTemporal).catch(() => undefined);
+  }
+
+  /**
+   * Borra el PDF cacheado de una ronda cerrada (#266, #320) para que la
+   * próxima lectura lo regenere.
+   *
+   * Existe porque "cerrada" no es lo mismo que "inmutable": el guardia puede
+   * seguir reportando novedades sobre una ronda ya cerrada (reportEvent no lo
+   * bloquea, y no debería). Sin invalidar, la primera descarga posterior al
+   * cierre congela el PDF para siempre y esa novedad tardía queda invisible.
+   */
+  async invalidarCache(tenantId: string, patrolId: string): Promise<void> {
+    await Promise.all(
+      [true, false].map((incluirAnexo) =>
+        unlink(this.rutaCache(tenantId, patrolId, incluirAnexo)).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            this.logger.warn(
+              JSON.stringify({
+                event: 'cache_informe_invalidacion_fallida',
+                patrolId,
+                message: error instanceof Error ? error.message : 'error desconocido',
+              }),
+            );
+          }
+        }),
+      ),
+    );
+  }
+
   /** Dibuja el informe ya resuelto sobre el destino que decida el llamador. */
   async render(modelo: InformeRonda, destino: NodeJS.WritableStream): Promise<ResumenRender> {
     const tenantId = modelo.tenantId;
     const cerrada = this.esRondaCerrada(modelo.estado);
     const rutaCache = tenantId ? this.rutaCache(tenantId, modelo.patrolId, modelo.incluyeAnexo) : null;
 
-    if (cerrada && rutaCache) {
-      try {
-        const stats = await stat(rutaCache);
-        if (stats.size > 0) {
-          const lector = createReadStream(rutaCache);
-          lector.pipe(destino);
-          await new Promise<void>((resolve, reject) => {
-            lector.on('end', resolve);
-            lector.on('error', reject);
-          });
-          return { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
-        }
-      } catch {
-        // No está en cache todavía: se dibuja y guarda en disco.
-      }
+    if (cerrada && rutaCache && (await this.servirDesdeCache(rutaCache, destino))) {
+      return { fotosIncluidas: 0, fotosOmitidas: 0, paginasAnexo: 0 };
     }
 
     const reglas = await this.rules.effective();
-    const partes: Buffer[] = [];
 
-    const resumen = await renderizarInformeRonda(modelo, destino, {
-      raizEvidencia: this.raizEvidencia,
-      // El mismo techo que aplica al subir la foto (#13): si una imagen supera
-      // el maximo del tenant, esta corrupta o alguien la escribio a mano en el
-      // volumen, y cargarla es justo lo que no queremos.
-      maxBytesFoto: reglas.photoMaxSizeMB * 1024 * 1024,
-      // Forma del informe (#308). Ninguna de las cuatro es una constante del
-      // renderer: son decisiones de cada cliente y viven en la cascada.
-      bitacora: reglas.reportTimeline,
-      fotosEnLinea: reglas.reportInlinePhotos,
-      etiquetaConfidencial: reglas.reportConfidentialLabel,
-      maxEntradasBitacora: reglas.reportTimelineMaxEntries,
-      onChunk: cerrada && rutaCache ? (chunk: Buffer) => partes.push(chunk) : undefined,
-      onEvidenciaFallida: (fotoId, motivo) => {
-        // Log sin nombres ni ubicaciones de personas (regla 5 de CLAUDE.md).
-        this.logger.warn(
-          JSON.stringify({
-            event: 'evidencia_no_incluida_en_informe',
-            patrolId: modelo.patrolId,
-            photoId: fotoId,
-            motivo,
-          }),
-        );
-      },
-    });
-
-    if (cerrada && rutaCache && partes.length > 0) {
+    // Se escribe a un TEMPORAL a medida que pdfkit va emitiendo (#320): el PDF
+    // completo puede pesar decenas de MB con el anexo, y juntarlo entero en un
+    // Buffer antes de guardarlo es esa misma memoria multiplicada por cada
+    // descarga simultánea de una ronda recién cerrada.
+    //
+    // La cache es oportunista, no obligatoria: si el volumen no tiene permiso
+    // de escritura (o cualquier otro motivo), igual hay que servir el PDF. Por
+    // eso abrir el escritor no puede tirar la descarga entera abajo.
+    let escritor: { rutaTemporal: string; stream: WriteStream } | null = null;
+    if (cerrada && rutaCache && tenantId) {
       try {
-        const bufferCompleto = Buffer.concat(partes);
-        await mkdir(join(this.raizEvidencia, tenantId!, modelo.patrolId), { recursive: true });
-        await writeFile(rutaCache, bufferCompleto);
+        escritor = await this.abrirEscritorCache(tenantId, modelo.patrolId, rutaCache);
       } catch (error) {
         this.logger.warn(
           JSON.stringify({
@@ -404,6 +491,42 @@ export class PatrolReportService {
           }),
         );
       }
+    }
+
+    let resumen: ResumenRender;
+    try {
+      resumen = await renderizarInformeRonda(modelo, destino, {
+        raizEvidencia: this.raizEvidencia,
+        // El mismo techo que aplica al subir la foto (#13): si una imagen supera
+        // el maximo del tenant, esta corrupta o alguien la escribio a mano en el
+        // volumen, y cargarla es justo lo que no queremos.
+        maxBytesFoto: reglas.photoMaxSizeMB * 1024 * 1024,
+        // Forma del informe (#308). Ninguna de las cuatro es una constante del
+        // renderer: son decisiones de cada cliente y viven en la cascada.
+        bitacora: reglas.reportTimeline,
+        fotosEnLinea: reglas.reportInlinePhotos,
+        etiquetaConfidencial: reglas.reportConfidentialLabel,
+        maxEntradasBitacora: reglas.reportTimelineMaxEntries,
+        onChunk: escritor ? (chunk: Buffer) => escritor.stream.write(chunk) : undefined,
+        onEvidenciaFallida: (fotoId, motivo) => {
+          // Log sin nombres ni ubicaciones de personas (regla 5 de CLAUDE.md).
+          this.logger.warn(
+            JSON.stringify({
+              event: 'evidencia_no_incluida_en_informe',
+              patrolId: modelo.patrolId,
+              photoId: fotoId,
+              motivo,
+            }),
+          );
+        },
+      });
+    } catch (error) {
+      if (escritor) this.descartarEscritorCache(escritor);
+      throw error;
+    }
+
+    if (escritor) {
+      await this.confirmarEscritorCache(escritor, rutaCache!, modelo.patrolId);
     }
 
     return resumen;
