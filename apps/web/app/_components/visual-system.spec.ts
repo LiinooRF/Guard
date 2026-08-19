@@ -6,6 +6,10 @@ const AQUI = __dirname;
 describe('sistema visual de uso diario (#292)', () => {
   const css = readFileSync(join(AQUI, '..', 'globals.css'), 'utf8');
   const marca = readFileSync(join(AQUI, 'marca-configuracion.tsx'), 'utf8');
+  const navegacionGuardia = readFileSync(join(AQUI, 'guard-bottom-nav.tsx'), 'utf8');
+  const inicioGuardia = readFileSync(join(AQUI, 'guard-home.tsx'), 'utf8');
+  const rondaGuardia = readFileSync(join(AQUI, 'guard-shift.tsx'), 'utf8');
+  const paginaPorRol = readFileSync(join(AQUI, '..', 'app', '[role]', 'page.tsx'), 'utf8');
 
   it('prioriza la tipografía del sistema y superficies administrativas planas', () => {
     expect(css).toContain('font-family: -apple-system, BlinkMacSystemFont');
@@ -41,6 +45,34 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).toMatch(/@media \(max-width: 520px\)[\s\S]*?\.brand-color-options \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
   });
 
+  it('reserva espacio real bajo la navegación fija del guardia', () => {
+    expect(css).toMatch(
+      /\.dashboard-shell\[data-role="GUARDIA"\] \.dashboard-content \{[^}]*padding-bottom: calc\(7\.5rem \+ env\(safe-area-inset-bottom\)\)/,
+    );
+    expect(css).toMatch(/\.guardia-nav-inferior \{[^}]*position: fixed/);
+    expect(css).toContain('bottom: max(.65rem, env(safe-area-inset-bottom))');
+    expect(css).toMatch(
+      /@media \(max-width: 600px\)[\s\S]*?\.dashboard-shell\[data-role="GUARDIA"\] \.dashboard-content \{ padding: \.85rem \.75rem calc\(7\.5rem \+ env\(safe-area-inset-bottom\)\); \}/,
+    );
+  });
+
+  it('la navegación inferior tiene estado activo, foco y movimiento reducible', () => {
+    expect(navegacionGuardia).toContain("aria-label=\"Navegación del turno\"");
+    expect(navegacionGuardia).toContain("aria-current={item.active ? 'page' : undefined}");
+    expect(css).toContain('.guardia-nav-item:focus-visible');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.guardia-nav-inferior \{ animation: none; \}/);
+  });
+
+  it('separa turno, puntos y sesiones en vistas reales y marca la vigente', () => {
+    expect(paginaPorRol).toContain("href: '?vista=turno'");
+    expect(paginaPorRol).toContain("href: '?vista=puntos'");
+    expect(paginaPorRol).toContain("href: '?vista=sesiones'");
+    expect(paginaPorRol).toContain("active: guardView === 'sesiones'");
+    expect(inicioGuardia).not.toContain("href: '#sesiones'");
+    expect(rondaGuardia).not.toContain("href: '#sesiones'");
+    expect(navegacionGuardia).toContain("name === 'sesiones'");
+    expect(css).toMatch(/\.dashboard-shell\[data-role="GUARDIA"\] #sesiones \.secondary-button \{[^}]*min-height: var\(--guardia-toque\)/);
+  });
   it('Marca tiene grupos comprensibles, vista previa real y mensajes accesibles', () => {
     expect(marca).toContain('id="marca-identidad"');
     expect(marca).toContain('id="marca-colores"');

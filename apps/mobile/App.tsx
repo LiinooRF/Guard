@@ -295,6 +295,7 @@ function AppShell({ portal }: { portal: URL }) {
     setMotivoFallo(undefined);
     setFailed(false);
     setRutaOffline(undefined);
+    cargadoInicialmente.current = false;
     setLoading(true);
     webView.current?.reload();
   };

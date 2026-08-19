@@ -257,15 +257,6 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           <span><small>Duración estimada</small><strong>{patrol.estimatedDurationMin} min</strong></span>
         </div>
 
-        <ol className="guard-checkpoints" aria-label="Puntos de la ronda">
-          {patrol.checkpoints.map((checkpoint) => (
-            <li key={checkpoint.id}>
-              <span>{checkpoint.position}</span>
-              <strong>{checkpoint.name}</strong>
-            </li>
-          ))}
-        </ol>
-
       </section>
     </>
   );
