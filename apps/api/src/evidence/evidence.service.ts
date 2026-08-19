@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
+import type { PatrolReportService } from '../reports/patrol-report.service';
+import { esRondaCerrada } from '../sync/late-scan.policy';
 import { type FotoSubida, validarImagen } from './photo-validation';
 
 export type { FotoSubida };
@@ -26,6 +28,10 @@ export class EvidenceService {
     private readonly tenantContext: TenantContextService,
     private readonly rules: RulesService,
     config: ConfigService,
+    // Tumba el PDF cacheado de una ronda YA CERRADA cuando le llega una foto
+    // tarde (#266, #320). Opcional a proposito: el informe es un consumidor de
+    // la evidencia, no al reves, y sin el la subida tiene que seguir andando.
+    private readonly patrolReport?: PatrolReportService,
   ) {
     this.evidencePath = config.getOrThrow<string>('EVIDENCE_PATH');
   }
@@ -170,9 +176,15 @@ export class EvidenceService {
 
     // El guardia solo adjunta evidencia a escaneos de SUS rondas.
     const scans = await this.tenantContext.manager.query<
-      Array<{ id: string; tenant_id: string; patrol_id: string; checkpoint_id: string }>
+      Array<{
+        id: string;
+        tenant_id: string;
+        patrol_id: string;
+        checkpoint_id: string;
+        patrol_status: string;
+      }>
     >(
-      `SELECT sc.id, sc.tenant_id, sc.patrol_id, sc.checkpoint_id
+      `SELECT sc.id, sc.tenant_id, sc.patrol_id, sc.checkpoint_id, p.status AS patrol_status
        FROM scans sc
        JOIN patrols p ON p.tenant_id = sc.tenant_id AND p.id = sc.patrol_id
        WHERE sc.id = $1 AND p.guard_id = $2`,
@@ -222,6 +234,22 @@ export class EvidenceService {
       // INSERT. Mismo veredicto que el pre-chequeo, sin archivo huerfano.
       await rm(rutaAbsoluta, { force: true });
       throw new ConflictException(FOTO_REUSADA);
+    }
+
+    /*
+     * La ronda ya cerrada NO congela su evidencia: la cola offline sube la foto
+     * cuando vuelve la señal, y para entonces el ultimo escaneo pudo haber
+     * cerrado la ronda (regla 4 de CLAUDE.md: la ronda ocurre sin cobertura).
+     * Si el informe ya se descargo una vez, el PDF quedo cacheado SIN esta foto
+     * y asi se serviria para siempre — justo la evidencia que obliga a tomar.
+     *
+     * No se bloquea la subida si la invalidacion falla: preferimos una cache
+     * vieja antes que perder la foto que el guardia ya saco.
+     */
+    if (esRondaCerrada(scan.patrol_status)) {
+      await this.patrolReport
+        ?.invalidarCache(scan.tenant_id, scan.patrol_id)
+        .catch(() => undefined);
     }
 
     return {

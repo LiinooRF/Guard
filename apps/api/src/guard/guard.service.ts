@@ -9,6 +9,7 @@ import { EvidenceService } from '../evidence/evidence.service';
 import { GpsPolicyService } from '../geo/gps-policy.service';
 import { MailQueueService } from '../mail/mail-queue.service';
 import { EnvioInformeService } from '../reports/envio-informe.service';
+import { PatrolReportService } from '../reports/patrol-report.service';
 import { RulesService } from '../rules/rules.service';
 import type { CreateScanDto } from './dto/create-scan.dto';
 import type { ReportEventDto } from './dto/report-event.dto';
@@ -234,6 +235,10 @@ export class GuardService {
     // Es quien llama a isPhotoRequired() de @sentrycore/shared: la decision no se
     // reimplementa aca.
     private readonly evidence?: EvidenceService,
+    // Invalida el PDF cacheado de una ronda cerrada cuando le llega una novedad
+    // tardia (#266 lo cachea; sin esto, la novedad queda invisible para
+    // siempre). Opcional por lo mismo que los dos de arriba.
+    private readonly patrolReport?: PatrolReportService,
   ) {}
 
   async getHome(guardId: string, siteId?: string) {
@@ -1134,17 +1139,28 @@ export class GuardService {
    * field_events, asi que no existe el camino para reescribir la historia.
    */
   async reportEvent(guardId: string, input: ReportEventDto) {
-    let patrol: { id: string | null; site_id: string } | undefined;
+    // tenant_id/status solo existen cuando HAY una ronda de verdad: el
+    // recinto-de-respaldo de abajo (jornada activa o guard_sites) construye un
+    // patrol SINTETICO con id null, y ese no tiene fila en `patrols` de la que
+    // sacarlos. invalidarCache() mas abajo depende de esto y por eso los deja
+    // opcionales, no los inventa.
+    let patrol:
+      | { id: string | null; site_id: string; tenant_id?: string; status?: string }
+      | undefined;
     if (input.patrolId) {
-      const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
-        `SELECT id, site_id FROM patrols WHERE id = $1 AND guard_id = $2`,
+      const rows = await this.tenantContext.manager.query<
+        Array<{ id: string; site_id: string; tenant_id: string; status: string }>
+      >(
+        `SELECT id, site_id, tenant_id, status FROM patrols WHERE id = $1 AND guard_id = $2`,
         [input.patrolId, guardId],
       );
       patrol = rows[0];
       if (!patrol) throw new NotFoundException('La ronda indicada no existe');
     } else {
-      const rows = await this.tenantContext.manager.query<Array<{ id: string; site_id: string }>>(
-        `SELECT id, site_id FROM patrols
+      const rows = await this.tenantContext.manager.query<
+        Array<{ id: string; site_id: string; tenant_id: string; status: string }>
+      >(
+        `SELECT id, site_id, tenant_id, status FROM patrols
          WHERE guard_id = $1
          ORDER BY scheduled_start_at DESC
          LIMIT 1`,
@@ -1219,6 +1235,23 @@ export class GuardService {
     let notified = false;
     if (!replay) {
       notified = await this.notificarEvento(eventId!, patrol.site_id, guardId, input);
+
+      // Una ronda "cerrada" no es inmutable: el guardia puede seguir
+      // reportando novedades sobre ella despues del cierre, y esta bien que
+      // pueda. El informe (#266) sirve el PDF cacheado de la ronda cerrada sin
+      // volver a mirar la base, asi que si no se invalida aca la novedad
+      // recien insertada queda invisible para siempre en el primer PDF que ya
+      // se haya descargado. No se bloquea el reporte si la invalidacion falla:
+      // es mejor una cache vieja que un boton de panico que no responde.
+      //
+      // patrol.id/status pueden faltar: el recinto-de-respaldo (jornada activa
+      // o guard_sites, arriba) no viene de una fila de `patrols` y no tiene
+      // ronda que cachear.
+      if (patrol.id && patrol.status && esRondaCerrada(patrol.status)) {
+        await this.patrolReport
+          ?.invalidarCache(patrol.tenant_id!, patrol.id)
+          .catch(() => undefined);
+      }
     }
 
     return {

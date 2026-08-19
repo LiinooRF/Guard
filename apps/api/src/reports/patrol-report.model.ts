@@ -18,6 +18,7 @@ import type { MapaRecorrido } from './mapa-recorrido.model';
 
 export interface EncabezadoRondaRow {
   id: string;
+  tenant_id?: string;
   status: string;
   scheduled_start_at: Date;
   scheduled_end_at: Date;
@@ -207,6 +208,7 @@ export interface ResumenTareas {
 
 export interface InformeRonda {
   readonly patrolId: string;
+  readonly tenantId?: string;
   readonly filename: string;
   readonly marca: MarcaDocumento;
   readonly timezone: string;
@@ -346,6 +348,7 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
 
   return {
     patrolId: ronda.id,
+    tenantId: ronda.tenant_id,
     filename: `informe-ronda-${ronda.id}.pdf`,
     marca,
     timezone: ronda.timezone,

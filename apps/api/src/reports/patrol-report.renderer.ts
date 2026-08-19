@@ -127,6 +127,8 @@ export interface OpcionesRender {
   readonly etiquetaConfidencial?: boolean;
   /** reportTimelineMaxEntries: tope de entradas dibujadas en la bitacora. */
   readonly maxEntradasBitacora?: number;
+  /** Callback para capturar los bytes del PDF a medida que se generan. */
+  readonly onChunk?: (chunk: Buffer) => void;
 }
 
 export interface ResumenRender {
@@ -172,6 +174,10 @@ export async function renderizarInformeRonda(
       Creator: modelo.marca.displayName,
     },
   });
+
+  if (opciones.onChunk) {
+    doc.on('data', opciones.onChunk);
+  }
 
   const terminado = esperarFin(doc, destino);
   doc.pipe(destino);
