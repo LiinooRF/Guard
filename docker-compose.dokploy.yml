@@ -40,14 +40,13 @@ services:
     networks:
       - internal
 
-  # Dump diario de PostgreSQL (issue #24, ver docs/respaldos.md).
-  # SIN perfil a proposito: el respaldo no es opcional, corre igual en staging
-  # y en produccion. Solo red interna: no expone nada.
-  # OJO: los dumps quedan en el MISMO disco que la base (volumen backup_data);
-  # la copia fuera del VPS esta pendiente de decidir (BACKUP_REMOTE en
-  # .env.example y docs/respaldos.md).
+  # Servicio de respaldo diario y copia remota de PostgreSQL y evidencias (issue #24, docs/respaldos.md).
+  # SIN perfil a proposito: el respaldo no es opcional, corre igual en staging y en produccion.
+  # Solo red interna: no expone nada a internet.
   postgres-backup:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: docker/postgres/backup/Dockerfile
     restart: unless-stopped
     environment:
       # tzdata viene en la imagen; sin TZ el "04:00" seria UTC.
@@ -58,38 +57,41 @@ services:
       PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
-    # La imagen de postgres ejecuta cualquier comando que no sea `postgres`
-    # tal cual, asi que este contenedor nunca levanta un servidor propio.
-    command:
-      - sh
-      - -c
-      - |
-        set -u
-        echo "[backup] servicio arriba; dump diario 04:00 America/Santiago, retencion $${BACKUP_RETENTION_DAYS} dias"
-        while true; do
-          objetivo=$$(date -d "$$(date +%F) 04:00" +%s)
-          ahora=$$(date +%s)
-          [ "$$objetivo" -le "$$ahora" ] && objetivo=$$((objetivo + 86400))
-          espera=$$((objetivo - ahora))
-          echo "[backup] proximo dump en $$espera segundos"
-          sleep "$$espera"
-          fecha=$$(date +%F)
-          destino=/backups/sentrycore-$$fecha.dump
-          inicio=$$(date +%s)
-          echo "[backup] inicio pg_dump $$fecha"
-          if pg_dump -Fc -f "$$destino.part" "$$PGDATABASE"; then
-            mv "$$destino.part" "$$destino"
-            echo "[backup] ok: $$destino ($$(du -h "$$destino" | cut -f1)) en $$(( $$(date +%s) - inicio ))s"
-          else
-            rm -f "$$destino.part"
-            echo "[backup] ERROR: pg_dump fallo; queda el dump anterior y se reintenta a las 04:00 siguientes" >&2
-          fi
-          find /backups -name 'sentrycore-*.dump' -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
-        done
+      BACKUP_HORA: ${BACKUP_HORA:-04:00}
+      BACKUP_AL_ARRANCAR: ${BACKUP_AL_ARRANCAR:-si}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_MINIMO_LOCAL: ${BACKUP_MINIMO_LOCAL:-3}
+      BACKUP_COPIAR_EVIDENCIA: ${BACKUP_COPIAR_EVIDENCIA:-si}
+      # Destino rclone para copia fuera del VPS (S3, Cloudflare R2, Backblaze B2)
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      BACKUP_REMOTE_POSTGRES: ${BACKUP_REMOTE_POSTGRES:-}
+      BACKUP_REMOTE_EVIDENCIA: ${BACKUP_REMOTE_EVIDENCIA:-}
+      # Cifrado opcional (age, openssl, gpg)
+      BACKUP_ENCRYPTION_TOOL: ${BACKUP_ENCRYPTION_TOOL:-}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      BACKUP_OPENSSL_PASSPHRASE: ${BACKUP_OPENSSL_PASSPHRASE:-}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_AGE_IDENTITY: ${BACKUP_AGE_IDENTITY:-}
+      BACKUP_GPG_RECIPIENT: ${BACKUP_GPG_RECIPIENT:-}
+      BACKUP_GPG_PASSPHRASE: ${BACKUP_GPG_PASSPHRASE:-}
+      # Credenciales de rclone pasadas por variables de entorno de Dokploy
+      RCLONE_CONFIG_R2_TYPE: ${RCLONE_CONFIG_R2_TYPE:-}
+      RCLONE_CONFIG_R2_PROVIDER: ${RCLONE_CONFIG_R2_PROVIDER:-}
+      RCLONE_CONFIG_R2_ENDPOINT: ${RCLONE_CONFIG_R2_ENDPOINT:-}
+      RCLONE_CONFIG_R2_REGION: ${RCLONE_CONFIG_R2_REGION:-}
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${RCLONE_CONFIG_R2_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_R2_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_S3_TYPE: ${RCLONE_CONFIG_S3_TYPE:-}
+      RCLONE_CONFIG_S3_PROVIDER: ${RCLONE_CONFIG_S3_PROVIDER:-}
+      RCLONE_CONFIG_S3_ENDPOINT: ${RCLONE_CONFIG_S3_ENDPOINT:-}
+      RCLONE_CONFIG_S3_REGION: ${RCLONE_CONFIG_S3_REGION:-}
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: ${RCLONE_CONFIG_S3_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_S3_SECRET_ACCESS_KEY:-}
+    command: ["sh", "/scripts/respaldo-diario.sh"]
     volumes:
       - backup_data:/backups
-      # restore.sh montado aca para poder correrlo con `docker compose exec`.
+      - evidence_data:/evidencia:ro
+      # Scripts montados aca para correrlos con `docker compose exec`.
       - ./docker/postgres/backup:/scripts:ro
     depends_on:
       postgres:

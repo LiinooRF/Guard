@@ -32,6 +32,9 @@
 # ---------------------------------------------------------------------------
 set -eu
 
+ETIQUETA_LOG=restore
+. "$(dirname "$0")/comun.sh"
+
 DUMP="${1:-}"
 DB="${2:-}"
 
@@ -52,7 +55,39 @@ if [ "$DB" = "${PGDATABASE:-}" ] && [ "${CONFIRMO_RESTORE_PRODUCTIVO:-no}" != "s
   exit 1
 fi
 
-if ! pg_restore -l "$DUMP" > /dev/null; then
+# 1. Verificar integridad (checksum SHA-256)
+#
+# Sin el `if` de antes: ese guard hacia que un .sha256 faltante pasara TOTAL
+# Y SILENCIOSAMENTE de largo, sin una sola linea en el log. verificar_checksum
+# ya sabe tolerar la ausencia (dumps de antes de #224 no la tienen) pero deja
+# un [aviso] -quien esta restaurando en un desastre real se entera de que la
+# integridad NO se pudo verificar, en vez de asumir que si.
+verificar_checksum "$DUMP" || exit 1
+
+# 2. Descifrar si el dump viene cifrado (.age, .enc, .gpg)
+TRABAJO_RESTORE=""
+limpiar_restore() {
+  if [ -n "$TRABAJO_RESTORE" ] && [ -d "$TRABAJO_RESTORE" ]; then
+    rm -rf "$TRABAJO_RESTORE"
+  fi
+}
+trap limpiar_restore EXIT INT TERM
+
+HERRAMIENTA_DUMP=$(detectar_herramienta_por_archivo "$DUMP")
+if [ "$HERRAMIENTA_DUMP" != "none" ]; then
+  TRABAJO_RESTORE=$(mktemp -d)
+  DUMP_PLANO="$TRABAJO_RESTORE/sentrycore-descomprimido.dump"
+  registrar "dump cifrado detectado ($HERRAMIENTA_DUMP); descifrando..."
+  if ! descifrar_archivo "$DUMP" "$DUMP_PLANO" "$HERRAMIENTA_DUMP"; then
+    echo "ERROR: no se pudo descifrar el dump con $HERRAMIENTA_DUMP (verifique credenciales/claves)" >&2
+    exit 1
+  fi
+  registrar "dump descifrado con exito"
+else
+  DUMP_PLANO="$DUMP"
+fi
+
+if ! pg_restore -l "$DUMP_PLANO" > /dev/null; then
   echo "ERROR: el archivo no es un dump -Fc legible: $DUMP" >&2
   exit 1
 fi
@@ -72,7 +107,7 @@ fi
 INICIO=$(date +%s)
 echo "== RESTORE INICIO $(date '+%F %T') dump=$DUMP destino=$DB =="
 
-pg_restore --clean --if-exists -d "$DB" "$DUMP"
+pg_restore --clean --if-exists -d "$DB" "$DUMP_PLANO"
 
 FIN=$(date +%s)
 echo "== RESTORE FIN $(date '+%F %T') — duracion $((FIN - INICIO)) segundos =="

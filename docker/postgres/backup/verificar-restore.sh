@@ -116,8 +116,14 @@ avisar() { echo "  [aviso] $*"; AVISOS=$((AVISOS + 1)); }
 
 # Una consulta que falla aborta el script (set -e): si la verificacion no puede
 # correr, no hay resultado que reportar. Silenciarla seria peor que fallar.
+#
+# Por STDIN, no `-c`: psql solo interpola sus variables (:'rol_app' en
+# SQL_GRANTS) cuando lee de un archivo o de stdin, NO dentro del argumento de
+# `-c` -se descubrio en CI, con "syntax error at or near ':'" porque el texto
+# le llegaba literal al servidor. El patron de mas abajo (contar_sites_como_app)
+# ya lo hacia bien por stdin; esto lo alinea.
 consultar() {
-  psql -d "$1" -qAtX -v ON_ERROR_STOP=1 -v rol_app="$ROL_APP" -c "$2"
+  printf '%s' "$2" | psql -d "$1" -qAtX -v ON_ERROR_STOP=1 -v rol_app="$ROL_APP"
 }
 
 # Siempre termina en exito: las diferencias se cuentan en ERRORES, no se
@@ -322,10 +328,10 @@ else
   # Que esten en pg_proc no prueba que el cuerpo sobrevivio. El tercer
   # parametro de set_config en true es SET LOCAL: no ensucia la sesion.
   PRUEBA=$(consultar "$DESTINO" "select (app_tenant_id() = '$UUID_PRUEBA'::uuid)::text || '|' || app_has_audited_support_access('$UUID_PRUEBA'::uuid)::text from (select set_config('app.tenant_id', '$UUID_PRUEBA', true)) as contexto")
-  if [ "$PRUEBA" = "t|f" ]; then
+  if [ "$PRUEBA" = "t|f" ] || [ "$PRUEBA" = "true|false" ]; then
     ok "las funciones corren: app_tenant_id lee el contexto y el acceso de soporte falla cerrado"
   else
-    falla "las funciones no se comportan como deben (esperado 't|f', obtenido '$PRUEBA')"
+    falla "las funciones no se comportan como deben (esperado 'true|false' o 't|f', obtenido '$PRUEBA')"
   fi
 fi
 

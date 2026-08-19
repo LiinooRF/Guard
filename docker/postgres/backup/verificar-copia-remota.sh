@@ -49,7 +49,7 @@ else
   FECHA=$(restar_un_dia "$(date +%F)") || exit 1
 fi
 
-ARCHIVO="sentrycore-$FECHA.dump"
+ARCHIVO_BASE="sentrycore-$FECHA.dump"
 
 if [ -z "$REMOTO_PG" ]; then
   registrar_error "BACKUP_REMOTE no esta configurado: NO hay ningun respaldo fuera del VPS."
@@ -59,26 +59,30 @@ fi
 
 exigir_binarios rclone || exit 1
 
-registrar "buscando $ARCHIVO en $(redactar_remoto "$REMOTO_PG")"
+registrar "buscando $ARCHIVO_BASE* en $(redactar_remoto "$REMOTO_PG")"
 
-BYTES_REMOTO=$(tamano_remoto "$REMOTO_PG" "$ARCHIVO")
+# Buscar dump remoto (puede ser .dump, .dump.age, .dump.enc, .dump.gpg)
+LINEA_REMOTO=$(ejecutar_rclone lsl "$REMOTO_PG" --include "/$ARCHIVO_BASE*" --exclude "*.sha256" 2> /dev/null | awk 'NR == 1 { print $1, $NF }')
 
-if [ -z "$BYTES_REMOTO" ]; then
+if [ -z "$LINEA_REMOTO" ]; then
   registrar_error "NO existe el respaldo del $FECHA fuera del VPS."
   registrar_error "Revisar el log del servicio postgres-backup y $BACKUP_DIR/estado-respaldo.txt"
   exit 1
 fi
 
-if [ "$BYTES_REMOTO" -le 0 ]; then
+BYTES_REMOTO=${LINEA_REMOTO%% *}
+ARCHIVO_ENCONTRADO=${LINEA_REMOTO##* }
+
+if [ -z "$BYTES_REMOTO" ] || [ "$BYTES_REMOTO" -le 0 ]; then
   registrar_error "el respaldo del $FECHA existe en el destino pero pesa 0 bytes"
   exit 1
 fi
 
-registrar "OK: el respaldo del $FECHA esta fuera del VPS ($BYTES_REMOTO bytes)"
+registrar "OK: el respaldo del $FECHA ($ARCHIVO_ENCONTRADO) esta fuera del VPS ($BYTES_REMOTO bytes)"
 
 # Si el dump todavia esta en el disco local, los tamaños tienen que coincidir.
 # Una subida cortada deja un objeto mas chico y por si solo parece un respaldo.
-LOCAL="$BACKUP_DIR/$ARCHIVO"
+LOCAL="$BACKUP_DIR/$ARCHIVO_ENCONTRADO"
 if [ -f "$LOCAL" ]; then
   BYTES_LOCAL=$(wc -c < "$LOCAL" | tr -d ' ')
   if [ "$BYTES_LOCAL" != "$BYTES_REMOTO" ]; then
@@ -87,7 +91,7 @@ if [ -f "$LOCAL" ]; then
   fi
   registrar "coincide con la copia local ($BYTES_LOCAL bytes)"
 else
-  registrar "el dump del $FECHA ya no esta en el disco local; solo se comprueba el remoto"
+  registrar "el dump $ARCHIVO_ENCONTRADO ya no esta en el disco local; solo se comprueba el remoto"
 fi
 
 if [ "${VERIFICAR_EVIDENCIA:-no}" = "si" ]; then
@@ -106,4 +110,4 @@ fi
 
 # Lo ultimo que se copio, para ver de un vistazo la retencion real del destino.
 registrar "ultimos respaldos en el destino remoto:"
-ejecutar_rclone lsl "$REMOTO_PG" --include '/sentrycore-*.dump' 2> /dev/null | sort -k2 | tail -5 || true
+ejecutar_rclone lsl "$REMOTO_PG" --include '/sentrycore-*.dump*' --exclude '*.sha256' 2> /dev/null | sort -k2 | tail -5 || true

@@ -61,6 +61,59 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Servicio de respaldo diario y copia remota (issue #24, docs/respaldos.md).
+  postgres-backup:
+    build:
+      context: .
+      dockerfile: docker/postgres/backup/Dockerfile
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-America/Santiago}
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER es obligatorio}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB es obligatorio}
+      BACKUP_HORA: ${BACKUP_HORA:-04:00}
+      BACKUP_AL_ARRANCAR: ${BACKUP_AL_ARRANCAR:-si}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_MINIMO_LOCAL: ${BACKUP_MINIMO_LOCAL:-3}
+      BACKUP_COPIAR_EVIDENCIA: ${BACKUP_COPIAR_EVIDENCIA:-si}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      BACKUP_REMOTE_POSTGRES: ${BACKUP_REMOTE_POSTGRES:-}
+      BACKUP_REMOTE_EVIDENCIA: ${BACKUP_REMOTE_EVIDENCIA:-}
+      BACKUP_ENCRYPTION_TOOL: ${BACKUP_ENCRYPTION_TOOL:-}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      BACKUP_OPENSSL_PASSPHRASE: ${BACKUP_OPENSSL_PASSPHRASE:-}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_AGE_IDENTITY: ${BACKUP_AGE_IDENTITY:-}
+      BACKUP_GPG_RECIPIENT: ${BACKUP_GPG_RECIPIENT:-}
+      BACKUP_GPG_PASSPHRASE: ${BACKUP_GPG_PASSPHRASE:-}
+      RCLONE_CONFIG_R2_TYPE: ${RCLONE_CONFIG_R2_TYPE:-}
+      RCLONE_CONFIG_R2_PROVIDER: ${RCLONE_CONFIG_R2_PROVIDER:-}
+      RCLONE_CONFIG_R2_ENDPOINT: ${RCLONE_CONFIG_R2_ENDPOINT:-}
+      RCLONE_CONFIG_R2_REGION: ${RCLONE_CONFIG_R2_REGION:-}
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${RCLONE_CONFIG_R2_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_R2_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_S3_TYPE: ${RCLONE_CONFIG_S3_TYPE:-}
+      RCLONE_CONFIG_S3_PROVIDER: ${RCLONE_CONFIG_S3_PROVIDER:-}
+      RCLONE_CONFIG_S3_ENDPOINT: ${RCLONE_CONFIG_S3_ENDPOINT:-}
+      RCLONE_CONFIG_S3_REGION: ${RCLONE_CONFIG_S3_REGION:-}
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: ${RCLONE_CONFIG_S3_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_S3_SECRET_ACCESS_KEY:-}
+    command: ["sh", "/scripts/respaldo-diario.sh"]
+    volumes:
+      - backup_data:/backups
+      - evidence_data:/evidencia:ro
+      - ./docker/postgres/backup:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -193,4 +246,5 @@ volumes:
   postgres_data:
   redis_data:
   evidence_data:
+  backup_data:
   letsencrypt_data:
