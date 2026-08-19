@@ -6,6 +6,7 @@ import { EscalationModule } from '../escalation/escalation.module';
 import { EvidenceModule } from '../evidence/evidence.module';
 import { GeoModule } from '../geo/geo.module';
 import { EnvioInformeModule } from '../reports/envio-informe.module';
+import { ReportsModule } from '../reports/reports.module';
 import { MailModule } from '../mail/mail.module';
 import { RulesModule } from '../rules/rules.module';
 import { GuardController } from './guard.controller';
@@ -32,6 +33,10 @@ import { BarridoVencidasProcessor } from './rondas-vencidas.barrido.processor';
     EscalationModule,
     GeoModule,
     EnvioInformeModule,
+    // Solo por PatrolReportService.invalidarCache(): la novedad tardia sobre
+    // una ronda cerrada tiene que tumbar el PDF cacheado (#266), y ese
+    // servicio ya se exporta justamente para consumidores fuera de reports/.
+    ReportsModule,
     EvidenceModule,
     // El barrido de rondas abandonadas: sin el, una ronda que NADIE toca se
     // queda `en_curso` para siempre y las alertas de escalamiento que filtran
