@@ -26,6 +26,21 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).not.toMatch(/\.guard-focus-card, \.empty-assignment \{[^}]*box-shadow/);
   });
 
+  it('los campos de Marca usan la tipografia del panel, no la del navegador', () => {
+    // Un `textarea` sin font-family cae en la monoespaciada por defecto del
+    // navegador, y el pie de los correos se veia como una terminal en medio de
+    // un formulario. El `input` de al lado no lo hace, asi que la diferencia
+    // saltaba a la vista dentro de la misma tarjeta.
+    expect(css).toMatch(/\.brand-field input, \.brand-field textarea \{[^}]*font-family: inherit;/);
+  });
+
+  it('los tonos de marca se reparten parejos, sin uno colgando solo', () => {
+    // Son 8: en rejilla entran 8 en fila y 4 + 4 en el telefono. Con flex-wrap
+    // quedaban 7 arriba y uno solo abajo, que se lee como un error de carga.
+    expect(css).toMatch(/\.brand-color-options \{[^}]*grid-template-columns: repeat\(8, minmax\(0, 1fr\)\);/);
+    expect(css).toMatch(/@media \(max-width: 520px\)[\s\S]*?\.brand-color-options \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  });
+
   it('Marca tiene grupos comprensibles, vista previa real y mensajes accesibles', () => {
     expect(marca).toContain('id="marca-identidad"');
     expect(marca).toContain('id="marca-colores"');
