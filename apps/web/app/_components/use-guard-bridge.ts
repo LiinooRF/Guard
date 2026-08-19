@@ -8,6 +8,8 @@ import type {
   ResultadoEscaneoPayload,
   ResultadoEscaneoQrPayload,
   RutaOfflinePayload,
+  Permiso,
+  ResultadoPermisoPayload,
 } from '../_lib/bridge/protocol';
 import { crearClientePuente } from '../_lib/bridge/web-client';
 import {
@@ -121,6 +123,12 @@ export interface PuenteGuardia {
    * problemas distintos y el guardia puede tener los dos a la vez.
    */
   avisoUbicacion?: string;
+  /**
+   * Pide un permiso del sistema EN CONTEXTO. Cada pantalla pide el suyo en el
+   * momento en que la persona entiende para que sirve: Android solo concede
+   * dos negativas antes de dejar de mostrar el dialogo para siempre.
+   */
+  pedirPermiso: (permiso: Permiso, divulgacionMostrada: boolean) => Promise<ResultadoPermisoPayload>;
   conexion: EstadoConexionPayload;
   escanear: (titulo: string) => Promise<ResultadoEscaneoPayload>;
   escanearQr: (titulo: string) => Promise<ResultadoEscaneoQrPayload>;
@@ -136,6 +144,8 @@ export interface PuenteGuardia {
   iniciarTraza: (intervalSeconds: number) => void;
   detenerTraza: () => void;
   alPuntoDeTraza: (fn: (punto: PuntoDeTrazaPayload) => void) => () => void;
+  infoEquipo?: string;
+  refrescarPermisoUbicacion: () => Promise<void>;
 }
 
 export function useGuardBridge(apiUrl?: string): PuenteGuardia {
@@ -323,6 +333,49 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
     return () => window.removeEventListener(EVENTO_CONSENTIMIENTO_ACEPTADO, alAceptarElAviso);
   }, [fase, apiUrl, infoEquipo, cliente]);
 
+  // Re-consultar permiso cuando el usuario regresa a la app desde Ajustes del sistema
+  useEffect(() => {
+    if (fase !== 'listo' || !apiUrl || !infoEquipo || typeof window === 'undefined') {
+      return undefined;
+    }
+    const alVolverAlPrimerPlano = () => {
+      if (document.visibilityState === 'hidden') return;
+      void (async () => {
+        const reporte = await reportarPermisoUbicacion({
+          consultar: (permiso) => cliente.consultarPermiso(permiso),
+          reportar: (estadoApi, deviceInfo) =>
+            reportarPermisoAlServidor(apiUrl, estadoApi, deviceInfo),
+          deviceInfo: infoEquipo,
+        });
+        if (reporte.hecho && reporte.estado === 'concedido') {
+          setAvisoUbicacion(undefined);
+        }
+      })();
+    };
+
+    window.addEventListener('visibilitychange', alVolverAlPrimerPlano);
+    window.addEventListener('focus', alVolverAlPrimerPlano);
+    return () => {
+      window.removeEventListener('visibilitychange', alVolverAlPrimerPlano);
+      window.removeEventListener('focus', alVolverAlPrimerPlano);
+    };
+  }, [fase, apiUrl, infoEquipo, cliente]);
+
+  const refrescarPermisoUbicacion = useCallback(async () => {
+    if (!apiUrl) return;
+    const marca = infoEquipo ?? 'android app';
+    if (fase === 'listo') {
+      await reportarPermisoUbicacion({
+        consultar: (permiso) => cliente.consultarPermiso(permiso),
+        reportar: (estadoApi, deviceInfo) =>
+          reportarPermisoAlServidor(apiUrl, estadoApi, deviceInfo),
+        deviceInfo: marca,
+      }).catch(() => undefined);
+    } else {
+      await reportarPermisoAlServidor(apiUrl, 'concedido', 'web').catch(() => undefined);
+    }
+  }, [apiUrl, infoEquipo, fase, cliente]);
+
   // Sin shell nativo la conectividad la reporta el navegador. Con shell manda el
   // shell, que además avisa los cambios sin que se los pidan.
   useEffect(() => {
@@ -368,6 +421,15 @@ export function useGuardBridge(apiUrl?: string): PuenteGuardia {
     cancelarEscaneoQr,
     guardarRutaOffline,
     soportaTraza,
+    infoEquipo,
+    refrescarPermisoUbicacion,
+    /*
+     * Se expone para que cada pantalla pida SU permiso en el momento en que
+     * la persona entiende para que sirve. Antes solo se pedia desde aca, lo
+     * que empujaba a pedirlo todo al arrancar: la forma mas eficiente de
+     * quemar los dos intentos que Android concede.
+     */
+    pedirPermiso: cliente.pedirPermiso,
     iniciarTraza: cliente.iniciarTraza,
     detenerTraza: cliente.detenerTraza,
     alPuntoDeTraza: cliente.alPuntoDeTraza,

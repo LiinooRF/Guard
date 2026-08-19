@@ -105,11 +105,20 @@ export class TenantContextInterceptor implements NestInterceptor {
         [tenantId, userId, supportAccessId ?? ''],
       );
 
-      const result = await this.context.run(queryRunner, () => lastValueFrom(next.handle()));
+      // El mismo UUID ya puesto con SET LOCAL entra al AsyncLocalStorage. No
+      // existe un tenant separado suministrado por RulesService o por el cliente.
+      // Soporte auditado conserva el camino fail-safe: opera bajo RLS, pero no
+      // comparte cache con una sesion tenant ordinaria.
+      const operation = () => lastValueFrom(next.handle());
+      const result = supportAccessId
+        ? await this.context.run(queryRunner, operation)
+        : await this.context.run(queryRunner, tenantId, operation);
       await queryRunner.commitTransaction();
+      await this.context.transactionCommitted(queryRunner);
       return result;
     } catch (error) {
       await queryRunner.rollbackTransaction();
+      this.context.transactionRolledBack(queryRunner);
       throw error;
     } finally {
       await queryRunner.release();

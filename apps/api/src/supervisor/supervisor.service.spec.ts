@@ -397,4 +397,77 @@ describe('SupervisorService.createPatrol — orden aleatorio (#65)', () => {
     await servicio(query).createPatrol('route-id', SUPERVISOR, DTO_RONDA);
     expect(snapshotInsertado(query)).toEqual(ORIGINAL);
   });
+
+  it('listGuards devuelve los guardias con su nfcCardUid', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ present: true }]) // ensureAssignedSite
+      .mockResolvedValueOnce([
+        { id: 'guard-1', given_name: 'Juan', family_name: 'Pérez', nfc_card_uid: '04A1B2C3D4', tiene_pin: true },
+        { id: 'guard-2', given_name: 'Ana', family_name: 'Gómez', nfc_card_uid: null, tiene_pin: false },
+      ]);
+    const guards = await servicio(query).listGuards('site-id', SUPERVISOR);
+    expect(guards).toEqual([
+      // `tienePin` dice SI tiene PIN configurado; el hash no sale del servidor.
+      { id: 'guard-1', name: 'Juan Pérez', nfcCardUid: '04A1B2C3D4', tienePin: true },
+      { id: 'guard-2', name: 'Ana Gómez', nfcCardUid: null, tienePin: false },
+    ]);
+  });
+
+  it('assignGuardNfcCard normaliza y actualiza la tarjeta NFC del guardia', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }]) // guardia activo existe
+      .mockResolvedValueOnce([{ site_id: 'site-1' }]) // supervisor tiene recintos
+      .mockResolvedValueOnce([]); // UPDATE users
+    const result = await servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, {
+      nfcCardUid: '04:a1:b2:c3:d4',
+    });
+    // Sin `nfcPin` en la peticion, el PIN NO se toca: por eso `tienePin` queda
+    // indefinido y el UPDATE recibe `false` en el parametro que lo gobierna.
+    expect(result).toEqual({ id: 'guard-1', nfcCardUid: '04A1B2C3D4', tienePin: undefined });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users'),
+      ['guard-1', '04A1B2C3D4', false, null],
+    );
+  });
+
+  it('assignGuardNfcCard guarda el PIN HASHEADO, nunca en claro', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }])
+      .mockResolvedValueOnce([{ site_id: 'site-1' }])
+      .mockResolvedValueOnce([]);
+    const result = await servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, {
+      nfcCardUid: '04A1B2C3D4',
+      nfcPin: '4821',
+    });
+    expect(result).toEqual({ id: 'guard-1', nfcCardUid: '04A1B2C3D4', tienePin: true });
+    const parametros = query.mock.calls.at(-1)?.[1] as unknown[];
+    expect(parametros[2]).toBe(true);
+    // Lo que viaja a la base es un hash argon2id, y el PIN no aparece por ningun lado.
+    expect(String(parametros[3])).toMatch(/^\$argon2id\$/);
+    expect(String(parametros[3])).not.toContain('4821');
+  });
+
+  it('assignGuardNfcCard con PIN vacio lo QUITA: ese guardia vuelve a entrar solo con la tarjeta', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }])
+      .mockResolvedValueOnce([{ site_id: 'site-1' }])
+      .mockResolvedValueOnce([]);
+    const result = await servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, {
+      nfcCardUid: '04A1B2C3D4',
+      nfcPin: null,
+    });
+    expect(result).toEqual({ id: 'guard-1', nfcCardUid: '04A1B2C3D4', tienePin: false });
+    const parametros = query.mock.calls.at(-1)?.[1] as unknown[];
+    expect(parametros[2]).toBe(true);
+    expect(parametros[3]).toBeNull();
+  });
+
+  it('assignGuardNfcCard rechaza si el supervisor no tiene recintos asignados', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'guard-1' }]) // guardia activo existe
+      .mockResolvedValueOnce([]); // supervisor sin recintos
+    await expect(
+      servicio(query).assignGuardNfcCard('guard-1', SUPERVISOR, { nfcCardUid: '04A1B2C3D4' }),
+    ).rejects.toThrow('No tienes recintos asignados para gestionar guardias');
+  });
 });

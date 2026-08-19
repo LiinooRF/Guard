@@ -15,6 +15,18 @@ describe('arquitectura de vistas del panel (#289)', () => {
     expect(resolvePanelView('SUPERVISOR', undefined)).toBe('resumen');
   });
 
+  it('diagnóstico existe solo para ADMIN y no se fuerza por query en SUPERVISOR', () => {
+    const adminViews = PANEL_NAVIGATION.ADMIN.flatMap((group) => group.items.map((item) => item.view));
+    const supervisorViews = PANEL_NAVIGATION.SUPERVISOR.flatMap(
+      (group) => group.items.map((item) => item.view),
+    );
+
+    expect(adminViews).toContain('diagnostico');
+    expect(supervisorViews).not.toContain('diagnostico');
+    expect(resolvePanelView('ADMIN', 'diagnostico')).toBe('diagnostico');
+    expect(resolvePanelView('SUPERVISOR', 'diagnostico')).toBe('resumen');
+  });
+
   it('cada enlace tiene un encabezado propio', () => {
     for (const role of ['ADMIN', 'SUPERVISOR', 'SUPERADMIN'] as const) {
       for (const group of PANEL_NAVIGATION[role]) {

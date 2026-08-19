@@ -75,6 +75,7 @@ const TENANT_ROLES = ['ADMIN', 'SUPERVISOR', 'GUARDIA'] as const;
  */
 const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   publicEndpoint(AuthController, 'login'),
+  publicEndpoint(AuthController, 'nfcLogin'),
   publicEndpoint(AuthController, 'logout'),
   publicEndpoint(AuthController, 'refresh'),
   publicEndpoint(AuthController, 'requestPasswordReset'),
@@ -170,6 +171,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SupervisorController, 'listEvents', ['patrols:monitor'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listShifts', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listGuards', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'assignGuardNfcCard', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'weeklySchedule', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'createShift', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'assignShift', ['shifts:manage'], ['SUPERVISOR'], true),

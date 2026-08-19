@@ -4,12 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { MapaBase } from './mapa-base';
 import { resolverOrigenTiles } from './mapa-tiles';
-import { trazaDeRecorrido, type RespuestaTrack } from './recorrido-modelo';
-import type { TrazaMapa } from './mapa-modelo';
+import {
+  marcasDeCheckpoints,
+  trazaDePatronCheckpoints,
+  trazaDeRecorrido,
+  type RespuestaTrack,
+} from './recorrido-modelo';
+import type { PuntoMapa, TrazaMapa } from './mapa-modelo';
 
 /**
  * Recorrido de una ronda sobre el mapa (#134): la traza completa del guardia,
- * además de los puntos escaneados que ya muestra el tablero.
+ * además de los puntos escaneados que ya muestra el tablero, con la superposición
+ * de la ronda patrón planificada.
  *
  * Lee `GET /geo/patrols/:id/track` (permiso `patrols:monitor`, del supervisor) y
  * la dibuja con `MapaBase`, que ya cae a una lista si Leaflet no carga. Si el
@@ -28,7 +34,8 @@ export function RecorridoPatrulla({
   attribution: string;
 }) {
   const [estado, setEstado] = useState<'cargando' | 'listo' | 'vacio' | 'error'>('cargando');
-  const [traza, setTraza] = useState<TrazaMapa | null>(null);
+  const [trazas, setTrazas] = useState<TrazaMapa[]>([]);
+  const [puntos, setPuntos] = useState<PuntoMapa[]>([]);
   const [resumen, setResumen] = useState<{ km: string; min: number } | null>(null);
 
   const origen = useMemo(
@@ -53,12 +60,18 @@ export function RecorridoPatrulla({
         if (!respuesta.ok) throw new Error(String(respuesta.status));
         const cuerpo = (await respuesta.json()) as RespuestaTrack;
         if (!vivo) return;
-        const linea = trazaDeRecorrido(cuerpo.points ?? []);
-        if (!linea) {
+        const lineaRecorrido = trazaDeRecorrido(cuerpo.points ?? []);
+        const lineaPatron = cuerpo.checkpoints ? trazaDePatronCheckpoints(cuerpo.checkpoints) : null;
+        const marcasPuntos = cuerpo.checkpoints ? marcasDeCheckpoints(cuerpo.checkpoints) : [];
+        const listaTrazas = [lineaPatron, lineaRecorrido].filter((t): t is TrazaMapa => t !== null);
+
+        if (listaTrazas.length === 0 && marcasPuntos.length === 0) {
           setEstado('vacio');
           return;
         }
-        setTraza(linea);
+
+        setTrazas(listaTrazas);
+        setPuntos(marcasPuntos);
         setResumen({
           km: ((cuerpo.totalDistanceM ?? 0) / 1000).toFixed(2),
           min: Math.round(cuerpo.durationMin ?? 0),
@@ -83,10 +96,10 @@ export function RecorridoPatrulla({
       </p>
     );
   }
-  if (estado === 'vacio' || !traza) {
+  if (estado === 'vacio' || (trazas.length === 0 && puntos.length === 0)) {
     return (
       <p className="live-map-empty">
-        Esta ronda todavía no tiene recorrido registrado.
+        Esta ronda todavía no tiene recorrido ni puntos registrados.
       </p>
     );
   }
@@ -95,7 +108,8 @@ export function RecorridoPatrulla({
     <div className="patrulla-recorrido">
       <MapaBase
         etiqueta="Recorrido de la ronda"
-        trazas={[traza]}
+        puntos={puntos}
+        trazas={trazas}
         origen={origen}
         alto="240px"
       />

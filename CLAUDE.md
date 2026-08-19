@@ -483,8 +483,12 @@ tocar un componente.
 > Por eso hay **dos** guiones, y hacen cosas distintas. Los dos se corren después de desplegar:
 >
 > ```bash
-> python scripts/humo-e2e.py     # 162 comprobaciones, una por endpoint
-> python scripts/loop-e2e.py     # el recorrido completo del producto
+> VOXIA_BASE=https://staging.example \
+>   VOXIA_DEMO_PASSWORD='(desde el gestor de secretos)' \
+>   python scripts/humo-e2e.py     # 162 comprobaciones, una por endpoint
+> VOXIA_BASE=https://staging.example \
+>   VOXIA_DEMO_PASSWORD='(desde el gestor de secretos)' \
+>   python scripts/loop-e2e.py     # el recorrido completo del producto
 > ```
 >
 > `humo-e2e` mira cada endpoint por separado. `loop-e2e` mira la **costura entre endpoints**:

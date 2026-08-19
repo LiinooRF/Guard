@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import * as Network from 'expo-network';
-import { Camera } from 'expo-camera';
 
 import { normalizarConexion } from './src/bridge/default-handlers';
 import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
@@ -27,6 +26,7 @@ import {
   instalarReportadorGlobal,
   registrarArranqueYVerificarCierre,
 } from './src/observability/crash-reporter';
+import { iniciarEscuchaNfcLogin, detenerEscuchaNfcLogin } from './src/nfc/login-nfc-listener';
 import mobilePackage from './package.json';
 
 const DEVELOPMENT_URL = 'http://10.0.2.2:13000';
@@ -96,6 +96,47 @@ function configuredPortal(): URL {
   return parsed;
 }
 
+/**
+ * Determina si un error HTTP es un fallo fatal de carga del portal o un evento
+ * normal de subrecursos / autenticacion que debe manejar el JavaScript web.
+ */
+function esErrorHttpFatalPortal(
+  url: string | undefined,
+  statusCode: number,
+  portalOrigin: string,
+): boolean {
+  // Codigos 4xx son controlados por la app web (401 en auth/logout, 403, 404 en assets, 429, etc.)
+  if (statusCode < 500) {
+    return false;
+  }
+
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.origin !== portalOrigin) return false;
+    const path = urlObj.pathname;
+    const search = urlObj.search;
+    if (
+      path.startsWith('/api/') ||
+      path.startsWith('/auth/') ||
+      path.startsWith('/_next/') ||
+      path.includes('favicon') ||
+      search.includes('_rsc=') ||
+      /\.(svg|png|jpg|jpeg|gif|webp|ico|css|js|map|json)$/i.test(path)
+    ) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  // Fallos 5xx en el documento HTML raiz
+  return true;
+}
+
 export default function App() {
   const portal = useMemo(configuredPortal, []);
 
@@ -127,6 +168,8 @@ function AppShell({ portal }: { portal: URL }) {
   const [motivoFallo, setMotivoFallo] = useState<string>();
   /** Solo se recarga sola UNA vez: en bucle taparia un fallo de verdad. */
   const reintentado = useRef(false);
+  const cargadoInicialmente = useRef(false);
+  const [urlActual, setUrlActual] = useState(portal.href);
   const [bloqueo, setBloqueo] = useState<{
     motivo: MotivoIncompatible | 'portal-sin-puente'; mensaje: string;
   } | null>(null);
@@ -162,7 +205,7 @@ function AppShell({ portal }: { portal: URL }) {
    * suele ser mala. Menos que eso convierte una red lenta en un falso error.
    */
   useEffect(() => {
-    if (!loading || failed) return undefined;
+    if (!loading || failed || cargadoInicialmente.current) return undefined;
     const aviso = setTimeout(() => {
       // Primero se reintenta SOLO. Comprobado en varios telefonos: la primera
       // carga se queda colgada y la recarga entra sin problema — o sea que es
@@ -186,25 +229,6 @@ function AppShell({ portal }: { portal: URL }) {
     void registrarSincronizacionBackground().catch(() => undefined);
   }, []);
 
-  /*
-   * El permiso de camara se pide al arrancar, no cuando se necesita.
-   *
-   * La foto de evidencia la toma el PORTAL con `<input type="file"
-   * capture="environment">`, y en Android eso lo resuelve el WebView abriendo la
-   * camara del sistema. Ese camino **no pide el permiso por su cuenta**: si la
-   * app no lo tiene concedido, el boton "Tomar foto" no hace absolutamente nada
-   * — sin dialogo, sin error, sin nada.
-   *
-   * Y la foto del acceso critico no es un extra: es la evidencia por la que el
-   * cliente paga. Un guardia que toca el boton y no pasa nada no puede ni
-   * reportar el problema.
-   *
-   * Se pide al inicio y no en el momento porque el momento es *dentro* del
-   * WebView, donde ya no hay forma de interceptarlo.
-   */
-  useEffect(() => {
-    void Camera.requestCameraPermissionsAsync().catch(() => undefined);
-  }, []);
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((estado) => {
       puente.notificarConexion(normalizarConexion(estado));
@@ -215,9 +239,36 @@ function AppShell({ portal }: { portal: URL }) {
     return () => subscription.remove();
   }, [puente]);
 
+  // Escaneo continuo NFC en la pantalla de Login
+  useEffect(() => {
+    const enPantallaLogin = !urlActual.includes('/app');
+    if (enPantallaLogin && !failed && !bloqueo) {
+      void iniciarEscuchaNfcLogin((uid) => {
+        const script = `
+          if (window.__sentrycoreNfcLogin) {
+            window.__sentrycoreNfcLogin(${JSON.stringify(uid)});
+          }
+          window.dispatchEvent(new CustomEvent('sentrycore:nfc:login', { detail: { uid: ${JSON.stringify(uid)} } }));
+          true;
+        `;
+        webView.current?.injectJavaScript(script);
+      });
+    } else {
+      detenerEscuchaNfcLogin();
+    }
+    return () => {
+      detenerEscuchaNfcLogin();
+    };
+  }, [urlActual, failed, bloqueo]);
+
   const allowNavigation = (navigation: WebViewNavigation) => {
     try {
-      return new URL(navigation.url).origin === portal.origin;
+      const target = new URL(navigation.url);
+      if (target.origin === portal.origin) {
+        setUrlActual(navigation.url);
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -245,24 +296,49 @@ function AppShell({ portal }: { portal: URL }) {
       <WebView
         ref={webView}
         source={{ uri: portal.href }}
-        applicationNameForUserAgent="SentryCoreAndroid/0.1"
+        applicationNameForUserAgent={`SentryCoreAndroid/${mobilePackage.version}`}
         injectedJavaScriptBeforeContentLoaded={APP_LIKE_DOCUMENT + puente.guionPrevio}
+        injectedJavaScript={puente.guionPrevio}
         onMessage={puente.alRecibirMensaje}
         originWhitelist={[`${portal.protocol}//${portal.host}`]}
         onShouldStartLoadWithRequest={allowNavigation}
-        onLoadStart={() => {
-          setLoading(true);
-          setFailed(false);
+        onNavigationStateChange={(navState) => {
+          setUrlActual(navState.url);
         }}
-        onLoadEnd={() => setLoading(false)}
+        onLoadStart={() => {
+          if (!cargadoInicialmente.current) {
+            setLoading(true);
+            setFailed(false);
+          }
+        }}
+        onLoadEnd={() => {
+          cargadoInicialmente.current = true;
+          setLoading(false);
+        }}
         onError={({ nativeEvent }) => {
+          // Ignorar abortos/cancelaciones de peticiones intermedias o errores tras carga inicial
+          const desc = (nativeEvent.description ?? '').toLowerCase();
+          if (
+            nativeEvent.code === -3 ||
+            nativeEvent.code === -999 ||
+            nativeEvent.code === -1 ||
+            desc.includes('err_aborted') ||
+            desc.includes('net::err_aborted') ||
+            desc.includes('cancel') ||
+            desc.includes('abort') ||
+            cargadoInicialmente.current
+          ) {
+            return;
+          }
           setMotivoFallo(`${nativeEvent.description ?? 'error del WebView'} (codigo ${nativeEvent.code})`);
           mostrarFallo();
         }}
         onHttpError={({ nativeEvent }) => {
-          if (nativeEvent.statusCode >= 400) {
-            setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
-            mostrarFallo();
+          if (esErrorHttpFatalPortal(nativeEvent.url, nativeEvent.statusCode, portal.origin)) {
+            if (!cargadoInicialmente.current) {
+              setMotivoFallo(`El portal respondio HTTP ${nativeEvent.statusCode}`);
+              mostrarFallo();
+            }
           }
         }}
         webviewDebuggingEnabled={DEPURABLE}

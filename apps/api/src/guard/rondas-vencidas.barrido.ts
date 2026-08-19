@@ -194,11 +194,17 @@ export class BarridoVencidasService implements OnModuleInit {
           set_config('app.support_access_id', '', true)`,
         [tenantId],
       );
-      const resultado = await this.tenantContext.run(runner, operacion);
+      // `tenantId` no viene de un job ni de un DTO: lo devolvio la funcion
+      // SECURITY DEFINER `rondas_abandonadas()` y acaba de enlazarse al mismo
+      // runner con SET LOCAL. Esa identidad servidor es la que puede namespacear
+      // RulesService sin abrir una via para un tenant arbitrario.
+      const resultado = await this.tenantContext.run(runner, tenantId, operacion);
       await runner.commitTransaction();
+      await this.tenantContext.transactionCommitted(runner);
       return resultado;
     } catch (error) {
       await runner.rollbackTransaction();
+      this.tenantContext.transactionRolledBack(runner);
       throw error;
     } finally {
       await runner.release();

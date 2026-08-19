@@ -42,6 +42,19 @@ test('sanitizarTexto elimina correos, tokens Bearer, JWT y cookies sensibles', (
   assert.ok(limpio.includes('[JWT_REDACTED]'));
 });
 
+test('sanitizarTexto redacta las cookies REALES del producto, no solo connect.sid (#321)', () => {
+  // El refresh es randomBytes(48).toString('base64url'): no es un JWT, asi
+  // que ningun otro patron lo toca si no esta explicito.
+  const refresh = 'kQ3f9j_2mZ-abcDEF012345_-xyzKLMN678opqRSTU-9012vwYZ34';
+  const texto = `Cookie: sentrycore_access=eyJhbGciOi.eyJzdWIi.signature; sentrycore_refresh=${refresh}`;
+  const limpio = sanitizarTexto(texto);
+
+  assert.ok(!limpio.includes(refresh));
+  assert.ok(limpio.includes('sentrycore_refresh=[REDACTED]'));
+  // El access token es JWT: cae en PATRON_JWT antes de llegar a PATRON_COOKIE.
+  assert.ok(!limpio.includes('eyJhbGciOi.eyJzdWIi.signature'));
+});
+
 test('formatearErrorParaReporte genera payload conforme al contrato de ReportCrashDto', () => {
   const error = new TypeError('Cannot read properties of undefined (reading scan)');
   const payload = formatearErrorParaReporte(error, { fatal: true });
@@ -123,7 +136,7 @@ test('vaciarColaDeCaidas despacha los reportes pendientes cuando hay apiUrl', as
   }
 });
 
-test('instalarReportadorGlobal registra el manejador respetando el handler previo', () => {
+test('instalarReportadorGlobal registra el manejador respetando el handler previo (no fatal)', async () => {
   let handlerPrevioLlamado = false;
   const handlerPrevio = () => {
     handlerPrevioLlamado = true;
@@ -145,9 +158,83 @@ test('instalarReportadorGlobal registra el manejador respetando el handler previ
     },
   };
 
-  instalarReportadorGlobal(() => 'http://api.local');
+  // Mockeado y esperado a propósito: el camino no-fatal dispara
+  // reportarCaida() como fire-and-forget (`void`), y sin mock hace un fetch
+  // REAL a 'http://api.local' que sigue vivo de fondo después de que el test
+  // termina — y termina escribiendo en la cola de OTRO test que corre
+  // después (así se descubrió el hallazgo de #321: dos entradas donde se
+  // esperaba una).
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ received: true }), { status: 201 })) as typeof fetch;
 
-  assert.ok(handlerInstalado);
-  handlerInstalado(new Error('Test unhandled'), true);
-  assert.equal(handlerPrevioLlamado, true);
+  try {
+    instalarReportadorGlobal(() => 'http://api.local');
+
+    assert.ok(handlerInstalado);
+    handlerInstalado(new Error('Test unhandled'), false);
+    assert.equal(handlerPrevioLlamado, true);
+
+    // Deja que el reportarCaida() fire-and-forget termine antes de restaurar
+    // fetch y de que el siguiente test arranque.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+test('instalarReportadorGlobal ante un error FATAL encola antes de ceder el proceso al handler previo (#321)', async () => {
+  let handlerPrevioLlamado = false;
+  const handlerPrevio = () => {
+    handlerPrevioLlamado = true;
+  };
+
+  let handlerInstalado: ((error: Error, isFatal?: boolean) => void) | undefined;
+
+  const globalAny = global as unknown as {
+    ErrorUtils?: {
+      getGlobalHandler?: () => (error: Error, isFatal?: boolean) => void;
+      setGlobalHandler?: (handler: (error: Error, isFatal?: boolean) => void) => void;
+    };
+  };
+
+  globalAny.ErrorUtils = {
+    getGlobalHandler: () => handlerPrevio,
+    setGlobalHandler: (h) => {
+      handlerInstalado = h;
+    },
+  };
+
+  // Simula que ni siquiera hay red: lo que importa es que la caida haya
+  // quedado en la cola ANTES de que se ceda el proceso, sin importar si el
+  // envio inmediato tuvo suerte.
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error('sin red');
+  }) as typeof fetch;
+
+  try {
+    instalarReportadorGlobal(() => 'http://api.local');
+    assert.ok(handlerInstalado);
+
+    handlerInstalado(new Error('Fatal en el escaneo'), true);
+
+    // El proceso NO se cede en el mismo tick: si esto fuera sincronico (como
+    // antes), un handlerPrevio real de React Native mataria el proceso antes
+    // de que la escritura en cola llegue a completarse, y la caida fatal se
+    // perderia sin dejar rastro.
+    assert.equal(handlerPrevioLlamado, false);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(handlerPrevioLlamado, true);
+
+    const encoladasStr = storeMock.get('sentrycore.crash_queue.v1');
+    assert.ok(encoladasStr);
+    const encoladas = JSON.parse(encoladasStr);
+    assert.equal(encoladas.length, 1);
+    assert.equal(encoladas[0].errorMessage, 'Fatal en el escaneo');
+    assert.equal(encoladas[0].fatal, true);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
 });

@@ -36,7 +36,7 @@ export class ChecklistResponseDto {
   @IsBoolean()
   failed?: boolean;
 
-  /** Foto ya subida de esta misma ronda. Obligatoria si el item la exige al fallar. */
+  /** Foto ya subida de esta ronda. Obligatoria si el item la exige siempre o al fallar. */
   @IsOptional()
   @IsUUID()
   photoId?: string;

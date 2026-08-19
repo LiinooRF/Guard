@@ -5,6 +5,9 @@ import type { RulesService } from '../rules/rules.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { BarridoVencidasService } from './rondas-vencidas.barrido';
 
+const TENANT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const TENANT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
 /**
  * El barrido de rondas abandonadas.
  *
@@ -40,7 +43,12 @@ function servicio(opciones: {
   const tenantContext = {
     // `run` ejecuta la operacion tal cual: lo que importa aqui es la decision,
     // no el mecanismo de la transaccion (ese se copia del worker de informes).
-    run: jest.fn((_runner: unknown, operacion: () => Promise<unknown>) => operacion()),
+    run: jest.fn(
+      (_runner: unknown, _tenantId: string, operacion: () => Promise<unknown>) =>
+        operacion(),
+    ),
+    transactionCommitted: jest.fn().mockResolvedValue(undefined),
+    transactionRolledBack: jest.fn(),
     manager: { query: queryDelTenant },
   } as unknown as TenantContextService;
 
@@ -53,6 +61,7 @@ function servicio(opciones: {
   return {
     servicio: new BarridoVencidasService(agenda as never, dataSource, tenantContext, rules),
     dataSource,
+    tenantContext,
     queryDelTenant,
     rules,
     agenda,
@@ -68,7 +77,7 @@ describe('BarridoVencidasService', () => {
     // tocar. Sin este barrido se queda `en_curso` para siempre y las alertas de
     // escalamiento sobre 'vencida' no disparan nunca.
     const { servicio: barrido, queryDelTenant } = servicio({
-      candidatas: [{ tenant_id: 'tenant-1', patrol_id: 'patrol-1' }],
+      candidatas: [{ tenant_id: TENANT_A, patrol_id: 'patrol-1' }],
       ronda: {
         status: 'en_curso',
         started_at: HACE_48_HORAS,
@@ -109,7 +118,7 @@ describe('BarridoVencidasService', () => {
      * grueso nunca debe vencer de menos.)
      */
     const { servicio: barrido, queryDelTenant, rules } = servicio({
-      candidatas: [{ tenant_id: 'tenant-1', patrol_id: 'patrol-1' }],
+      candidatas: [{ tenant_id: TENANT_A, patrol_id: 'patrol-1' }],
       ronda: {
         status: 'completada',
         started_at: HACE_48_HORAS,
@@ -128,10 +137,10 @@ describe('BarridoVencidasService', () => {
   });
 
   it('una ronda que fallo no detiene el barrido: la proxima pasada la reencuentra', async () => {
-    const { servicio: barrido, queryDelTenant } = servicio({
+    const { servicio: barrido, queryDelTenant, tenantContext } = servicio({
       candidatas: [
-        { tenant_id: 'tenant-1', patrol_id: 'patrol-1' },
-        { tenant_id: 'tenant-2', patrol_id: 'patrol-2' },
+        { tenant_id: TENANT_A, patrol_id: 'patrol-1' },
+        { tenant_id: TENANT_B, patrol_id: 'patrol-2' },
       ],
       ronda: {
         status: 'en_curso',
@@ -144,6 +153,18 @@ describe('BarridoVencidasService', () => {
 
     // No lanza: el fallo de una ronda se registra y el barrido sigue.
     await expect(barrido.barrer()).resolves.toMatchObject({ candidatas: 2, vencidas: 1 });
+    expect(tenantContext.run).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      TENANT_A,
+      expect.any(Function),
+    );
+    expect(tenantContext.run).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      TENANT_B,
+      expect.any(Function),
+    );
   });
 
   it('sin candidatas no toca la base de ningun tenant', async () => {

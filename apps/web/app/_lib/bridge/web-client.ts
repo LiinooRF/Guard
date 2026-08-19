@@ -140,7 +140,6 @@ export interface ClientePuente {
 }
 
 export function crearClientePuente(): ClientePuente {
-  const puente = puenteInyectado();
   const pendientes = new Map<string, Pendiente>();
   const oyentesConexion = new Set<(estado: EstadoConexionPayload) => void>();
   const oyentesTraza = new Set<(punto: PuntoDeTrazaPayload) => void>();
@@ -184,10 +183,12 @@ export function crearClientePuente(): ClientePuente {
     pendiente.resolver(mensaje);
   }
 
-  function asegurarSuscripcion(): void {
+  function asegurarSuscripcion(): PuenteInyectado | undefined {
+    const puente = puenteInyectado();
     if (puente !== undefined && desuscribir === undefined) {
       desuscribir = puente.suscribir(recibir);
     }
+    return puente;
   }
 
   /**
@@ -200,13 +201,13 @@ export function crearClientePuente(): ClientePuente {
     payload: Extract<MensajePortal, { type: T }>['payload'],
     msEspera: number,
   ): Promise<MensajeShell> {
+    const puente = asegurarSuscripcion();
     if (puente === undefined) {
       return Promise.reject(new Error('sin-puente'));
     }
     if (incompatible !== undefined) {
       return Promise.reject(new Error('puente-incompatible'));
     }
-    asegurarSuscripcion();
 
     const sobre = armarSobre(type, payload, { prefijo: 'web' });
     const json = JSON.stringify(sobre);
@@ -226,6 +227,29 @@ export function crearClientePuente(): ClientePuente {
 
   return {
     conectar: async () => {
+      let puente = puenteInyectado();
+      if (puente === undefined && typeof window !== 'undefined') {
+        // Espera activa breve para absorber desfases de inyección en el WebView
+        puente = await new Promise<PuenteInyectado | undefined>((resolve) => {
+          let listo = false;
+          const fin = (p?: PuenteInyectado) => {
+            if (listo) return;
+            listo = true;
+            clearTimeout(t);
+            clearInterval(inv);
+            window.removeEventListener('sentrycore:puente:listo', onListo);
+            resolve(p);
+          };
+          const onListo = () => fin(puenteInyectado());
+          window.addEventListener('sentrycore:puente:listo', onListo);
+          const inv = setInterval(() => {
+            const p = puenteInyectado();
+            if (p) fin(p);
+          }, 25);
+          const t = setTimeout(() => fin(puenteInyectado()), 1_500);
+        });
+      }
+
       if (puente === undefined) {
         return { clase: 'sin-puente' as const };
       }
@@ -282,6 +306,7 @@ export function crearClientePuente(): ClientePuente {
     },
 
     cancelarEscaneo: () => {
+      const puente = puenteInyectado();
       if (puente === undefined) {
         return;
       }
@@ -291,6 +316,7 @@ export function crearClientePuente(): ClientePuente {
     // Cancelar el QR es MAS urgente que cancelar el NFC: lo que queda abierto no
     // es una antena sino la camara, encima de la pantalla del guardia.
     cancelarEscaneoQr: () => {
+      const puente = puenteInyectado();
       if (puente === undefined) {
         return;
       }
@@ -370,12 +396,13 @@ export function crearClientePuente(): ClientePuente {
     },
 
     iniciarTraza: (intervalSeconds) => {
+      const puente = asegurarSuscripcion();
       if (puente === undefined) return;
-      asegurarSuscripcion();
       puente.enviar(JSON.stringify(armarSobre('track.start', { intervalSeconds }, { prefijo: 'web' })));
     },
 
     detenerTraza: () => {
+      const puente = puenteInyectado();
       if (puente === undefined) return;
       puente.enviar(JSON.stringify(armarSobre('track.stop', {}, { prefijo: 'web' })));
     },

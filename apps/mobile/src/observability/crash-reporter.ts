@@ -282,6 +282,26 @@ export function instalarReportadorGlobal(obtenerApi: () => string | null): void 
 
   globalAny.ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
     const url = obtenerApi();
+
+    if (isFatal) {
+      // Un fatal termina el proceso apenas vuelve este handler (es lo que hace
+      // el handlerPrevio de React Native): un `fetch` async no alcanza a
+      // completarse, y el `catch` de reportarCaida() que encolaria offline
+      // tampoco corre. Por eso primero se ENCOLA -una escritura en storage que
+      // el proceso si alcanza a esperar- y recien despues se cede el proceso.
+      // El intento de envio inmediato (vaciarColaDeCaidas) es beneficio extra,
+      // no la garantia: si el proceso muere antes de que termine, la cola la
+      // manda en el proximo arranque (registrarArranqueYVerificarCierre).
+      const payload = formatearErrorParaReporte(error, { fatal: true });
+      encolarCaidaOffline(payload)
+        .then(() => vaciarColaDeCaidas(url ?? undefined))
+        .catch(() => undefined)
+        .finally(() => {
+          if (handlerPrevio) handlerPrevio(error, isFatal);
+        });
+      return;
+    }
+
     void reportarCaida(error, { fatal: isFatal ?? false, apiUrl: url ?? undefined });
 
     if (handlerPrevio) {
