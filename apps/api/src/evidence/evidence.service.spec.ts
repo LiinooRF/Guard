@@ -3,7 +3,7 @@ import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import { EvidenceService, type FotoSubida } from './evidence.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
-import type { PatrolReportService } from '../reports/patrol-report.service';
+import { PatrolReportService } from '../reports/patrol-report.service';
 import type { RulesService } from '../rules/rules.service';
 
 jest.mock('node:fs/promises', () => ({
@@ -430,5 +430,18 @@ describe('EvidenceService.storePhoto — foto tardia sobre ronda cerrada (#320)'
         fotoPng(),
       ),
     ).resolves.toMatchObject({ id: 'foto-id' });
+  });
+});
+
+/*
+ * El contenedor de Nest resuelve por el TIPO del parametro del constructor
+ * (design:paramtypes). Con `import type` ese tipo se borra al compilar, el
+ * parametro queda como Object y la API NO ARRANCA: se cae entera al inicio,
+ * con typecheck, lint y build en verde. Ya paso una vez y tumbo staging.
+ */
+describe('EvidenceService — metadatos de inyeccion', () => {
+  it('el constructor declara PatrolReportService como tipo, no Object', () => {
+    const tipos = Reflect.getMetadata('design:paramtypes', EvidenceService) as unknown[];
+    expect(tipos[3]).toBe(PatrolReportService);
   });
 });

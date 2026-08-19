@@ -12,7 +12,11 @@ import { join } from 'node:path';
 import type { AuthenticatedUser } from '../auth/auth.guard';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
-import type { PatrolReportService } from '../reports/patrol-report.service';
+// Import de VALOR, no `import type`: el tipo de un parametro del constructor
+// es lo unico que Nest tiene para resolver la inyeccion (design:paramtypes).
+// Con `import type` el tipo se borra al compilar, el parametro queda como
+// Object y el contenedor no arranca — la API entera se cae al inicio.
+import { PatrolReportService } from '../reports/patrol-report.service';
 import { esRondaCerrada } from '../sync/late-scan.policy';
 import { type FotoSubida, validarImagen } from './photo-validation';
 
