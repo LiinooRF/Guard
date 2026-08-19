@@ -232,6 +232,12 @@ jobs:
       # directorio aparte: prueba el camino completo de rclone (copia, listado y
       # verificacion de tamaño) sin depender de credenciales de nube. El destino
       # S3 de verdad se prueba en el job copia-fuera-del-vps.
+      #
+      # BACKUP_ALLOW_UNENCRYPTED_REMOTE=si: este job prueba la MECANICA de
+      # rclone/retencion/restore, no la config de seguridad de produccion —sin
+      # esto, el freno de #323 (no subir sin cifrar) lo bloquea de entrada. El
+      # cifrado en si -openssl y gpg, clave por env/fd, nunca en argv- ya se
+      # prueba de punta a punta en pruebas-comun.sh, en el job liviano.
       - name: Respaldar con el script del servicio
         run: |
           set -eu
@@ -248,6 +254,7 @@ jobs:
             -e PGPASSWORD="$POSTGRES_PASSWORD" \
             -e PGDATABASE="$POSTGRES_DB" \
             -e BACKUP_REMOTE=/remoto \
+            -e BACKUP_ALLOW_UNENCRYPTED_REMOTE=si \
             sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
 
@@ -361,6 +368,7 @@ jobs:
             -e BACKUP_COPIAR_EVIDENCIA=no \
             -e BACKUP_RETENTION_DAYS=1 \
             -e BACKUP_MINIMO_LOCAL=3 \
+            -e BACKUP_ALLOW_UNENCRYPTED_REMOTE=si \
             sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
           QUEDAN=$(find "$RUNNER_TEMP/backups" -maxdepth 1 -name 'sentrycore-*.dump' | wc -l)
@@ -560,6 +568,7 @@ jobs:
             -e RCLONE_CONFIG_S3CI_REGION=us-east-1 \
             -e RCLONE_CONFIG_S3CI_ACCESS_KEY_ID=sentrycoreci \
             -e RCLONE_CONFIG_S3CI_SECRET_ACCESS_KEY="$MINIO_CLAVE" \
+            -e BACKUP_ALLOW_UNENCRYPTED_REMOTE=si \
             sentrycore-backup:ci \
             sh /scripts/respaldar-una-vez.sh
 
