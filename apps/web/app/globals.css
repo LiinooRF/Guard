@@ -51,6 +51,9 @@ a { color: inherit; text-decoration: none; }
 .login-form > label { display: grid; gap: .48rem; color: #32394b; font-size: .82rem; font-weight: 720; }
 .login-form input, .login-form select { width: 100%; min-height: 3.5rem; border: 1px solid #d9deea; border-radius: .85rem; padding: 0 1rem; color: var(--ink); outline: none; background: #fbfcfe; font-size: 1rem; transition: border-color .2s, box-shadow .2s; }
 .login-form input:focus, .login-form select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(66,99,235,.12); }
+.codigo-empresa-campo small { color: var(--muted); font-size: .72rem; font-weight: 450; line-height: 1.45; }
+.codigo-empresa-fijado { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; margin: 0; color: #32394b; font-size: .82rem; font-weight: 720; }
+.codigo-empresa-fijado strong { font-weight: 750; }
 .password-field { position: relative; }
 .password-field input { padding-right: 4.5rem; }
 .reveal-button { position: absolute; top: .35rem; right: .35rem; height: 2.55rem; border: 0; color: var(--blue); background: transparent; font-size: .75rem; font-weight: 800; cursor: pointer; }

@@ -1,10 +1,31 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import type Redis from 'ioredis';
 import type { DataSource } from 'typeorm';
 
 import { AuthService } from './auth.service';
 import type { MailService } from './mail.service';
+
+const DOS_EMPRESAS = [
+  {
+    user_id: 'user-guard-1',
+    role_key: 'GUARDIA',
+    tenant_id: 'tenant-1',
+    tenant_name: 'Empresa A',
+    tenant_slug: 'empresa-a',
+    is_active: true,
+    tenant_status: 'active',
+  },
+  {
+    user_id: 'user-guard-1',
+    role_key: 'GUARDIA',
+    tenant_id: 'tenant-2',
+    tenant_name: 'Empresa B',
+    tenant_slug: 'empresa-b',
+    is_active: true,
+    tenant_status: 'active',
+  },
+];
 
 function crearServicio(query: jest.Mock, redisMock: Partial<Redis> = {}) {
   const ds = {
@@ -108,34 +129,55 @@ describe('AuthService · nfcLogin', () => {
   });
 
   it('si pertenece a múltiples tenants sin especificar tenantId, solicita selección', async () => {
-    const query = jest.fn().mockResolvedValue([
-      {
-        user_id: 'user-guard-1',
-        role_key: 'GUARDIA',
-        tenant_id: 'tenant-1',
-        tenant_name: 'Empresa A',
-        is_active: true,
-        tenant_status: 'active',
-      },
-      {
-        user_id: 'user-guard-1',
-        role_key: 'GUARDIA',
-        tenant_id: 'tenant-2',
-        tenant_name: 'Empresa B',
-        is_active: true,
-        tenant_status: 'active',
-      },
-    ]);
-
-    const auth = crearServicio(query);
+    const auth = crearServicio(jest.fn().mockResolvedValue(DOS_EMPRESAS));
     const result = await auth.nfcLogin({ cardUid: '04A1B2C3D4' });
 
     expect(result).toEqual({
       requiresTenantSelection: true,
       tenants: [
-        { tenantId: 'tenant-1', tenantName: 'Empresa A', role: 'GUARDIA' },
-        { tenantId: 'tenant-2', tenantName: 'Empresa B', role: 'GUARDIA' },
+        {
+          tenantId: 'tenant-1',
+          tenantName: 'Empresa A',
+          tenantSlug: 'empresa-a',
+          role: 'GUARDIA',
+        },
+        {
+          tenantId: 'tenant-2',
+          tenantName: 'Empresa B',
+          tenantSlug: 'empresa-b',
+          role: 'GUARDIA',
+        },
       ],
     });
+  });
+
+  /*
+   * Lo que hace util al codigo de empresa en la garita: el guardia lo fijo una
+   * vez en ese telefono y desde entonces la tarjeta entra sola, aunque su
+   * cuenta cuelgue de varias empresas.
+   */
+  it('con el código de empresa fijado entra directo, sin preguntar cuál', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce(DOS_EMPRESAS)
+      .mockResolvedValueOnce([{ id: 'site-1', name: 'Planta Central', branch_name: 'Norte' }]);
+    const auth = crearServicio(query);
+
+    const result = await auth.nfcLogin({ cardUid: '04A1B2C3D4', tenantSlug: 'empresa-b' });
+
+    expect('user' in result).toBe(true);
+    if ('user' in result) expect(result.user.tenantId).toBe('tenant-2');
+  });
+
+  it('un código de empresa ajeno se rechaza sin revelar a qué empresas pertenece', async () => {
+    const auth = crearServicio(jest.fn().mockResolvedValue(DOS_EMPRESAS));
+
+    const fallo = await auth
+      .nfcLogin({ cardUid: '04A1B2C3D4', tenantSlug: 'empresa-que-no-es-suya' })
+      .then(() => null, (error: unknown) => error as ForbiddenException);
+
+    expect(fallo).toBeInstanceOf(ForbiddenException);
+    expect(fallo?.getResponse()).toMatchObject({ code: 'TENANT_CODE_MISMATCH' });
+    // La lista de empresas del guardia no viaja en el error.
+    expect(JSON.stringify(fallo?.getResponse())).not.toContain('Empresa A');
   });
 });

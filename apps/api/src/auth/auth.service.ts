@@ -202,18 +202,27 @@ export class AuthService {
       });
     }
 
-    const selected = this.selectMembership(activeRows, input.tenantId);
+    const selected = this.selectMembership(activeRows, input.tenantId, input.tenantSlug);
+    this.assertTenantSlugPertenece(activeRows, input.tenantSlug, selected);
     if (!selected) {
       return {
         requiresTenantSelection: true,
         tenants: activeRows
           .filter(
-            (row): row is AuthIdentityRow & { tenant_id: string; tenant_name: string } =>
-              !row.is_platform_role && Boolean(row.tenant_id && row.tenant_name),
+            (
+              row,
+            ): row is AuthIdentityRow & {
+              tenant_id: string;
+              tenant_name: string;
+              tenant_slug: string;
+            } =>
+              !row.is_platform_role &&
+              Boolean(row.tenant_id && row.tenant_name && row.tenant_slug),
           )
           .map((row) => ({
             tenantId: row.tenant_id,
             tenantName: row.tenant_name,
+            tenantSlug: row.tenant_slug,
             role: row.role_key,
           })),
       };
@@ -304,18 +313,27 @@ export class AuthService {
       });
     }
 
-    const selected = this.selectMembership(activeRows, input.tenantId);
+    const selected = this.selectMembership(activeRows, input.tenantId, input.tenantSlug);
+    this.assertTenantSlugPertenece(activeRows, input.tenantSlug, selected);
     if (!selected) {
       return {
         requiresTenantSelection: true,
         tenants: activeRows
           .filter(
-            (row): row is AuthIdentityRow & { tenant_id: string; tenant_name: string } =>
-              !row.is_platform_role && Boolean(row.tenant_id && row.tenant_name),
+            (
+              row,
+            ): row is AuthIdentityRow & {
+              tenant_id: string;
+              tenant_name: string;
+              tenant_slug: string;
+            } =>
+              !row.is_platform_role &&
+              Boolean(row.tenant_id && row.tenant_name && row.tenant_slug),
           )
           .map((row) => ({
             tenantId: row.tenant_id,
             tenantName: row.tenant_name,
+            tenantSlug: row.tenant_slug,
             role: row.role_key,
           })),
       };
@@ -509,11 +527,36 @@ export class AuthService {
   private selectMembership(
     rows: AuthIdentityRow[],
     tenantId?: string,
+    tenantSlug?: string,
   ): AuthIdentityRow | undefined {
     const platform = rows.find((row) => row.is_platform_role);
     if (platform) return platform;
     if (tenantId) return rows.find((row) => row.tenant_id === tenantId);
+    if (tenantSlug) return rows.find((row) => row.tenant_slug === tenantSlug);
     return rows.length === 1 ? rows[0] : undefined;
+  }
+
+  /**
+   * Un codigo de empresa que no corresponde a esta cuenta NO cae en la lista
+   * para elegir: se responde el error y nada mas.
+   *
+   * Son dos motivos distintos y los dos importan. Para el guardia, "ese codigo
+   * no es el tuyo" es accionable y "elegi de esta lista" lo devuelve justo al
+   * paso que el codigo venia a evitar. Y hacia afuera, listar las empresas de
+   * alguien porque se adivino mal un codigo regala el mapa de clientes a quien
+   * tenga una tarjeta prestada.
+   */
+  private assertTenantSlugPertenece(
+    rows: AuthIdentityRow[],
+    tenantSlug: string | undefined,
+    seleccionada: AuthIdentityRow | undefined,
+  ): void {
+    if (!tenantSlug || seleccionada) return;
+    if (rows.some((row) => row.is_platform_role)) return;
+    throw new ForbiddenException({
+      code: 'TENANT_CODE_MISMATCH',
+      message: 'Ese código de empresa no corresponde a tu cuenta. Revísalo con tu supervisor.',
+    });
   }
 
   async listSessions(userId: string, currentFamilyId: string) {
