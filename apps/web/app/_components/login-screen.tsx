@@ -29,6 +29,8 @@ export function LoginScreen() {
     Array<{ tenantId: string; tenantName: string; role: Role }>
   >([]);
   const [nfcFeedback, setNfcFeedback] = useState<string | null>(null);
+  const [pendingCardUid, setPendingCardUid] = useState<string | null>(null);
+  const [nfcPin, setNfcPin] = useState('');
 
   useEffect(() => {
     function readActionLink() {
@@ -49,8 +51,8 @@ export function LoginScreen() {
   }, []);
 
   const loginWithNfc = useCallback(
-    async (cardUid: string) => {
-      if (!cardUid) return;
+    async (cardUid: string, pin?: string) => {
+      if (!cardUid || status === 'loading') return;
       if (!navigator.onLine) {
         setStatus('offline');
         return;
@@ -66,6 +68,7 @@ export function LoginScreen() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cardUid,
+            ...(pin ? { pin } : {}),
             ...(tenantId ? { tenantId } : {}),
           }),
         });
@@ -85,6 +88,17 @@ export function LoginScreen() {
           return;
         }
         if (!response.ok || !result.user) {
+          // Que falte el PIN no es un error del guardia: es el estado en que
+          // el portal tiene que pedirlo (ver auth.service.ts). Se guarda el
+          // UID ya leído para no obligar a un segundo toque de tarjeta.
+          if (result.code === 'NFC_PIN_REQUIRED') {
+            setPendingCardUid(cardUid);
+            setNfcPin('');
+            setStatus('idle');
+            setNfcFeedback(null);
+            return;
+          }
+          setPendingCardUid(null);
           setErrorMessage(
             result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
               ? result.message
@@ -95,6 +109,7 @@ export function LoginScreen() {
           return;
         }
 
+        setPendingCardUid(null);
         router.push(`/app/${result.user.role.toLowerCase()}`);
         router.refresh();
       } catch {
@@ -102,12 +117,16 @@ export function LoginScreen() {
         setNfcFeedback(null);
       }
     },
-    [apiUrl, router, tenantId],
+    [apiUrl, router, status, tenantId],
   );
 
   useEffect(() => {
     function alDetectarTarjetaNfc(uid: string) {
       if (mode !== 'login') return;
+      // Mientras se espera el PIN de un toque anterior, un reintento de
+      // lectura de la MISMA tarjeta (el lector queda armado unos segundos
+      // más) no debe reiniciar el flujo ni gastar otro intento fallido.
+      if (pendingCardUid) return;
       void loginWithNfc(uid);
     }
 
@@ -124,7 +143,18 @@ export function LoginScreen() {
       delete (window as unknown as { __sentrycoreNfcLogin?: unknown }).__sentrycoreNfcLogin;
       window.removeEventListener('sentrycore:nfc:login', handler);
     };
-  }, [mode, loginWithNfc]);
+  }, [mode, loginWithNfc, pendingCardUid]);
+
+  async function submitNfcPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!pendingCardUid) return;
+    if (!nfcPin.trim()) {
+      setErrorMessage('Ingresa el PIN de la tarjeta.');
+      setStatus('error');
+      return;
+    }
+    await loginWithNfc(pendingCardUid, nfcPin.trim());
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -322,7 +352,54 @@ export function LoginScreen() {
             </div>
           ) : null}
 
-          {mode === 'login' ? <form className="login-form" noValidate onSubmit={submit}>
+          {mode === 'login' && pendingCardUid ? (
+            <form className="login-form" noValidate onSubmit={submitNfcPin}>
+              <label>
+                PIN de la tarjeta
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    setNfcPin(event.target.value);
+                    setStatus('idle');
+                    setErrorMessage('');
+                  }}
+                  placeholder="••••"
+                  required
+                  type="password"
+                  value={nfcPin}
+                />
+              </label>
+              {status === 'error' ? (
+                <p className="form-message error" role="alert">
+                  {errorMessage || 'PIN incorrecto. Inténtalo nuevamente.'}
+                </p>
+              ) : null}
+              {status === 'offline' ? (
+                <p className="form-message offline" role="alert">
+                  Estás sin conexión. Comprueba tu red para continuar.
+                </p>
+              ) : null}
+              <button className="primary-button" disabled={status === 'loading'} type="submit">
+                {status === 'loading' ? 'Verificando…' : 'Confirmar PIN'}
+              </button>
+              <button
+                className="text-button recovery-link"
+                onClick={() => {
+                  setPendingCardUid(null);
+                  setNfcPin('');
+                  setStatus('idle');
+                  setErrorMessage('');
+                }}
+                type="button"
+              >
+                Cancelar y usar otra tarjeta
+              </button>
+            </form>
+          ) : null}
+
+          {mode === 'login' && !pendingCardUid ? <form className="login-form" noValidate onSubmit={submit}>
             <label>
               Usuario o correo
               <input
