@@ -1,12 +1,10 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { crearClientePuente } from '../_lib/bridge/web-client';
 
 export function LogoutButton() {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   async function logout() {
@@ -18,16 +16,21 @@ export function LogoutButton() {
           method: 'POST',
           credentials: 'include',
         },
-      );
+      ).catch(() => undefined);
     } finally {
-      const puente = crearClientePuente();
-      const estado = await puente.conectar().catch(() => undefined);
-      if (estado?.clase === 'listo' && estado.info.protocolo.minor >= 1) {
-        await puente.borrarRutaOffline().catch(() => undefined);
+      try {
+        const puente = crearClientePuente();
+        const estado = await puente.conectar().catch(() => undefined);
+        if (estado?.clase === 'listo' && estado.info.protocolo.minor >= 1) {
+          await puente.borrarRutaOffline().catch(() => undefined);
+        }
+        puente.desconectar();
+      } catch {
+        // Ignorar fallos de puente durante logout
       }
-      puente.desconectar();
-      router.push('/');
-      router.refresh();
+      if (typeof window !== 'undefined') {
+        window.location.replace('/');
+      }
     }
   }
 

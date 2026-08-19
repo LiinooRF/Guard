@@ -5,8 +5,10 @@ import {
   ConsentimientoAdmin,
   ConsentimientoTrabajador,
 } from '../../_components/consentimiento-carga';
+import { CrashReportsSummary } from '../../_components/crash-reports-summary';
 import { DashboardShell, type MarcaDelShell } from '../../_components/dashboard-shell';
 import { EnviosPanel } from '../../_components/envios-panel';
+import { FuncionesConfiguracion } from '../../_components/funciones-configuracion';
 import { MarcaConfiguracion } from '../../_components/marca-configuracion';
 import { marcaDelTenant } from '../../_lib/marca-del-tenant';
 import { GuardHome, type GuardHomeData } from '../../_components/guard-home';
@@ -96,13 +98,14 @@ export default async function RoleDashboard({
   };
 
   if (role === 'guardia') {
-    const [data, sessions] = await Promise.all([loadGuardHome(), loadSessions()]);
+    const siteId = firstParameter(query.siteId);
+    const [data, sessions] = await Promise.all([loadGuardHome(siteId), loadSessions()]);
     const subtitle = data.hasAssignment && data.patrol
-      ? `Tu turno en ${data.patrol.siteName}.`
-      : 'Aquí verás tu próxima tarea cuando sea asignada.';
+      ? `Ronda en ${data.patrol.siteName}.`
+      : 'Aquí verás tu próxima ronda cuando sea asignada.';
 
     return (
-      <DashboardShell role={content.role} title="Mi turno" subtitle={subtitle} streamlined marca={marca}>
+      <DashboardShell role={content.role} title="Mi ronda" subtitle={subtitle} streamlined marca={marca}>
         {/* El aviso de geolocalizacion ENVUELVE el contenido del turno (#78):
             mientras la persona no lo haya leido, la puerta no renderiza nada
             mas. Registrar la ubicacion de un trabajador exige informarselo
@@ -285,7 +288,12 @@ export default async function RoleDashboard({
       </div>
     );
   } else if (!isSupervisor && view === 'reglas') {
-    panel = <div className="panel-view" data-view="reglas"><ReglasConfiguracion apiUrl={publicApiUrl()} /></div>;
+    panel = (
+      <div className="panel-view" data-view="reglas">
+        <FuncionesConfiguracion apiUrl={publicApiUrl()} />
+        <ReglasConfiguracion apiUrl={publicApiUrl()} />
+      </div>
+    );
   } else if (!isSupervisor && view === 'marca') {
     panel = (
       <div className="panel-view" data-view="marca">
@@ -304,6 +312,12 @@ export default async function RoleDashboard({
     );
   } else if (!isSupervisor && view === 'cumplimiento') {
     panel = <div className="panel-view" data-view="cumplimiento"><ConsentimientoAdmin apiUrl={publicApiUrl()} /></div>;
+  } else if (!isSupervisor && view === 'diagnostico') {
+    panel = (
+      <div className="panel-view" data-view="diagnostico">
+        <CrashReportsSummary apiUrl={publicApiUrl()} />
+      </div>
+    );
   } else if (isSupervisor && view === 'consentimiento') {
     panel = (
       <div className="panel-view" data-view="consentimiento">
@@ -373,14 +387,17 @@ function publicApiUrl() {
   return process.env.NEXT_PUBLIC_API_URL ?? '/api';
 }
 
-async function loadGuardHome(): Promise<GuardHomeData> {
+async function loadGuardHome(siteId?: string): Promise<GuardHomeData> {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get('sentrycore_access');
   if (!accessToken) return noAssignment();
 
   const internalApiUrl = process.env.API_INTERNAL_URL ?? publicApiUrl();
   try {
-    const response = await fetch(`${internalApiUrl}/guard/home`, {
+    const url = siteId
+      ? `${internalApiUrl}/guard/home?siteId=${encodeURIComponent(siteId)}`
+      : `${internalApiUrl}/guard/home`;
+    const response = await fetch(url, {
       headers: { cookie: `sentrycore_access=${accessToken.value}` },
       cache: 'no-store',
     });
@@ -389,7 +406,7 @@ async function loadGuardHome(): Promise<GuardHomeData> {
   } catch {
     return {
       ...noAssignment(),
-      message: 'No pudimos consultar tu turno. Revisa la conexión e intenta nuevamente.',
+      message: 'No pudimos consultar tu ronda. Revisa la conexión e intenta nuevamente.',
     };
   }
 }

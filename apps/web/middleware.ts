@@ -1,6 +1,8 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
+import { peticionDeAppDelGuardia } from './app/_lib/app-del-guardia';
+
 const ROLE_PATHS = {
   SUPERADMIN: 'superadmin',
   ADMIN: 'admin',
@@ -20,10 +22,7 @@ export async function middleware(request: NextRequest) {
 
   const role = await resolveSession(request, accessToken);
   if (role) {
-    if (
-      role === 'GUARDIA' &&
-      !request.headers.get('user-agent')?.includes('SentryCoreAndroid/')
-    ) {
+    if (role === 'GUARDIA' && !peticionDeAppDelGuardia(request.headers)) {
       return clearSessionAndRedirect(request);
     }
 

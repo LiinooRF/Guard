@@ -8,6 +8,7 @@ import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { FeatureFlagsInterceptor, RequiresFeature } from '../rules/feature-flags.interceptor';
 import { CrashReportingService } from './crash-reporting.service';
+import type { CrashReportSummaryDto } from './dto/crash-report-summary.dto';
 import { ReportCrashDto } from './dto/report-crash.dto';
 
 class ResumenQuery {
@@ -81,7 +82,7 @@ export class CrashReportsController {
   @Get('crash-reports/summary')
   @Permissions('tenant:audit:read')
   @TenantScope()
-  resumen(@Query() query: ResumenQuery) {
+  resumen(@Query() query: ResumenQuery): Promise<CrashReportSummaryDto> {
     return this.crash.resumen(query.days);
   }
 }

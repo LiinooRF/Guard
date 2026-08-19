@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import type { AuthenticatedUser } from '../auth/auth.guard';
@@ -30,8 +30,11 @@ export class GuardController {
 
   @Get('home')
   @Permissions('patrols:execute')
-  home(@Req() request: Request & { user: AuthenticatedUser }) {
-    return this.guardService.getHome(request.user.sub);
+  home(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Query('siteId') siteId?: string,
+  ) {
+    return this.guardService.getHome(request.user.sub, siteId);
   }
 
   @Post('patrols/:patrolId/start')

@@ -3,6 +3,7 @@ import { patrolRulesSchema, type PatrolRules } from '@sentrycore/shared';
 
 import { EvidenceService, type FotoSubida } from './evidence.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { PatrolReportService } from '../reports/patrol-report.service';
 import type { RulesService } from '../rules/rules.service';
 
 jest.mock('node:fs/promises', () => ({
@@ -19,11 +20,16 @@ const reglas = (overrides: Partial<PatrolRules> = {}) =>
     effective: jest.fn().mockResolvedValue({ ...patrolRulesSchema.parse({}), ...overrides }),
   }) as unknown as RulesService;
 
-const servicio = (manager: { query: jest.Mock }, rules: RulesService = reglas()) =>
+const servicio = (
+  manager: { query: jest.Mock },
+  rules: RulesService = reglas(),
+  patrolReport?: { invalidarCache: jest.Mock },
+) =>
   new EvidenceService(
     { manager } as unknown as TenantContextService,
     rules,
     { getOrThrow: jest.fn().mockReturnValue('/evidencia') } as unknown as ConfigService,
+    patrolReport as unknown as PatrolReportService,
   );
 
 /** PNG minimo valido: firma + IHDR con 640x480. */
@@ -42,6 +48,7 @@ const ESCANEO = {
   tenant_id: 'tenant-1',
   patrol_id: 'patrol-1',
   checkpoint_id: 'cp-1',
+  patrol_status: 'en_curso',
 };
 
 beforeEach(() => jest.clearAllMocks());
@@ -359,5 +366,82 @@ describe('EvidenceService.listByPatrol', () => {
     await expect(
       servicio(manager).listByPatrol('patrol-1', { sub: 'sup-id', role: 'SUPERVISOR' }),
     ).rejects.toThrow('No tienes este recinto asignado');
+  });
+});
+
+/*
+ * La cache del informe (#266, #320) da por inmutable a la ronda cerrada, y no
+ * lo es: la cola offline sube la foto cuando vuelve la señal, y para entonces
+ * el ultimo escaneo ya pudo haber cerrado la ronda. Sin invalidar, el primer
+ * PDF descargado despues del cierre se congela SIN esa foto.
+ */
+describe('EvidenceService.storePhoto — foto tardia sobre ronda cerrada (#320)', () => {
+  const subidaOk = (estadoRonda: string) => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([{ ...ESCANEO, patrol_status: estadoRonda }])
+      .mockResolvedValueOnce([]) // sha nuevo
+      .mockResolvedValueOnce([{ id: 'foto-id', created_at: new Date('2026-08-03T04:00:00Z') }]);
+    return manager;
+  };
+
+  it('pide el estado de la ronda en la misma consulta que autoriza el escaneo', async () => {
+    const manager = subidaOk('completada');
+    await servicio(manager, reglas(), { invalidarCache: jest.fn().mockResolvedValue(undefined) })
+      .storePhoto('scan-id', 'guard-id', fotoPng());
+
+    expect(String(manager.query.mock.calls[0]?.[0])).toContain('p.status AS patrol_status');
+  });
+
+  it.each(['completada', 'incompleta', 'vencida'])(
+    'tumba el PDF cacheado cuando la ronda esta %s',
+    async (estado) => {
+      const patrolReport = { invalidarCache: jest.fn().mockResolvedValue(undefined) };
+      await servicio(subidaOk(estado), reglas(), patrolReport).storePhoto(
+        'scan-id',
+        'guard-id',
+        fotoPng(),
+      );
+
+      expect(patrolReport.invalidarCache).toHaveBeenCalledWith('tenant-1', 'patrol-1');
+    },
+  );
+
+  it('no toca la cache si la ronda sigue en curso: todavia no hay PDF que congelar', async () => {
+    const patrolReport = { invalidarCache: jest.fn().mockResolvedValue(undefined) };
+    await servicio(subidaOk('en_curso'), reglas(), patrolReport).storePhoto(
+      'scan-id',
+      'guard-id',
+      fotoPng(),
+    );
+
+    expect(patrolReport.invalidarCache).not.toHaveBeenCalled();
+  });
+
+  it('la foto se guarda igual aunque la invalidacion falle', async () => {
+    const patrolReport = {
+      invalidarCache: jest.fn().mockRejectedValue(new Error('volumen de solo lectura')),
+    };
+
+    await expect(
+      servicio(subidaOk('completada'), reglas(), patrolReport).storePhoto(
+        'scan-id',
+        'guard-id',
+        fotoPng(),
+      ),
+    ).resolves.toMatchObject({ id: 'foto-id' });
+  });
+});
+
+/*
+ * El contenedor de Nest resuelve por el TIPO del parametro del constructor
+ * (design:paramtypes). Con `import type` ese tipo se borra al compilar, el
+ * parametro queda como Object y la API NO ARRANCA: se cae entera al inicio,
+ * con typecheck, lint y build en verde. Ya paso una vez y tumbo staging.
+ */
+describe('EvidenceService — metadatos de inyeccion', () => {
+  it('el constructor declara PatrolReportService como tipo, no Object', () => {
+    const tipos = Reflect.getMetadata('design:paramtypes', EvidenceService) as unknown[];
+    expect(tipos[3]).toBe(PatrolReportService);
   });
 });

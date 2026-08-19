@@ -49,7 +49,7 @@ jobs:
       REDIS_TEST_URL: redis://localhost:6379
       JWT_SECRET: secreto-exclusivo-de-ci-con-mas-de-32-caracteres
       # Datos efímeros: la base del runner se destruye al terminar el job.
-      DEMO_PASSWORD: DemoGuardia2026!
+      DEMO_PASSWORD: ci-only-not-a-real-credential
 
     steps:
       - uses: actions/checkout@v6
@@ -58,6 +58,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Prohibir inputs de GitHub interpolados dentro de shell
+        run: |
+          node --test scripts/validar-workflow-inputs.test.mjs
+          node scripts/validar-workflow-inputs.mjs
 
       - name: Instalar dependencias
         run: npm ci

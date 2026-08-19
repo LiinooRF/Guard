@@ -2,12 +2,13 @@
 """
 Prueba end-to-end contra un despliegue REAL. No mockea nada.
 
-    python scripts/humo-e2e.py                       # contra staging
-    SENTRYCORE_BASE=https://otro.dominio python scripts/humo-e2e.py
+    SENTRYCORE_BASE=https://test-sentrycore.voxtilabs.cl \
+      SENTRYCORE_DEMO_PASSWORD='(desde el gestor de secretos)' \
+      python scripts/humo-e2e.py
 
-Variables: SENTRYCORE_BASE (por defecto staging), SENTRYCORE_DEMO_PASSWORD (la misma
-DEMO_PASSWORD con que se sembraron las cuentas demo) y SENTRYCORE_HUMO_ESTRICTO
-(ver "lo que no se pudo probar").
+SENTRYCORE_BASE y SENTRYCORE_DEMO_PASSWORD son OBLIGATORIAS y no tienen valor
+por defecto: la clave demo dejo de vivir en el repositorio (#295). Opcional:
+SENTRYCORE_HUMO_ESTRICTO (ver "lo que no se pudo probar").
 
 LO QUE NO SE PUDO PROBAR TAMBIEN CUENTA. Una comprobacion que no se ejecuta no
 es una comprobacion que pasa, y este script llego a saltarse cuatro en silencio
@@ -69,9 +70,14 @@ import sys, json, http.cookiejar, urllib.request, urllib.error, uuid, io
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE = os.environ.get('SENTRYCORE_BASE', 'https://test-sentrycore.voxtilabs.cl')
+BASE = os.environ.get('SENTRYCORE_BASE', '').strip().rstrip('/')
+CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', '')
+if not BASE or not CLAVE:
+    raise SystemExit(
+        'Faltan SENTRYCORE_BASE y/o SENTRYCORE_DEMO_PASSWORD. La clave demo no vive\n'
+        'en el repositorio (#295): pasala por entorno o desde el gestor de secretos.'
+    )
 API = BASE + '/api'
-CLAVE = os.environ.get('SENTRYCORE_DEMO_PASSWORD', 'DemoGuardia2026!')
 
 # El recinto que la seccion 14 necesita NO asignado al supervisor. Nombre fijo y
 # no unico por corrida a proposito: la API no ofrece borrar recintos, asi que uno
@@ -1230,20 +1236,82 @@ check('el SUPERVISOR no ve todo el correo de la empresa', s == 403, 'HTTP %s' % 
 s, mod = admin.pedir('GET', '/features')
 caidas_prendidas = cuerpo_dict(mod).get('enabled', {}).get('crashReporting') is True
 caida = {
-    'errorName': 'PruebaHumoE2E',
+    'errorName': 'NfcBridgeError',
     'errorMessage': 'Falla simulada por la prueba de humo automatizada',
     'appVersion': '0.0.0-e2e',
-    'deviceModel': 'Telefono de prueba',
+    'deviceModel': 'Redmi 9A',
     'androidVersion': '13',
 }
 if caidas_prendidas:
-    s, _ = guardia.pedir('POST', '/observability/crash-reports', caida)
-    check('la app puede reportar que se cerro sola', s == 202, 'HTTP %s' % s)
+    s, registro = guardia.pedir('POST', '/observability/crash-reports', caida)
+    alta = cuerpo_dict(registro)
+    registrada = s == 202 and alta.get('registrado') is True
+    limitada = (
+        s == 202
+        and alta.get('registrado') is False
+        and alta.get('motivo') == 'limite_por_hora'
+    )
 
-    s, resumen = admin.pedir('GET', '/observability/crash-reports/summary')
-    d = cuerpo_dict(resumen)
-    check('el admin ve que se cae, en que version y en que telefono',
-          s == 200 and isinstance(d.get('grupos'), list), 'HTTP %s %s' % (s, str(d)[:120]))
+    if registrada:
+        check('la app puede reportar que se cerro sola', True)
+
+        s, resumen = admin.pedir('GET', '/observability/crash-reports/summary')
+        d = cuerpo_dict(resumen)
+        grupos = d.get('grupos') if isinstance(d.get('grupos'), list) else []
+        grupo_inyectado = next((grupo for grupo in grupos if (
+            isinstance(grupo, dict)
+            and grupo.get('errorName') == caida['errorName']
+            and grupo.get('appVersion') == caida['appVersion']
+            and grupo.get('deviceModel') == caida['deviceModel']
+            and grupo.get('androidVersion') == caida['androidVersion']
+        )), None)
+        conteos_validos = (
+            isinstance(grupo_inyectado, dict)
+            and type(grupo_inyectado.get('total')) is int
+            and type(grupo_inyectado.get('fatales')) is int
+            and grupo_inyectado.get('total', 0) >= grupo_inyectado.get('fatales', 0) >= 1
+        )
+        check('el admin ve que se cae, en que version y en que telefono',
+              s == 200 and bool(grupos) and grupo_inyectado is not None and conteos_validos,
+              'HTTP %s grupos=%d inyectado=%s' %
+              (s, len(grupos), grupo_inyectado is not None))
+
+        # Frontera de privacidad de #225: proyectar despues en React no alcanza,
+        # porque todo el JSON ya habria llegado a DevTools/Network. Se exige la
+        # lista cerrada del DTO servidor para CADA grupo, sin fechas, huella,
+        # mensaje, pila, ids ni campos libres adicionales. `bool(grupos)` y la
+        # busqueda del fixture evitan que `all([])` apruebe sin medir nada.
+        campos_grupo_seguro = {
+            'errorName', 'appVersion', 'deviceModel', 'androidVersion', 'total', 'fatales'
+        }
+        campos_recibidos = [
+            sorted(grupo.keys()) for grupo in grupos if isinstance(grupo, dict)
+        ]
+        contrato_seguro = (
+            s == 200
+            and bool(grupos)
+            and grupo_inyectado is not None
+            and conteos_validos
+            and all(isinstance(grupo, dict) and set(grupo.keys()) == campos_grupo_seguro
+                    for grupo in grupos)
+        )
+        check('el navegador recibe solo el DTO tecnico seguro de cada caida', contrato_seguro,
+              'HTTP %s grupos=%d campos=%s' % (s, len(grupos), campos_recibidos[:3]))
+    elif limitada:
+        omitido([
+            'la app puede reportar que se cerro sola',
+            'el admin ve que se cae, en que version y en que telefono',
+            'el navegador recibe solo el DTO tecnico seguro de cada caida',
+        ], 'el guardia alcanzo el limite horario de reportes antes del fixture',
+                POR_EL_DESPLIEGUE)
+    else:
+        check('la app puede reportar que se cerro sola', False,
+              'HTTP %s registrado=%r motivo=%r' %
+              (s, alta.get('registrado'), alta.get('motivo')))
+        omitido([
+            'el admin ve que se cae, en que version y en que telefono',
+            'el navegador recibe solo el DTO tecnico seguro de cada caida',
+        ], 'el POST del fixture no confirmo registrado=true', POR_LA_PRUEBA)
 
     s, _ = guardia.pedir('POST', '/observability/crash-reports',
                          dict(caida, guardName='Nombre de una persona'))

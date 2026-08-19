@@ -33,6 +33,7 @@ interface UserRow {
   username: string | null;
   given_name: string;
   family_name: string;
+  nfc_card_uid?: string | null;
   role_key: 'ADMIN' | 'SUPERVISOR' | 'GUARDIA';
   is_active: boolean;
   site_ids: string[];
@@ -134,6 +135,23 @@ function faltaLaFila(contexto: ContextoEscritura | undefined, queNoEsta: string)
     : new NotFoundException(queNoEsta);
 }
 
+/*
+ * POR QUE LLEVAN `::text` Y `::boolean` EXPLICITOS, que parecen ruido:
+ *
+ * Un parametro ligado que solo aparece dentro de `IS NOT NULL` o como
+ * condicion de un `CASE` no le da a PostgreSQL de donde deducir su tipo, y el
+ * servidor responde `42P08 could not determine data type of parameter`. La
+ * sentencia es valida escrita con literales —en `psql` pasa sin quejarse— y
+ * revienta solo por el protocolo extendido, que es justamente el que usa la
+ * aplicacion. Asignar una tarjeta NFC dio 500 en produccion por esto.
+ *
+ * Van como constante, y no dentro del metodo, porque
+ * `parametros-tipados.integration.spec.ts` ejecuta ESTA MISMA cadena contra
+ * PostgreSQL de verdad. Un mock no puede ver este error.
+ */
+export const SQL_ASIGNAR_TARJETA_NFC_ADMIN =
+  `UPDATE users SET nfc_card_uid = $2::text, nfc_card_assigned_at = CASE WHEN $2::text IS NOT NULL THEN now() ELSE NULL END WHERE id = $1`;
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -151,11 +169,14 @@ export class AdminService {
         users.username,
         users.given_name,
         users.family_name,
+        users.nfc_card_uid,
         memberships.role_key,
         users.is_active,
         COALESCE(
-          array_agg(supervisor_sites.site_id)
+          array_agg(DISTINCT supervisor_sites.site_id)
             FILTER (WHERE supervisor_sites.site_id IS NOT NULL),
+          array_agg(DISTINCT guard_sites.site_id)
+            FILTER (WHERE guard_sites.site_id IS NOT NULL),
           ARRAY[]::uuid[]
         ) AS site_ids
       FROM memberships
@@ -163,6 +184,9 @@ export class AdminService {
       LEFT JOIN supervisor_sites
         ON supervisor_sites.supervisor_id = users.id
        AND memberships.role_key = 'SUPERVISOR'
+      LEFT JOIN guard_sites
+        ON guard_sites.guard_id = users.id
+       AND memberships.role_key = 'GUARDIA'
       GROUP BY users.id, memberships.role_key
       ORDER BY memberships.role_key, users.given_name, users.family_name
     `);
@@ -172,6 +196,7 @@ export class AdminService {
       username: user.username,
       givenName: user.given_name,
       familyName: user.family_name,
+      nfcCardUid: user.nfc_card_uid ?? null,
       role: user.role_key,
       isActive: user.is_active,
       siteIds: user.site_ids,
@@ -278,6 +303,20 @@ export class AdminService {
       }
       throw error;
     }
+    if (input.nfcCardUid) {
+      const normalizedUid = normalizarUidNfc(input.nfcCardUid);
+      try {
+        await this.tenantContext.manager.query(
+          `UPDATE users SET nfc_card_uid = $2, nfc_card_assigned_at = now() WHERE id = $1`,
+          [userId, normalizedUid],
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+          throw new ConflictException('La tarjeta NFC ya está asignada a otro usuario');
+        }
+        throw error;
+      }
+    }
     if (input.email) {
       const invitation = createAuthActionToken(24 * 60 * 60 * 1000);
       await this.tenantContext.manager.query(
@@ -369,6 +408,21 @@ export class AdminService {
         `UPDATE memberships SET role_key = $2 WHERE user_id = $1`,
         [userId, input.role],
       );
+    }
+
+    if (input.nfcCardUid !== undefined) {
+      const normalizedUid = input.nfcCardUid ? normalizarUidNfc(input.nfcCardUid) : null;
+      try {
+        await this.tenantContext.manager.query(
+          SQL_ASIGNAR_TARJETA_NFC_ADMIN,
+          [userId, normalizedUid],
+        );
+      } catch (error) {
+        if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
+          throw new ConflictException('La tarjeta NFC ya está asignada a otro usuario');
+        }
+        throw error;
+      }
     }
 
     const updated = await this.tenantContext.manager.query<Array<{
@@ -578,34 +632,44 @@ export class AdminService {
     return this.listHolidays(siteId);
   }
 
-  async setSupervisorSite(supervisorId: string, siteId: string, assigned: boolean) {
+  async setSupervisorSite(userId: string, siteId: string, assigned: boolean) {
+    const memberships = await this.tenantContext.manager.query<Array<{ role_key: 'SUPERVISOR' | 'GUARDIA' }>>(
+      `SELECT role_key FROM memberships WHERE user_id = $1 AND role_key IN ('SUPERVISOR', 'GUARDIA')`,
+      [userId],
+    );
+    const membership = memberships[0];
+    if (!membership) throw new NotFoundException('Usuario administrable no encontrado');
+
+    const table = membership.role_key === 'SUPERVISOR' ? 'supervisor_sites' : 'guard_sites';
+    const idCol = membership.role_key === 'SUPERVISOR' ? 'supervisor_id' : 'guard_id';
+
     if (assigned) {
       const result = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
-        `INSERT INTO supervisor_sites (tenant_id, supervisor_id, site_id)
+        `INSERT INTO ${table} (tenant_id, ${idCol}, site_id)
          SELECT app_tenant_id(), membership.user_id, site.id
          FROM memberships membership
          JOIN sites site ON site.id = $2 AND site.is_active
          WHERE membership.user_id = $1
-           AND membership.role_key = 'SUPERVISOR'
+           AND membership.role_key = $3
          ON CONFLICT DO NOTHING
          RETURNING site_id`,
-        [supervisorId, siteId],
+        [userId, siteId, membership.role_key],
       );
       if (!result.length) {
         const existing = await this.tenantContext.manager.query<Array<{ present: boolean }>>(
-          `SELECT true AS present FROM supervisor_sites
-           WHERE supervisor_id = $1 AND site_id = $2`,
-          [supervisorId, siteId],
+          `SELECT true AS present FROM ${table}
+           WHERE ${idCol} = $1 AND site_id = $2`,
+          [userId, siteId],
         );
-        if (!existing.length) throw new NotFoundException('Supervisor o recinto no encontrado');
+        if (!existing.length) throw new NotFoundException('Usuario o recinto no encontrado');
       }
     } else {
       await this.tenantContext.manager.query(
-        `DELETE FROM supervisor_sites WHERE supervisor_id = $1 AND site_id = $2`,
-        [supervisorId, siteId],
+        `DELETE FROM ${table} WHERE ${idCol} = $1 AND site_id = $2`,
+        [userId, siteId],
       );
     }
-    return { supervisorId, siteId, assigned };
+    return { userId, supervisorId: userId, siteId, assigned };
   }
 
   /** Devuelve el nombre porque el resumen de auditoria lo necesita. */
@@ -684,12 +748,14 @@ export class AdminService {
     }
     let tagId: string | null = null;
     if (input.tagUid?.trim()) {
+      const cleanUid = normalizarUidDeEtiqueta(input.tagUid, 'nfc');
+      const finalUid = cleanUid.length >= 4 ? cleanUid : input.tagUid.trim();
       tagId = randomUUID();
       try {
         await this.tenantContext.manager.query(
           `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
            VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
-          [tagId, checkpointId, input.tagUid.trim()],
+          [tagId, checkpointId, finalUid],
         );
       } catch (error) {
         if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
@@ -716,7 +782,11 @@ export class AdminService {
   ) {
     const recinto = await this.ensureSite(siteId);
     const tagUids = checkpoints
-      .map((checkpoint) => checkpoint.tagUid?.trim().toLowerCase())
+      .map((checkpoint) => {
+        if (!checkpoint.tagUid?.trim()) return null;
+        const clean = normalizarUidDeEtiqueta(checkpoint.tagUid, 'nfc');
+        return (clean.length >= 4 ? clean : checkpoint.tagUid.trim()).toLowerCase();
+      })
       .filter((uid): uid is string => Boolean(uid));
     if (new Set(tagUids).size !== tagUids.length) {
       throw new BadRequestException('El CSV repite una etiqueta NFC');
@@ -744,13 +814,15 @@ export class AdminService {
         ],
       );
       let tagId: string | null = null;
-      if (checkpoint.tagUid) {
+      if (checkpoint.tagUid?.trim()) {
+        const cleanUid = normalizarUidDeEtiqueta(checkpoint.tagUid, 'nfc');
+        const finalUid = cleanUid.length >= 4 ? cleanUid : checkpoint.tagUid.trim();
         tagId = randomUUID();
         try {
           await this.tenantContext.manager.query(
             `INSERT INTO tags (id, tenant_id, checkpoint_id, tech, uid)
              VALUES ($1, app_tenant_id(), $2, 'nfc', $3)`,
-            [tagId, id, checkpoint.tagUid.trim()],
+            [tagId, id, finalUid],
           );
         } catch (error) {
           if (error instanceof QueryFailedError && error.driverError?.code === '23505') {
@@ -1092,7 +1164,10 @@ export class AdminService {
        JOIN checkpoints checkpoint
          ON checkpoint.id = tag.checkpoint_id AND checkpoint.is_active
        JOIN sites site ON site.id = checkpoint.site_id AND site.is_active
-       WHERE tag.uid IN ($1, $2) AND tag.is_active`,
+       WHERE (
+          tag.uid IN ($1, $2)
+          OR (tag.tech = 'nfc' AND UPPER(REGEXP_REPLACE(tag.uid, '[^0-9A-Fa-f]', '', 'g')) = $2)
+        ) AND tag.is_active`,
       // Dos formas porque aqui no se sabe la tecnologia: el texto tal cual (un
       // QR, `VXQ-...`) y el mismo texto normalizado como UID de NFC. Asi el
       // instalador puede pegar `04:aa:bb:cc` o `04AABBCC` y resuelve igual.
