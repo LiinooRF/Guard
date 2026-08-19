@@ -102,7 +102,9 @@ export function LoginScreen() {
           setErrorMessage(
             result.code === 'TENANT_SUSPENDED' && typeof result.message === 'string'
               ? result.message
-              : 'No se reconoció la tarjeta NFC o el guardia no está activo.',
+              : typeof result.message === 'string'
+                ? result.message
+                : 'No se reconoció la tarjeta NFC o el guardia no está activo.',
           );
           setStatus('error');
           setNfcFeedback(null);
@@ -114,6 +116,7 @@ export function LoginScreen() {
         router.refresh();
       } catch {
         setStatus(navigator.onLine ? 'error' : 'offline');
+        setErrorMessage(navigator.onLine ? 'Error de conexión al validar la tarjeta NFC.' : '');
         setNfcFeedback(null);
       }
     },
@@ -138,6 +141,14 @@ export function LoginScreen() {
     (window as unknown as { __sentrycoreNfcLogin?: (uid: string) => void }).__sentrycoreNfcLogin =
       alDetectarTarjetaNfc;
     window.addEventListener('sentrycore:nfc:login', handler);
+
+    // Consumir UID si fue escaneado antes de que el componente terminara de montar
+    const globalWin = window as unknown as { __sentrycoreLastNfcUid?: string };
+    if (globalWin.__sentrycoreLastNfcUid) {
+      const uidPendiente = globalWin.__sentrycoreLastNfcUid;
+      delete globalWin.__sentrycoreLastNfcUid;
+      alDetectarTarjetaNfc(uidPendiente);
+    }
 
     return () => {
       delete (window as unknown as { __sentrycoreNfcLogin?: unknown }).__sentrycoreNfcLogin;
