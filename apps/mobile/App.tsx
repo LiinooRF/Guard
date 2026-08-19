@@ -20,6 +20,12 @@ import { crearCamaraQr, VistaCamaraQr } from './src/qr/camara';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import { sincronizarCola } from './src/offline/sync-queue';
 import { registrarSincronizacionBackground } from './src/offline/sync-task';
+import { ErrorBoundary } from './src/observability/ErrorBoundary';
+import {
+  configurarApiUrl,
+  instalarReportadorGlobal,
+  registrarArranqueYVerificarCierre,
+} from './src/observability/crash-reporter';
 import { iniciarEscuchaNfcLogin, detenerEscuchaNfcLogin } from './src/nfc/login-nfc-listener';
 import mobilePackage from './package.json';
 
@@ -133,6 +139,36 @@ function esErrorHttpFatalPortal(
 
 export default function App() {
   const portal = useMemo(configuredPortal, []);
+
+  useEffect(() => {
+    /*
+     * Envuelto a proposito. Esto es lo PRIMERO que corre y esta FUERA del
+     * ErrorBoundary de abajo: un boundary atrapa lo que falla al renderizar
+     * sus hijos, no lo que tira un efecto del componente que lo monta. Una
+     * excepcion aca —almacenamiento sin permiso, un modulo nativo que no
+     * cargo— tumba la app entera en el arranque, sin pantalla y sin mensaje.
+     *
+     * Ya nos paso dos veces que un dato accesorio derribara el producto en el
+     * arranque (la camara que no existe en Android, el saludo que nadie
+     * contestaba). El reportador de caidas no puede ser el motivo de una.
+     */
+    try {
+      configurarApiUrl(portal.origin);
+      instalarReportadorGlobal(() => portal.origin);
+      void registrarArranqueYVerificarCierre(portal.origin).catch(() => undefined);
+    } catch {
+      // Se pierde el reporte de caidas, no la app.
+    }
+  }, [portal.origin]);
+
+  return (
+    <ErrorBoundary apiUrl={portal.origin}>
+      <AppShell portal={portal} />
+    </ErrorBoundary>
+  );
+}
+
+function AppShell({ portal }: { portal: URL }) {
   const webView = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
