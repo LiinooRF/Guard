@@ -141,9 +141,24 @@ export default function App() {
   const portal = useMemo(configuredPortal, []);
 
   useEffect(() => {
-    configurarApiUrl(portal.origin);
-    instalarReportadorGlobal(() => portal.origin);
-    void registrarArranqueYVerificarCierre(portal.origin);
+    /*
+     * Envuelto a proposito. Esto es lo PRIMERO que corre y esta FUERA del
+     * ErrorBoundary de abajo: un boundary atrapa lo que falla al renderizar
+     * sus hijos, no lo que tira un efecto del componente que lo monta. Una
+     * excepcion aca —almacenamiento sin permiso, un modulo nativo que no
+     * cargo— tumba la app entera en el arranque, sin pantalla y sin mensaje.
+     *
+     * Ya nos paso dos veces que un dato accesorio derribara el producto en el
+     * arranque (la camara que no existe en Android, el saludo que nadie
+     * contestaba). El reportador de caidas no puede ser el motivo de una.
+     */
+    try {
+      configurarApiUrl(portal.origin);
+      instalarReportadorGlobal(() => portal.origin);
+      void registrarArranqueYVerificarCierre(portal.origin).catch(() => undefined);
+    } catch {
+      // Se pierde el reporte de caidas, no la app.
+    }
   }, [portal.origin]);
 
   return (
