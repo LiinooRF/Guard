@@ -39,6 +39,11 @@ export class CreateTenantUserDto {
   @MinLength(12)
   @MaxLength(128)
   password?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9a-fA-F]{4,64}$/, { message: 'El UID NFC debe ser una cadena hexadecimal' })
+  nfcCardUid?: string | null;
 }
 
 export class UpdateTenantUserDto {
@@ -56,4 +61,9 @@ export class UpdateTenantUserDto {
 
   @IsIn(['SUPERVISOR', 'GUARDIA'])
   role!: 'SUPERVISOR' | 'GUARDIA';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9a-fA-F]{4,64}$/, { message: 'El UID NFC debe ser una cadena hexadecimal' })
+  nfcCardUid?: string | null;
 }

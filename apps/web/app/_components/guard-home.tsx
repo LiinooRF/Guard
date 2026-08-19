@@ -6,11 +6,18 @@ import { useEffect, useState } from 'react';
 import type { CheckpointKind } from '@sentrycore/shared';
 
 import type { PoliticaFoto } from './guard-shift-state';
+import { traducirEstadoPermiso } from './guard-permiso-ubicacion';
 import { useGuardBridge } from './use-guard-bridge';
 
 export interface GuardHomeData {
   hasAssignment: boolean;
   message?: string;
+  assignedSites?: Array<{
+    id: string;
+    name: string;
+    branchName?: string;
+  }>;
+  selectedSiteId?: string;
   shift?: {
     scheduledStartAt: string;
     scheduledEndAt: string;
@@ -32,6 +39,7 @@ export interface GuardHomeData {
   patrol?: {
     id: string;
     status: 'pendiente' | 'en_curso';
+    siteId?: string;
     siteName: string;
     /** Zona horaria del RECINTO. La marca de agua de la foto la usa. */
     timezone?: string;
@@ -70,6 +78,27 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
 
+  /*
+   * El permiso de notificaciones se pide al ver el turno, no al arrancar.
+   *
+   * Aca ya hay contexto: el guardia esta mirando su ronda, y los avisos que va
+   * a recibir son de eso —el pánico de un companero, un cambio de turno—.
+   * Pedirlo en la pantalla de carga, sin que sepa para que, es la forma mas
+   * eficiente de quemar los dos intentos que Android concede antes de dejar de
+   * mostrar el dialogo para siempre.
+   *
+   * Se pide una sola vez por montaje y no bloquea nada: si dice que no, la
+   * ronda funciona igual.
+   */
+  useEffect(() => {
+    // Recien cuando el shell saludo: antes de eso `pedirPermiso` rechaza con
+    // 'sin-puente' y el catch se lo traga, que fue exactamente lo que paso la
+    // primera vez que se probo esto en el telefono —el dialogo no aparecia y
+    // no habia ningun error a la vista—.
+    if (puente.fase !== 'listo') return;
+    void puente.pedirPermiso('notificaciones', true).catch(() => undefined);
+  }, [puente, puente.fase]);
+
   useEffect(() => {
     if (!data.hasAssignment || !data.patrol || !data.shift) return;
     void guardarRutaOffline({
@@ -88,7 +117,27 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
     return (
       <section className="empty-assignment" aria-live="polite">
         <span className="empty-icon">✓</span>
-        <h2>No tienes un turno asignado</h2>
+        {data.assignedSites && data.assignedSites.length > 1 ? (
+          <div className="guard-site-selector-row" style={{ marginBottom: '1.25rem', width: '100%', maxWidth: '340px' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155', display: 'flex', flexDirection: 'column', gap: '0.35rem', textAlign: 'left' }}>
+              <span>📍 Seleccionar recinto asignado:</span>
+              <select
+                value={data.selectedSiteId ?? ''}
+                onChange={(e) => {
+                  router.push(`/app/guardia?siteId=${e.target.value}`);
+                }}
+                style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.95rem', backgroundColor: '#f8fafc', color: '#0f172a' }}
+              >
+                {data.assignedSites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.branchName ? `${site.branchName} · ${site.name}` : site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        <h2>No tienes una ronda asignada</h2>
         <p>{data.message ?? 'Cuando te asignen una ronda, aparecerá aquí automáticamente.'}</p>
         <ConnectionStatus pendingItems={data.synchronization.pendingItems} />
       </section>
@@ -104,6 +153,34 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
     setStarting(true);
     setError(undefined);
     try {
+      /*
+       * Sincronizar el estado de permiso de ubicación con el backend antes de iniciar.
+       * Si el puente está activo, se solicita ubicación en segundo plano y se
+       * reporta el estado actualizado a POST /geo/permission para que el backend
+       * (assertPatrolStartAllowed) no rebote con 'sin_reporte_de_permiso'.
+       */
+      if (puente.fase === 'listo') {
+        const resultadoSegundoPlano = await puente
+          .pedirPermiso('ubicacion-segundo-plano', true)
+          .catch(() => undefined);
+        if (resultadoSegundoPlano) {
+          const estadoApi = traducirEstadoPermiso(resultadoSegundoPlano.estado);
+          await fetch(`${apiUrl}/geo/permission`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              status: estadoApi,
+              deviceInfo: puente.infoEquipo ?? 'android app',
+            }),
+          }).catch(() => undefined);
+        } else {
+          await puente.refrescarPermisoUbicacion().catch(() => undefined);
+        }
+      } else {
+        await puente.refrescarPermisoUbicacion().catch(() => undefined);
+      }
+
       const response = await fetch(`${apiUrl}/guard/patrols/${patrol.id}/start`, {
         method: 'POST',
         credentials: 'include',
@@ -135,13 +212,37 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
           </span>
           <ConnectionStatus pendingItems={data.synchronization.pendingItems} compact />
         </div>
+
+        {data.assignedSites && data.assignedSites.length > 1 ? (
+          <div className="guard-site-selector-row" style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <span>📍 Cambiar de recinto asignado:</span>
+              <select
+                value={data.selectedSiteId ?? patrol.siteId ?? ''}
+                onChange={(e) => {
+                  router.push(`/app/guardia?siteId=${e.target.value}`);
+                }}
+                style={{ padding: '0.45rem 0.7rem', borderRadius: '0.375rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', backgroundColor: '#f8fafc', color: '#0f172a' }}
+              >
+                {data.assignedSites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.branchName ? `${site.branchName} · ${site.name}` : site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+
         <span className="eyebrow">Tu tarea ahora</span>
-        <h2>{patrol.routeName}</h2>
-        <p className="guard-site">{patrol.siteName}</p>
+        <h2>Ronda en {patrol.siteName}</h2>
+        <p className="guard-site" style={{ fontSize: '1.05rem', fontWeight: 600, color: '#1e293b' }}>
+          {patrol.routeName}
+        </p>
 
         {pending ? (
           <button className="guard-primary-action" type="button" onClick={startPatrol} disabled={starting}>
-            {starting ? 'Iniciando…' : 'Iniciar ronda'}
+            {starting ? 'Iniciando…' : `Iniciar ronda en ${patrol.siteName}`}
           </button>
         ) : null}
         {/* No hay boton de escanear aca: con la ronda en curso, la pagina monta
@@ -151,7 +252,7 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
         {error ? <p className="guard-action-error" role="alert">{error}</p> : null}
 
         <div className="guard-shift-grid">
-          <span><small>Turno</small><strong>{time.format(new Date(shift.scheduledStartAt))} — {time.format(new Date(shift.scheduledEndAt))}</strong></span>
+          <span><small>Ronda</small><strong>{time.format(new Date(shift.scheduledStartAt))} — {time.format(new Date(shift.scheduledEndAt))}</strong></span>
           <span><small>Progreso</small><strong>{completed} de {total} puntos</strong></span>
           <span><small>Duración estimada</small><strong>{patrol.estimatedDurationMin} min</strong></span>
         </div>

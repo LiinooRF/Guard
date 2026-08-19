@@ -169,7 +169,7 @@ jobs:
       DATABASE_URL: postgresql://sentrycore_app:cambiar_app_en_ci@localhost:5432/sentrycore
       REDIS_URL: redis://localhost:6379
       # Datos efimeros: la base del runner se destruye al terminar el job.
-      DEMO_PASSWORD: DemoGuardia2026!
+      DEMO_PASSWORD: ci-only-not-a-real-credential
       BASE_VERIFICACION: sentrycore_verificacion_restore
 
     steps:

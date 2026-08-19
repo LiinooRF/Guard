@@ -130,6 +130,57 @@ está en bucle de reinicio y pasó el tope por hora, responde `{ registrado: fal
 "limite_por_hora" }` en vez de 429: un 429 haría reintentar justo cuando el problema es que
 reintenta demasiado.
 
+Contrato del GET:
+
+```json
+{
+  "ventanaDias": 7,
+  "retencionDias": 30,
+  "grupos": [
+    {
+      "errorName": "NfcBridgeError",
+      "appVersion": "1.4.2",
+      "deviceModel": "Redmi 9A",
+      "androidVersion": "10",
+      "total": 13,
+      "fatales": 2
+    }
+  ]
+}
+```
+
+El parámetro de consulta `days` es opcional. Sin él se usa la retención configurada; si pide una
+ventana mayor, `ventanaDias` informa la ventana efectiva, limitada por `retencionDias`. Cada elemento
+de `grupos` contiene **solamente** las cuatro etiquetas proyectadas y los dos conteos del ejemplo.
+
+Antes de construir la respuesta, el servidor aplica una validación cerrada a cada etiqueta:
+
+- `errorName` tiene que coincidir exactamente con una de las 11 clases canónicas y `deviceModel`
+  con uno de los 10 modelos canónicos del contrato actual. No se aceptan tipos por llevar el sufijo
+  `Error` ni modelos por coincidir con una expresión regular de fabricante: ambos criterios dejarían
+  pasar identificadores personales disfrazados de etiquetas técnicas. Los catálogos de API y web,
+  junto con sus pruebas, se mantienen sincronizados. Admitir una clase o modelo nuevo exige
+  evidencia, actualizar ambos catálogos y agregar la prueba asociada en el mismo cambio.
+- `appVersion` admite sólo una versión semántica de tres componentes numéricos o una versión de
+  calendario `20YY.MM`, con día `.DD` opcional. El prerelease y los metadatos de compilación, cuando
+  existen, también tienen formas cerradas por el contrato.
+- `androidVersion` admite sólo una versión numérica.
+
+Todo valor que no cumpla esas reglas se reemplaza completo por un valor fijo —`Error no
+identificado`, `Versión de app no identificada`, `Modelo no identificado` o `Versión no
+identificada`—; no se conserva ningún fragmento del valor rechazado. Los grupos que quedan con las
+mismas cuatro etiquetas después de esa proyección se fusionan y sus conteos se suman.
+
+La consecuencia deliberada es menor cobertura diagnóstica a cambio de confidencialidad: una clase,
+modelo o versión legítima pero desconocida cae al fallback hasta que se incorpore con evidencia y
+una prueba. Esto evita que texto controlado por quien envía el reporte llegue al navegador sólo por
+tener una apariencia técnica; los conteos agregados no se descartan.
+
+La respuesta al navegador **nunca** incluye la huella, el mensaje del error, la pila, fechas, IDs ni
+datos personales. La huella y los campos internos de diagnóstico que sí se conservan según las
+secciones anteriores permanecen del lado servidor; no forman parte del DTO público. Esta proyección
+no reemplaza ni relaja la lista blanca y el enmascarado de entrada.
+
 ## Horas
 
 `occurred_at` es la hora **del teléfono** y se guarda porque sirve para investigar, pero el reloj
@@ -138,7 +189,9 @@ servidor**: un reloj adelantado hace que Sentry descarte el evento por venir del
 
 El resumen no agrupa por día calendario. Un día sólo existe dentro de una zona horaria, y una caída
 no ocurre en un recinto sino en el teléfono de alguien que puede estar en cualquier parte; agrupar
-por día obligaría a elegir una zona arbitraria. Devuelve primera y última vez en ISO con zona.
+por día obligaría a elegir una zona arbitraria. La ventana móvil se filtra con la hora de recepción
+del servidor, pero la respuesta no expone fechas individuales ni agregadas: devuelve sólo la
+cantidad de días de la ventana y los conteos agrupados.
 
 ## Retención
 

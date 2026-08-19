@@ -3,6 +3,7 @@ import { DEFAULT_PATROL_RULES } from '@sentrycore/shared';
 import { QueryFailedError, type DataSource } from 'typeorm';
 
 import { PlatformRulesService } from './platform-rules.service';
+import { RulesLayersCache } from './rules-layers.cache';
 
 const ACTOR = '11111111-1111-4111-8111-111111111111';
 
@@ -110,5 +111,71 @@ describe('PlatformRulesService.replace', () => {
     await expect(
       new PlatformRulesService(fuente(query)).replace(ACTOR, { complianceThreshold: 85 }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('invalida despues del commit y rechaza una lectura global que seguia en vuelo', async () => {
+    const query = jest.fn();
+    query
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { overrides: { complianceThreshold: 85 }, updated_at: new Date(), updated_by: ACTOR },
+      ]);
+    const cache = new RulesLayersCache();
+    const generationBeforeSelect = cache.captureGeneration('tenant-in-flight');
+    const order: string[] = [];
+    const invalidar = jest.spyOn(cache, 'invalidateAll').mockImplementation(() => {
+      order.push('invalidate');
+      return RulesLayersCache.prototype.invalidateAll.call(cache);
+    });
+    const dataSource = {
+      transaction: async (
+        operation: (manager: { query: jest.Mock }) => Promise<unknown>,
+      ) => {
+        const result = await operation({ query });
+        // Resolver transaction representa que TypeORM ya confirmo el COMMIT.
+        order.push('commit');
+        return result;
+      },
+    } as unknown as DataSource;
+
+    await new PlatformRulesService(dataSource, cache).replace(ACTOR, {
+      complianceThreshold: 85,
+    });
+
+    expect(invalidar).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['commit', 'invalidate']);
+    expect(
+      cache.setIfCurrent(
+        { tenantId: 'tenant-in-flight' },
+        { platform: { complianceThreshold: 70 } },
+        generationBeforeSelect,
+      ),
+    ).toBe(false);
+    expect(cache.stats()).toMatchObject({ staleWritesRejected: 1, size: 0 });
+  });
+
+  it('un fallo de invalidacion no convierte una escritura confirmada en falso 500', async () => {
+    const query = jest.fn();
+    query
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { overrides: { complianceThreshold: 85 }, updated_at: new Date(), updated_by: ACTOR },
+      ]);
+    const cache = {
+      invalidateAll: jest.fn(() => {
+        throw new Error('cache unavailable');
+      }),
+    } as unknown as RulesLayersCache;
+
+    await expect(
+      new PlatformRulesService(fuente(query), cache).replace(ACTOR, {
+        complianceThreshold: 85,
+      }),
+    ).resolves.toMatchObject({ effective: { complianceThreshold: 85 } });
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      JSON.stringify({ event: 'rules_cache_failure', operation: 'invalidate_all' }),
+    );
   });
 });

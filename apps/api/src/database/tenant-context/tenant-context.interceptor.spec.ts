@@ -8,6 +8,8 @@ import { SupportAccessService } from '../../platform-data/support-access.service
 import { TenantContextService } from './tenant-context.service';
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
+const TENANT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const SUPPORT_ACCESS_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 function executionContext(tenantId?: string): ExecutionContext {
   return {
@@ -16,6 +18,19 @@ function executionContext(tenantId?: string): ExecutionContext {
     switchToHttp: () => ({
       getRequest: () => ({
         user: tenantId ? { sub: USER_ID, tenant_id: tenantId } : undefined,
+      }),
+    }),
+  } as unknown as ExecutionContext;
+}
+
+function supportExecutionContext(): ExecutionContext {
+  return {
+    getClass: () => class TestController {},
+    getHandler: () => () => undefined,
+    switchToHttp: () => ({
+      getRequest: () => ({
+        user: { sub: USER_ID },
+        headers: { 'x-support-access-id': SUPPORT_ACCESS_ID },
       }),
     }),
   } as unknown as ExecutionContext;
@@ -92,14 +107,19 @@ describe('TenantContextInterceptor', () => {
           handle: () =>
             defer(async () => {
               await new Promise((resolve) => setImmediate(resolve));
-              return (context.manager as unknown as { tenantId: string }).tenantId;
+              return {
+                managerTenant: (context.manager as unknown as { tenantId: string }).tenantId,
+                contextTenant: context.tenantId,
+              };
             }),
         };
         return lastValueFrom(await interceptor.intercept(executionContext(tenantId), next));
       }),
     );
 
-    expect(results).toEqual(tenantIds);
+    expect(results).toEqual(
+      tenantIds.map((tenantId) => ({ managerTenant: tenantId, contextTenant: tenantId })),
+    );
     expect(runners).toHaveLength(50);
     for (const runner of runners) {
       expect(runner.connect).toHaveBeenCalledTimes(1);
@@ -108,5 +128,74 @@ describe('TenantContextInterceptor', () => {
       expect(runner.rollbackTransaction).not.toHaveBeenCalled();
       expect(runner.release).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('ejecuta invalidaciones registradas solo despues del commit', async () => {
+    const context = new TenantContextService();
+    const order: string[] = [];
+    const runner = {
+      manager: {},
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockResolvedValue(undefined),
+      query: jest.fn().mockResolvedValue(undefined),
+      commitTransaction: jest.fn().mockImplementation(async () => {
+        order.push('commit');
+      }),
+      rollbackTransaction: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockImplementation(async () => {
+        order.push('release');
+      }),
+    } as unknown as QueryRunner;
+    const interceptor = new TenantContextInterceptor(
+      { createQueryRunner: () => runner } as unknown as DataSource,
+      context,
+      { getAllAndOverride: () => false } as unknown as Reflector,
+      sinSoporte(),
+    );
+    const next: CallHandler = {
+      handle: () =>
+        defer(async () => {
+          order.push('handler');
+          context.afterCommit(() => {
+            order.push('after-commit');
+          });
+          return null;
+        }),
+    };
+
+    await lastValueFrom(await interceptor.intercept(executionContext(TENANT_A), next));
+
+    expect(order).toEqual(['handler', 'commit', 'after-commit', 'release']);
+  });
+
+  it('soporte auditado mantiene cache fail-safe sin tenant en ALS', async () => {
+    const context = new TenantContextService();
+    const runner = {
+      manager: {},
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      query: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+    } as unknown as QueryRunner;
+    const support = {
+      resolve: jest.fn().mockResolvedValue(TENANT_A),
+    } as unknown as SupportAccessService;
+    const interceptor = new TenantContextInterceptor(
+      { createQueryRunner: () => runner } as unknown as DataSource,
+      context,
+      { getAllAndOverride: () => false } as unknown as Reflector,
+      support,
+    );
+
+    const result = await lastValueFrom(
+      await interceptor.intercept(supportExecutionContext(), {
+        handle: () => of(context.tenantId),
+      }),
+    );
+
+    expect(result).toBeNull();
+    expect(support.resolve).toHaveBeenCalledWith(SUPPORT_ACCESS_ID, USER_ID);
   });
 });

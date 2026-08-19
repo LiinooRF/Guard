@@ -162,6 +162,9 @@ const config: ExpoConfig = {
 
     // Plugin local: uses-feature. Ver plugins/with-android-manifest-extras.js.
     './plugins/with-android-manifest-extras',
+    // Plugin local: vuelca las cookies del WebView en onPause. Ver
+    // plugins/with-volcado-de-cookies.js.
+    './plugins/with-volcado-de-cookies',
   ],
 
   android: {

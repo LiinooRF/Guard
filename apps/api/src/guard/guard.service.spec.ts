@@ -501,6 +501,26 @@ describe('GuardService.registerScan', () => {
     );
   });
 
+  it('resuelve el punto de control pasando el UID normalizado en la query ($3)', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([PATROL])
+      .mockResolvedValueOnce([{
+        tag_id: 'tag-id', checkpoint_id: 'cp-1', checkpoint_name: 'Acceso',
+        kind: 'normal', latitude: null, longitude: null, is_closing_point: false,
+      }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'scan-id' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1', anomalies: [] }]);
+    const service = new GuardService({ manager } as unknown as TenantContextService, sinCorreo(), sinReglas(), sinEscalamiento(), sinPuertaGps(), sinEnvioInforme());
+
+    await service.registerScan('patrol-id', 'guard-id', dto({ uid: '04:a1:b2:c3:d4:e5:f6', method: 'nfc' }));
+
+    const queryCall = manager.query.mock.calls[1];
+    expect(queryCall[0]).toContain('UPPER(REGEXP_REPLACE(tag.uid');
+    expect(queryCall[1]).toEqual(['04:a1:b2:c3:d4:e5:f6', 'route-id', '04A1B2C3D4E5F6']);
+  });
+
   it('cerrar bajo el umbral alerta al admin, directo (#64)', async () => {
     const manager = { query: jest.fn() };
     manager.query
@@ -632,6 +652,72 @@ describe('GuardService.registerScan', () => {
       }),
     ).resolves.toMatchObject({ replay: false, notified: false });
     expect(correo.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('el boton de panico se puede accionar en jornada activa aunque no existan rondas registradas', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([]) // sin rondas previas
+      .mockResolvedValueOnce([{ site_id: 'site-jornada-1' }]) // jornada activa en curso
+      .mockResolvedValueOnce([{ id: 'evento-panico-jornada', reported_at_server: new Date() }]); // insert
+    const escalamiento = sinEscalamiento(1);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+      escalamiento,
+      sinPuertaGps(),
+      sinEnvioInforme(),
+    );
+
+    const res = await service.reportEvent('guard-id', {
+      criticality: 'panico',
+      clientEventId: 'panico-shift-uuid-1',
+      latitude: -33.45,
+      longitude: -70.66,
+    });
+
+    expect(res).toMatchObject({
+      replay: false,
+      notified: true,
+      criticality: 'panico',
+      siteId: 'site-jornada-1',
+      patrolId: null,
+    });
+    expect(escalamiento.notify).toHaveBeenCalledWith(
+      'evento-panico-jornada',
+      'panico',
+      expect.objectContaining({ siteId: 'site-jornada-1', guardId: 'guard-id' }),
+    );
+  });
+
+  it('el boton de panico se puede accionar por recinto asignado cuando no hay rondas ni jornada', async () => {
+    const manager = { query: jest.fn() };
+    manager.query
+      .mockResolvedValueOnce([]) // sin rondas
+      .mockResolvedValueOnce([]) // sin jornada
+      .mockResolvedValueOnce([{ site_id: 'site-usuario-1' }]) // user_sites asignado
+      .mockResolvedValueOnce([{ id: 'evento-panico-user-site', reported_at_server: new Date() }]); // insert
+    const escalamiento = sinEscalamiento(1);
+    const service = new GuardService(
+      { manager } as unknown as TenantContextService,
+      sinCorreo(),
+      sinReglas(),
+      escalamiento,
+      sinPuertaGps(),
+      sinEnvioInforme(),
+    );
+
+    const res = await service.reportEvent('guard-id', {
+      criticality: 'panico',
+      clientEventId: 'panico-user-site-uuid-1',
+    });
+
+    expect(res).toMatchObject({
+      siteId: 'site-usuario-1',
+      patrolId: null,
+      notified: true,
+    });
   });
 
   it('marca sin_fix_gps cuando no vienen coordenadas, pero registra igual', async () => {

@@ -681,6 +681,19 @@ function Ronda({
     setAvisoFotoPunto(undefined);
     setFotoPuntoGuardada(false);
     setFotoDePunto(pendiente);
+    /*
+     * El permiso de camara se pide justo aca, que es cuando el guardia va a
+     * fotografiar el acceso y entiende para que se lo piden.
+     *
+     * Tiene que pedirse ANTES de que aparezca el boton: la foto la toma el
+     * portal con `<input type="file" capture>` y en Android eso lo resuelve el
+     * WebView abriendo la camara del sistema, un camino que NO pide el permiso
+     * por su cuenta. Sin el concedido, el boton "Tomar foto" no hace nada: sin
+     * dialogo, sin error, sin nada. Por eso antes se pedia al arrancar la app
+     * —donde nadie entiende por que— y por eso no alcanza con pedirlo cuando el
+     * guardia ya apreto el boton.
+     */
+    void puente.pedirPermiso('camara', true).catch(() => undefined);
     setAnuncio(anuncioPropio ?? `Punto ${pendiente.nombre} registrado. Ahora fotografía el acceso.`);
   }
 
@@ -857,10 +870,10 @@ function Ronda({
       ) : null}
 
       <section className="guardia-cabecera">
-        <p className="guardia-eyebrow">{patrol.siteName}</p>
+        <p className="guardia-eyebrow">Ronda en {patrol.siteName}</p>
         <h1 className="guardia-titulo">{patrol.routeName}</h1>
         <p className="guardia-turno">
-          Turno {hora.format(new Date(shift.scheduledStartAt))} a{' '}
+          Ronda {hora.format(new Date(shift.scheduledStartAt))} a{' '}
           {hora.format(new Date(shift.scheduledEndAt))} · {patrol.estimatedDurationMin} min
           estimados
         </p>
