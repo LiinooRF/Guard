@@ -472,6 +472,11 @@ function Ronda({
   // mejor que cualquier texto sobre métodos de marcado.
   const avisoPantalla = puente.aviso ?? opcionesEscaneo.aviso;
 
+  const cambiarVista = useCallback((siguienteVista: Vista) => {
+    setVista(siguienteVista);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   /**
    * Marca el punto que toca. El MÉTODO no es un detalle de implementación: viaja
    * a la API, queda en la fila del escaneo y sale en el informe. Un punto
@@ -879,6 +884,12 @@ function Ronda({
         </p>
       </section>
 
+      <nav className="guardia-vistas-ronda" aria-label="Acciones del turno">
+        <button aria-current={vista === 'ronda' ? 'page' : undefined} className={vista === 'ronda' ? 'activo' : ''} onClick={() => cambiarVista('ronda')} type="button">Ronda</button>
+        <button aria-current={vista === 'novedad' ? 'page' : undefined} className={vista === 'novedad' ? 'activo' : ''} onClick={() => cambiarVista('novedad')} type="button">Novedad</button>
+        <button aria-current={vista === 'resumen' ? 'page' : undefined} className={vista === 'resumen' ? 'activo' : ''} disabled={!estado.cierre} onClick={() => cambiarVista('resumen')} type="button">Resumen</button>
+      </nav>
+
       {vista === 'ronda' && fotoDePunto ? (
         <GuardScanPhoto
           esperando={guardandoFotoPunto}
@@ -961,24 +972,6 @@ function Ronda({
             {...(avisoPantalla ? { aviso: avisoPantalla } : {})}
             {...(errorEscaneo ? { error: errorEscaneo } : {})}
           />
-          <nav className="guardia-acciones" aria-label="Otras acciones">
-            <button
-              className="guardia-boton-secundario ancho"
-              onClick={() => setVista('novedad')}
-              type="button"
-            >
-              Reportar novedad
-            </button>
-            {estado.cierre ? (
-              <button
-                className="guardia-boton-secundario ancho"
-                onClick={() => setVista('resumen')}
-                type="button"
-              >
-                Ver resumen
-              </button>
-            ) : null}
-          </nav>
         </>
       ) : null}
 
@@ -995,7 +988,7 @@ function Ronda({
           />
           <button
             className="guardia-boton-secundario ancho"
-            onClick={() => setVista('ronda')}
+            onClick={() => cambiarVista('ronda')}
             type="button"
           >
             Volver a la ronda
@@ -1007,10 +1000,11 @@ function Ronda({
         <GuardShiftSummary
           apiUrl={apiUrl}
           estado={estado}
-          onVolver={() => setVista('ronda')}
+          onVolver={() => cambiarVista('ronda')}
           puntos={puntos}
         />
       ) : null}
+
     </>
   );
 }
