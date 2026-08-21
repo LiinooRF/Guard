@@ -109,3 +109,48 @@ describe('obtenerFondo', () => {
     expect(fondo).not.toBeNull();
   });
 });
+
+/**
+ * El fondo tiene que caer EXACTAMENTE donde se dibuja el recorrido.
+ *
+ * Primero se pedian los tiles con el tamaño de la caja del informe (515 pt de
+ * ancho) mientras el plano se dibujaba en un rectangulo centrado mas chico
+ * (149 pt): las calles quedaban corridas respecto de las marcas y el mapa se
+ * veia cortado. El tamaño que se pide es el del PLANO, no el de la caja.
+ */
+describe('alineación del fondo con el plano', () => {
+  const fetchOriginal = global.fetch;
+  afterEach(() => {
+    global.fetch = fetchOriginal;
+  });
+
+  it('los tiles cubren el área pedida, sin franjas sin cubrir', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, arrayBuffer: async () => new Uint8Array([1]).buffer,
+    }) as never;
+
+    const area = { ancho: 230, alto: 230 };
+    const fondo = await obtenerFondo(RECINTO, area, URL);
+    expect(fondo).not.toBeNull();
+
+    const izquierda = Math.min(...fondo!.tiles.map((t) => t.x));
+    const arriba = Math.min(...fondo!.tiles.map((t) => t.y));
+    const derecha = Math.max(...fondo!.tiles.map((t) => t.x + t.tam));
+    const abajo = Math.max(...fondo!.tiles.map((t) => t.y + t.tam));
+
+    // El mosaico arranca en el origen o antes, y termina en el borde o despues.
+    expect(izquierda).toBeLessThanOrEqual(0);
+    expect(arriba).toBeLessThanOrEqual(0);
+    expect(derecha).toBeGreaterThanOrEqual(area.ancho);
+    expect(abajo).toBeGreaterThanOrEqual(area.alto);
+  });
+
+  it('a mayor área pedida, tiles más grandes: la escala acompaña', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, arrayBuffer: async () => new Uint8Array([1]).buffer,
+    }) as never;
+    const chico = await obtenerFondo(RECINTO, { ancho: 200, alto: 200 }, URL);
+    const grande = await obtenerFondo(RECINTO, { ancho: 495, alto: 230 }, URL);
+    expect(grande!.tiles[0]!.tam).toBeGreaterThan(chico!.tiles[0]!.tam);
+  });
+});

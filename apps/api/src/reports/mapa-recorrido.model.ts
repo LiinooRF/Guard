@@ -298,7 +298,15 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     trazaValida.push({ coord, instante: fila.recorded_at_device });
   }
 
-  const trazaDibujable = submuestrear(trazaValida, maxPuntosTraza);
+  // Antes de submuestrear se limpian los SALTOS. El filtro por error de GPS no
+  // los agarra: una posicion puede venir con precision declarada de 20 m y aun
+  // asi estar 500 m del recorrido real, porque la señal reboto. En la ronda del
+  // 21-08 habia diez tramos con velocidad imposible, uno de 553 metros en un
+  // solo paso — a 133 km/h. Dibujados, convertian el plano en una maraña de
+  // rayas rectas que cruzaban manzanas enteras.
+  const trazaSinSaltos = quitarSaltos(trazaValida);
+  const trazaDibujable = suavizar(submuestrear(trazaSinSaltos, maxPuntosTraza));
+  const trazaDescartadaPorSalto = trazaValida.length - trazaSinSaltos.length;
 
   // Escaneos con anomalia de posicion. Los que no dejaron coordenada se cuentan
   // aparte: "no se sabe donde estaba" es informacion, y borrarla del informe
@@ -429,10 +437,69 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     escaneosFueraDelPlano: fuera,
     escaneosGpsSinPosicion,
     trazaDescartadaPorError,
-    trazaSubmuestreada: trazaDibujable.length < trazaValida.length || trazaFueraDelPlano > 0,
+    trazaSubmuestreada:
+      trazaDibujable.length < trazaValida.length || trazaFueraDelPlano > 0 || trazaDescartadaPorSalto > 0,
     trazaTotalRegistrada: traza.length,
     distanciaTrazaM,
   };
+}
+
+/** Velocidad por encima de la cual el tramo no lo hizo una persona caminando. */
+const MAX_KMH_A_PIE = 12;
+
+/**
+ * Descarta las posiciones que implican un salto imposible desde la anterior.
+ *
+ * Se compara contra la ULTIMA POSICION ACEPTADA y no contra la inmediata
+ * anterior: si se comparara contra la anterior sin mas, un salto seguido de
+ * otro salto de vuelta se validaria solo — la ida es imposible, pero la vuelta
+ * tambien lo es y las dos "concuerdan" entre si.
+ */
+function quitarSaltos(
+  posiciones: readonly { coord: Coordenada; instante: Date }[],
+): { coord: Coordenada; instante: Date }[] {
+  if (posiciones.length <= 2) return [...posiciones];
+  const salida = [posiciones[0]!];
+  for (const actual of posiciones.slice(1)) {
+    const ultima = salida[salida.length - 1]!;
+    const segundos = Math.max(
+      (actual.instante.getTime() - ultima.instante.getTime()) / 1000,
+      1,
+    );
+    const metros = haversineM(
+      ultima.coord.lat, ultima.coord.lng, actual.coord.lat, actual.coord.lng,
+    );
+    const kmh = (metros / segundos) * 3.6;
+    if (kmh <= MAX_KMH_A_PIE) salida.push(actual);
+  }
+  // Si el criterio se comio casi todo, la ronda probablemente fue en vehiculo:
+  // mejor dibujar el recorrido crudo que uno inventado con cuatro puntos.
+  return salida.length >= 3 ? salida : [...posiciones];
+}
+
+/**
+ * Media movil de tres: le saca el temblor a la linea sin inventar recorrido.
+ *
+ * Cada posicion pasa a ser el promedio de sus vecinas REALES, asi que el
+ * trazado sigue pasando por donde paso el guardia; solo deja de vibrar por el
+ * ruido del GPS, que a 30 metros de error hace zigzaguear una linea recta.
+ */
+function suavizar(
+  posiciones: readonly { coord: Coordenada; instante: Date }[],
+): { coord: Coordenada; instante: Date }[] {
+  if (posiciones.length < 3) return [...posiciones];
+  return posiciones.map((actual, i) => {
+    if (i === 0 || i === posiciones.length - 1) return actual;
+    const previa = posiciones[i - 1]!.coord;
+    const siguiente = posiciones[i + 1]!.coord;
+    return {
+      instante: actual.instante,
+      coord: {
+        lat: (previa.lat + actual.coord.lat * 2 + siguiente.lat) / 4,
+        lng: (previa.lng + actual.coord.lng * 2 + siguiente.lng) / 4,
+      },
+    };
+  });
 }
 
 /**
@@ -606,6 +673,32 @@ export interface AjusteMapa {
  * tienen que medir lo mismo en el papel, o la barra de escala deja de valer y
  * dos puntos igual de lejos se ven a distancias distintas.
  */
+/**
+ * Estira el encuadre hasta la proporcion de la caja, SIN recortar nada.
+ *
+ * El encuadre nace del contenido y la caja del informe es apaisada, asi que el
+ * plano quedaba centrado ocupando 149 de 495 puntos de ancho: dos tercios de la
+ * caja en blanco. Se agranda el lado corto en METROS, que es como decir
+ * "muestrame mas alrededor": el recorrido se dibuja igual y a la misma escala,
+ * pero se aprovecha la hoja y se ve mas contexto.
+ *
+ * Solo agranda, nunca achica: recortar dejaria puntos fuera del plano, que es
+ * justo lo que se acaba de arreglar.
+ */
+export function expandirAProporcion(encuadre: EncuadreMapa, caja: CajaDibujo): EncuadreMapa {
+  const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
+  const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
+  const proporcionCaja = caja.ancho / Math.max(caja.alto, 1e-6);
+  const proporcionMapa = anchoM / altoM;
+
+  if (proporcionMapa < proporcionCaja) {
+    const sobra = (altoM * proporcionCaja - anchoM) / 2;
+    return { ...encuadre, esteMin: encuadre.esteMin - sobra, esteMax: encuadre.esteMax + sobra };
+  }
+  const sobra = (anchoM / proporcionCaja - altoM) / 2;
+  return { ...encuadre, norteMin: encuadre.norteMin - sobra, norteMax: encuadre.norteMax + sobra };
+}
+
 export function ajustarACaja(encuadre: EncuadreMapa, caja: CajaDibujo): AjusteMapa {
   const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
   const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);

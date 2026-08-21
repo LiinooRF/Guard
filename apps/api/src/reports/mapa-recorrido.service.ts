@@ -5,7 +5,9 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import { RulesService } from '../rules/rules.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import {
+  ajustarACaja,
   construirMapaRecorrido,
+  expandirAProporcion,
   recuadroGeograficoDe,
   type CoordenadaPuntoRow,
   type EscaneoGpsRow,
@@ -16,12 +18,13 @@ import type { FilaPunto } from './patrol-report.model';
 import { obtenerFondo, type FondoCartografico } from './mapa-tiles';
 
 /**
- * Medidas del plano en el PDF, en puntos. Tienen que coincidir con las del
- * renderer: los tiles se escalan al ancho de la caja, y si aca se dice otra
- * cosa el fondo queda corrido respecto de las marcas.
+ * Medidas de la caja del plano en el PDF, en puntos, y su margen interior.
+ * Copiadas del renderer: si dejan de coincidir, el fondo queda corrido respecto
+ * de las marcas — que es exactamente el defecto que se corrigio aca.
  */
-const ANCHO_PLANO_PT = 515;
-const ALTO_PLANO_PT = 250;
+const CAJA_ANCHO_PT = 515;
+const CAJA_ALTO_PT = 250;
+const PADDING_PT = 10;
 
 /**
  * Datos del mapa del recorrido para el informe de ronda (#79).
@@ -146,9 +149,27 @@ export class MapaRecorridoService {
    * cartografias que no coinciden entre pantalla e informe.
    */
   async fondoDe(mapa: MapaRecorrido): Promise<FondoCartografico | null> {
-    const recuadro = recuadroGeograficoDe(mapa);
+    if (!mapa.origen) return null;
+    // Los tiles se piden con el tamaño del RECTANGULO QUE OCUPA EL PLANO, no
+    // con el de la caja: el encuadre es cuadrado y la caja apaisada, asi que el
+    // plano se dibuja centrado y mas chico. Pedirlos del tamaño de la caja
+    // dejaba las calles corridas respecto del recorrido.
+    const interior = {
+      x: 0,
+      y: 0,
+      ancho: CAJA_ANCHO_PT - PADDING_PT * 2,
+      alto: CAJA_ALTO_PT - PADDING_PT * 2,
+    };
+    // Mismo encuadre expandido que usa el renderer: si difiere, el fondo se corre.
+    const encuadre = expandirAProporcion(mapa.encuadre, interior);
+    const ajuste = ajustarACaja(encuadre, interior);
+    const recuadro = recuadroGeograficoDe({ ...mapa, encuadre });
     if (!recuadro) return null;
-    return obtenerFondo(recuadro, { ancho: ANCHO_PLANO_PT, alto: ALTO_PLANO_PT }, process.env.MAP_TILE_URL);
+    return obtenerFondo(
+      recuadro,
+      { ancho: ajuste.anchoPx, alto: ajuste.altoPx },
+      process.env.MAP_TILE_URL,
+    );
   }
 
   /**

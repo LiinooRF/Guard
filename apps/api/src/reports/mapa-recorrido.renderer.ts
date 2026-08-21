@@ -1,6 +1,7 @@
 import type { FondoCartografico } from './mapa-tiles';
 import {
   ajustarACaja,
+  expandirAProporcion,
   barraEscala,
   enPdf,
   type AjusteMapa,
@@ -108,29 +109,6 @@ export function dibujarMapaRecorrido(
   doc.lineWidth(0.8);
   doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fillAndStroke(BLANCO, PALETA.linea);
 
-  // La cartografia va PRIMERO: es fondo, y todo lo demas —recorrido, marcas,
-  // numeros— tiene que quedar encima o no se lee.
-  if (fondo && fondo.tiles.length > 0) {
-    doc.save();
-    // El recorte es lo que impide que un tile se derrame fuera del plano y se
-    // coma la leyenda de abajo.
-    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).clip();
-    for (const tile of fondo.tiles) {
-      try {
-        doc.image(tile.datos, caja.x + tile.x, caja.y + tile.y, {
-          width: tile.tam,
-          height: tile.tam,
-        });
-      } catch {
-        // Un tile ilegible no puede tumbar el informe entero.
-      }
-    }
-    // Velo blanco: baja el contraste del mapa para que el recorrido resalte.
-    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fillOpacity(0.28).fill(BLANCO);
-    doc.fillOpacity(1);
-    doc.restore();
-    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).stroke(PALETA.linea);
-  }
 
   if (mapa.hayDatos) {
     const interior = {
@@ -139,7 +117,36 @@ export function dibujarMapaRecorrido(
       ancho: caja.ancho - PADDING_CAJA * 2,
       alto: caja.alto - PADDING_CAJA * 2,
     };
-    const ajuste = ajustarACaja(mapa.encuadre, interior);
+    // Se estira el encuadre a la proporcion de la caja para no dejar dos
+    // tercios de la hoja en blanco. Tiene que ser el MISMO calculo que hace el
+    // servicio al pedir los tiles, o el fondo queda corrido.
+    const encuadre = expandirAProporcion(mapa.encuadre, interior);
+    const ajuste = ajustarACaja(encuadre, interior);
+
+    // La cartografia va PRIMERO —es fondo— y en el MISMO rectangulo que ocupa
+    // el plano: `ajuste.x0/y0/anchoPx/altoPx`, no la caja entera. Dibujarla en
+    // la caja completa fue el error anterior: el encuadre es cuadrado y la caja
+    // apaisada, asi que las calles quedaban corridas respecto del recorrido.
+    if (fondo && fondo.tiles.length > 0) {
+      doc.save();
+      // El recorte impide que un tile se derrame sobre la leyenda de abajo.
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).clip();
+      for (const tile of fondo.tiles) {
+        try {
+          doc.image(tile.datos, ajuste.x0 + tile.x, ajuste.y0 + tile.y, {
+            width: tile.tam,
+            height: tile.tam,
+          });
+        } catch {
+          // Un tile ilegible no puede tumbar el informe entero.
+        }
+      }
+      // Velo blanco: baja el contraste del mapa para que el recorrido resalte.
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).fillOpacity(0.3).fill(BLANCO);
+      doc.fillOpacity(1);
+      doc.restore();
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).stroke(PALETA.linea);
+    }
 
     // Orden de capas: primero el trazado, despues los escaneos desviados y al
     // final los puntos. Asi una marca de punto nunca queda tapada por la linea.

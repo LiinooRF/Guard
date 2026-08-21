@@ -14,7 +14,9 @@
  */
 
 import {
+  ajustarACaja,
   construirMapaRecorrido,
+  expandirAProporcion,
   type EntradaMapa,
 } from './mapa-recorrido.model';
 import { armarNotas } from './mapa-recorrido.renderer';
@@ -107,5 +109,47 @@ describe('puntos de la ronda en otra ubicación', () => {
     });
     expect(mapa.puntos.length + mapa.puntosFueraDelPlano.length).toBe(3);
     expect(mapa.puntos.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * El plano tiene que LLENAR la caja del informe.
+ *
+ * El encuadre sale del contenido y la caja es apaisada, asi que un recinto mas
+ * alto que ancho se dibujaba centrado ocupando 149 de 495 puntos: dos tercios
+ * de la hoja en blanco, con el mapa reducido a una estampilla.
+ */
+describe('encuadre contra la caja del informe', () => {
+  const CAJA = { x: 0, y: 0, ancho: 495, alto: 230 };
+
+  it('estira el encuadre hasta la proporción de la caja', () => {
+    const alto = { esteMin: -80, esteMax: 80, norteMin: -100, norteMax: 100 };
+    const expandido = expandirAProporcion(alto, CAJA);
+    const proporcion =
+      (expandido.esteMax - expandido.esteMin) / (expandido.norteMax - expandido.norteMin);
+    expect(proporcion).toBeCloseTo(CAJA.ancho / CAJA.alto, 2);
+  });
+
+  it('solo agranda: ningún punto puede quedar fuera por estirar', () => {
+    const original = { esteMin: -80, esteMax: 80, norteMin: -100, norteMax: 100 };
+    const expandido = expandirAProporcion(original, CAJA);
+    expect(expandido.esteMin).toBeLessThanOrEqual(original.esteMin);
+    expect(expandido.esteMax).toBeGreaterThanOrEqual(original.esteMax);
+    expect(expandido.norteMin).toBeLessThanOrEqual(original.norteMin);
+    expect(expandido.norteMax).toBeGreaterThanOrEqual(original.norteMax);
+  });
+
+  it('el plano ocupa la caja entera, no una estampilla centrada', () => {
+    const alto = { esteMin: -80, esteMax: 80, norteMin: -100, norteMax: 100 };
+    const ajuste = ajustarACaja(expandirAProporcion(alto, CAJA), CAJA);
+    expect(ajuste.anchoPx).toBeCloseTo(CAJA.ancho, 0);
+    expect(ajuste.altoPx).toBeCloseTo(CAJA.alto, 0);
+  });
+
+  it('un recinto ya apaisado no se toca', () => {
+    const apaisado = { esteMin: -247.5, esteMax: 247.5, norteMin: -115, norteMax: 115 };
+    const expandido = expandirAProporcion(apaisado, CAJA);
+    expect(expandido.esteMax - expandido.esteMin).toBeCloseTo(495, 0);
+    expect(expandido.norteMax - expandido.norteMin).toBeCloseTo(230, 0);
   });
 });
