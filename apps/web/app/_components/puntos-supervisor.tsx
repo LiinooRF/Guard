@@ -324,8 +324,8 @@ export function PuntosSupervisor({
                 <label>Instrucciones<textarea name="instructions" rows={2} maxLength={500} /></label>
                 <label>UID etiqueta NFC<input name="tagUid" minLength={4} maxLength={64} placeholder="Opcional: vincula en el alta" /></label>
                 <div className="coordinate-fields">
-                  <label>Latitud<input type="number" step="0.000001" min={-90} max={90} value={coordenadas[0] ?? ''} onChange={(e) => setCoordenadas([e.target.value === '' ? null : Number(e.target.value), coordenadas[1]])} /></label>
-                  <label>Longitud<input type="number" step="0.000001" min={-180} max={180} value={coordenadas[1] ?? ''} onChange={(e) => setCoordenadas([coordenadas[0], e.target.value === '' ? null : Number(e.target.value)])} /></label>
+                  <label>Latitud<input type="number" step="any" min={-90} max={90} value={coordenadas[0] ?? ''} onChange={(e) => setCoordenadas([e.target.value === '' ? null : Number(e.target.value), coordenadas[1]])} /></label>
+                  <label>Longitud<input type="number" step="any" min={-180} max={180} value={coordenadas[1] ?? ''} onChange={(e) => setCoordenadas([coordenadas[0], e.target.value === '' ? null : Number(e.target.value)])} /></label>
                 </div>
                 <p className="form-note">
                   La exigencia de foto la resuelven las reglas de la empresa: un acceso crítico
@@ -413,8 +413,8 @@ export function PuntosSupervisor({
                     <label>Nombre<input name="name" defaultValue={punto.name} required /></label>
                     <label>Descripción<input name="description" defaultValue={punto.description ?? ''} /></label>
                     <label>Orden<input name="suggestedOrder" type="number" min={0} defaultValue={punto.suggestedOrder} /></label>
-                    <label>Latitud<input name="latitude" type="number" step="0.000001" defaultValue={punto.latitude ?? ''} /></label>
-                    <label>Longitud<input name="longitude" type="number" step="0.000001" defaultValue={punto.longitude ?? ''} /></label>
+                    <label>Latitud<input name="latitude" type="number" step="any" defaultValue={punto.latitude ?? ''} /></label>
+                    <label>Longitud<input name="longitude" type="number" step="any" defaultValue={punto.longitude ?? ''} /></label>
                     <label>Instrucciones<input name="instructions" defaultValue={punto.instructions ?? ''} /></label>
                     <div className="row-actions">
                       <button className="primary-button">Guardar punto</button>
