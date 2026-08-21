@@ -1,3 +1,4 @@
+import type { FondoCartografico } from './mapa-tiles';
 import {
   ajustarACaja,
   barraEscala,
@@ -90,8 +91,12 @@ interface CajaPlano {
  * que no cabe empujaria la caja a la hoja siguiente y dejaria el titulo solo al
  * final de la anterior.
  */
-export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrido): void {
-  const notas = armarNotas(mapa);
+export function dibujarMapaRecorrido(
+  doc: PDFKit.PDFDocument,
+  mapa: MapaRecorrido,
+  fondo: FondoCartografico | null = null,
+): void {
+  const notas = armarNotas(mapa, fondo);
   // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
   asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
@@ -102,6 +107,30 @@ export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrid
   doc.save();
   doc.lineWidth(0.8);
   doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fillAndStroke(BLANCO, PALETA.linea);
+
+  // La cartografia va PRIMERO: es fondo, y todo lo demas —recorrido, marcas,
+  // numeros— tiene que quedar encima o no se lee.
+  if (fondo && fondo.tiles.length > 0) {
+    doc.save();
+    // El recorte es lo que impide que un tile se derrame fuera del plano y se
+    // coma la leyenda de abajo.
+    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).clip();
+    for (const tile of fondo.tiles) {
+      try {
+        doc.image(tile.datos, caja.x + tile.x, caja.y + tile.y, {
+          width: tile.tam,
+          height: tile.tam,
+        });
+      } catch {
+        // Un tile ilegible no puede tumbar el informe entero.
+      }
+    }
+    // Velo blanco: baja el contraste del mapa para que el recorrido resalte.
+    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fillOpacity(0.28).fill(BLANCO);
+    doc.fillOpacity(1);
+    doc.restore();
+    doc.rect(caja.x, caja.y, caja.ancho, caja.alto).stroke(PALETA.linea);
+  }
 
   if (mapa.hayDatos) {
     const interior = {
@@ -421,8 +450,12 @@ function dibujarLeyenda(doc: PDFKit.PDFDocument, x0: number, ancho: number): voi
  * lectura posible — el jefe de operaciones concluiria que el guardia no paso
  * por donde en realidad si paso.
  */
-export function armarNotas(mapa: MapaRecorrido): string[] {
+export function armarNotas(mapa: MapaRecorrido, fondo: FondoCartografico | null = null): string[] {
   const notas: string[] = [];
+  if (fondo) {
+    // Obligatoria por la licencia ODbL: si se dibuja el mapa, se cita.
+    notas.push(`Cartografía: ${fondo.atribucion}.`);
+  }
 
   if (mapa.hayDatos) {
     notas.push(
@@ -499,9 +532,13 @@ export function armarNotas(mapa: MapaRecorrido): string[] {
     );
   }
 
-  notas.push(
-    'Plano a escala sin cartografía de fondo: las distancias son reales, el entorno no se dibuja.',
-  );
+  // Solo cuando NO hay cartografia: con fondo la frase seria falsa, y decirle
+  // al supervisor que no hay mapa mientras mira uno es peor que no decir nada.
+  if (!fondo) {
+    notas.push(
+      'Plano a escala sin cartografía de fondo: las distancias son reales, el entorno no se dibuja.',
+    );
+  }
   return notas;
 }
 

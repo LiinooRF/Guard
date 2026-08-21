@@ -6,12 +6,22 @@ import { RulesService } from '../rules/rules.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import {
   construirMapaRecorrido,
+  recuadroGeograficoDe,
   type CoordenadaPuntoRow,
   type EscaneoGpsRow,
   type MapaRecorrido,
   type TrazaRow,
 } from './mapa-recorrido.model';
 import type { FilaPunto } from './patrol-report.model';
+import { obtenerFondo, type FondoCartografico } from './mapa-tiles';
+
+/**
+ * Medidas del plano en el PDF, en puntos. Tienen que coincidir con las del
+ * renderer: los tiles se escalan al ancho de la caja, y si aca se dice otra
+ * cosa el fondo queda corrido respecto de las marcas.
+ */
+const ANCHO_PLANO_PT = 515;
+const ALTO_PLANO_PT = 250;
 
 /**
  * Datos del mapa del recorrido para el informe de ronda (#79).
@@ -126,6 +136,19 @@ export class MapaRecorridoService {
       // salia sin trayecto aunque el guardia hubiera aceptado y hubiera puntos.
       trazaActivada: reglas.gpsTrackingEnabled,
     });
+  }
+
+  /**
+   * Cartografia de fondo del plano, o null si no se puede.
+   *
+   * El proveedor sale de `MAP_TILE_URL`, la MISMA variable que ya usa el panel
+   * web: dos configuraciones distintas para el mismo mapa terminarian mostrando
+   * cartografias que no coinciden entre pantalla e informe.
+   */
+  async fondoDe(mapa: MapaRecorrido): Promise<FondoCartografico | null> {
+    const recuadro = recuadroGeograficoDe(mapa);
+    if (!recuadro) return null;
+    return obtenerFondo(recuadro, { ancho: ANCHO_PLANO_PT, alto: ALTO_PLANO_PT }, process.env.MAP_TILE_URL);
   }
 
   /**

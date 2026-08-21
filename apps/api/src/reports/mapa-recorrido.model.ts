@@ -491,6 +491,31 @@ function cabeEnElPlano(posicion: PosicionMapa, encuadre: EncuadreMapa): boolean 
   );
 }
 
+/**
+ * El encuadre, de vuelta a latitud y longitud.
+ *
+ * `proyectar` pasa de grados a metros para poder dibujar a escala; para pedir
+ * cartografia hay que deshacer ese camino, porque los tiles se piden por
+ * coordenadas. Es la inversa exacta de `proyectar`, con el mismo origen.
+ */
+export function recuadroGeograficoDe(mapa: MapaRecorrido): {
+  latMin: number;
+  latMax: number;
+  lonMin: number;
+  lonMax: number;
+} | null {
+  if (!mapa.origen) return null;
+  const { lat, lng } = mapa.origen;
+  const gradosPorMetroLat = 1 / (RADIO_TIERRA_M * (Math.PI / 180));
+  const gradosPorMetroLon = gradosPorMetroLat / Math.cos((lat * Math.PI) / 180);
+  return {
+    latMin: lat + mapa.encuadre.norteMin * gradosPorMetroLat,
+    latMax: lat + mapa.encuadre.norteMax * gradosPorMetroLat,
+    lonMin: lng + mapa.encuadre.esteMin * gradosPorMetroLon,
+    lonMax: lng + mapa.encuadre.esteMax * gradosPorMetroLon,
+  };
+}
+
 // -------------------------------------------------------------- proyeccion
 
 /**

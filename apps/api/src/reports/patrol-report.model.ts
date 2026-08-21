@@ -3,6 +3,7 @@ import { computeCompliance, type ComplianceResult, type ScanAnomaly } from '@sen
 import { desvioDeTurno, type DesvioDeTurno } from './desvio-de-turno';
 import type { MarcaDocumento } from './pdf-primitivas';
 import type { MapaRecorrido } from './mapa-recorrido.model';
+import type { FondoCartografico } from './mapa-tiles';
 
 /**
  * Composicion del informe de ronda: filas crudas de la base -> modelo listo
@@ -262,6 +263,12 @@ export interface InformeRonda {
    * lector por que no se pudo trazar.
    */
   readonly mapa: MapaRecorrido | null;
+  /**
+   * Cartografia de fondo del plano, ya descargada. Viaja resuelta en el modelo
+   * porque dibujar es sincrono: el PDF se escribe en streaming y un `await` en
+   * mitad del dibujo partiria el documento.
+   */
+  readonly fondoMapa: FondoCartografico | null;
 }
 
 export interface EntradaModelo {
@@ -277,6 +284,7 @@ export interface EntradaModelo {
   readonly incluirAnexo?: boolean;
   /** El recorrido ya construido, o null si esta seccion no va (#79). */
   readonly mapa?: MapaRecorrido | null;
+  readonly fondoMapa?: FondoCartografico | null;
   /** Criticidades que se destacan visualmente; viene de las reglas del tenant. */
   readonly criticidadesDestacadas?: readonly string[];
 }
@@ -379,6 +387,7 @@ export function construirInformeRonda(entrada: EntradaModelo): InformeRonda {
     anexo: incluirAnexo ? evidencias : [],
     incluyeAnexo: incluirAnexo,
     mapa: entrada.mapa ?? null,
+    fondoMapa: entrada.fondoMapa ?? null,
   };
 }
 
