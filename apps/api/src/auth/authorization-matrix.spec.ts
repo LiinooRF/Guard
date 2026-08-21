@@ -261,6 +261,11 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SchedulingController, 'generate', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SchedulingController, 'listPatterns', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SchedulingController, 'replacePatterns', ['shifts:manage'], ['SUPERVISOR'], true),
+  // Reglas recurrentes: mismo permiso que el resto del armado de turnos. Quien
+  // programa el calendario es quien puede fijar una recurrencia.
+  secured(SchedulingController, 'crearRecurrencia', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SchedulingController, 'listarRecurrencias', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SchedulingController, 'cambiarActivaRecurrencia', ['shifts:manage'], ['SUPERVISOR'], true),
 
   secured(PushController, 'registerDevice', ['account:sessions:manage'], ALL_ROLES),
   secured(PushController, 'unregisterDevice', ['account:sessions:manage'], ALL_ROLES),

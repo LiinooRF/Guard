@@ -22,6 +22,20 @@ const sinReglas = () =>
   }) as unknown as RulesService;
 
 function servicio(query: jest.Mock) {
+  /*
+   * La expansion de reglas recurrentes corre antes de planificar y consulta la
+   * base. Estas pruebas encadenan respuestas POR ORDEN, asi que una consulta mas
+   * al principio desalinearia las doce.
+   *
+   * Se responde por el SQL y no por posicion: lo que estas pruebas miden es la
+   * generacion por patron, no la expansion —que tiene las suyas— y de paso
+   * dejan de romperse cada vez que alguien agrega una consulta al flujo.
+   */
+  const conRecurrencias = jest.fn((sql: string, params?: unknown[]) =>
+    String(sql).includes('shift_recurrences')
+      ? Promise.resolve([])
+      : query(sql, params),
+  );
   const sortearOrden = jest.fn((puntos: Array<{ checkpoint_id: string }>) =>
     puntos.map((p) => p.checkpoint_id),
   );
@@ -32,7 +46,7 @@ function servicio(query: jest.Mock) {
   const audit = { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
 
   const service = new SchedulingService(
-    { manager: { query } } as unknown as TenantContextService,
+    { manager: { query: conRecurrencias } } as unknown as TenantContextService,
     supervisor,
     sinReglas(),
     audit,
