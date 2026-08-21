@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 
@@ -6,6 +6,11 @@ import type { AuthenticatedUser } from '../auth/auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
 import { TenantScope } from '../auth/decorators/tenant-scope.decorator';
 import { GenerateScheduleDto, PreviewScheduleQueryDto } from './dto/generate-schedule.dto';
+import {
+  ActivarRecurrenciaDto,
+  CrearRecurrenciaDto,
+  RecurrenciaParam,
+} from './dto/recurrencia.dto';
 import { ReplaceShiftPatternsDto } from './dto/shift-pattern.dto';
 import { SchedulingService } from './scheduling.service';
 
@@ -66,5 +71,46 @@ export class SchedulingController {
     @Req() request: Autenticado,
   ) {
     return this.scheduling.replacePatterns(params.shiftId, request.user.sub, input);
+  }
+
+  // ------------------------------------------------------ reglas recurrentes
+
+  /**
+   * "Este guardia, este turno, estos dias" — sin volver a cargarlo cada semana.
+   *
+   * Mismo permiso que el resto del armado de turnos: quien programa el
+   * calendario es quien puede fijar una recurrencia.
+   */
+  @Post('shifts/:shiftId/recurrences')
+  @Permissions('shifts:manage')
+  crearRecurrencia(
+    @Param() params: ShiftParam,
+    @Body() input: CrearRecurrenciaDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.scheduling.crearRecurrencia(params.shiftId, request.user.sub, input);
+  }
+
+  @Get('shifts/:shiftId/recurrences')
+  @Permissions('shifts:manage')
+  listarRecurrencias(@Param() params: ShiftParam, @Req() request: Autenticado) {
+    return this.scheduling.listarRecurrencias(params.shiftId, request.user.sub);
+  }
+
+  /**
+   * Da de baja o reactiva. No hay DELETE a proposito: los turnos que la regla
+   * ya materializo tienen historia —rondas, informes— y borrar la regla no
+   * puede llevarselos por delante.
+   */
+  @Patch('recurrences/:recurrenceId/active')
+  @Permissions('shifts:manage')
+  cambiarActivaRecurrencia(
+    @Param() params: RecurrenciaParam,
+    @Body() input: ActivarRecurrenciaDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.scheduling.cambiarActivaRecurrencia(
+      params.recurrenceId, request.user.sub, input.isActive,
+    );
   }
 }
