@@ -175,6 +175,10 @@ services:
       # que alguien la ponga y el despliegue no arranque.
       MAIL_BLOCKED_DOMAINS: ${MAIL_BLOCKED_DOMAINS:-}
       WEB_PUBLIC_URL: https://${APP_DOMAIN:?APP_DOMAIN es obligatorio}
+      # La MISMA cartografia que el panel: el informe dibuja el plano del
+      # recorrido sobre estos tiles. Si falta, el PDF sale igual pero con el
+      # plano a escala sin fondo — nunca falla por esto.
+      MAP_TILE_URL: ${MAP_TILE_URL:-}
       STORAGE_DRIVER: local
       STORAGE_LOCAL_PATH: /app/storage
     volumes:

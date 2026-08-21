@@ -42,7 +42,7 @@ describe('el mapa del recorrido esta cableado al informe (#79)', () => {
   it('el renderer lo dibuja de verdad', () => {
     const renderer = leer('patrol-report.renderer.ts');
     expect(renderer).toContain("from './mapa-recorrido.renderer'");
-    expect(renderer).toMatch(/dibujarMapaRecorrido\(doc, modelo\.mapa\)/);
+    expect(renderer).toMatch(/dibujarMapaRecorrido\(doc, modelo\.mapa(, modelo\.fondoMapa)?\)/);
   });
 
   it('el informe liviano del correo NO lleva mapa', () => {

@@ -1,5 +1,7 @@
+import type { FondoCartografico } from './mapa-tiles';
 import {
   ajustarACaja,
+  expandirAProporcion,
   barraEscala,
   enPdf,
   type AjusteMapa,
@@ -90,9 +92,14 @@ interface CajaPlano {
  * que no cabe empujaria la caja a la hoja siguiente y dejaria el titulo solo al
  * final de la anterior.
  */
-export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrido): void {
-  const notas = armarNotas(mapa);
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA + 12);
+export function dibujarMapaRecorrido(
+  doc: PDFKit.PDFDocument,
+  mapa: MapaRecorrido,
+  fondo: FondoCartografico | null = null,
+): void {
+  const notas = armarNotas(mapa, fondo);
+  // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
+  asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
@@ -102,6 +109,7 @@ export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrid
   doc.lineWidth(0.8);
   doc.rect(caja.x, caja.y, caja.ancho, caja.alto).fillAndStroke(BLANCO, PALETA.linea);
 
+
   if (mapa.hayDatos) {
     const interior = {
       x: caja.x + PADDING_CAJA,
@@ -109,7 +117,36 @@ export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrid
       ancho: caja.ancho - PADDING_CAJA * 2,
       alto: caja.alto - PADDING_CAJA * 2,
     };
-    const ajuste = ajustarACaja(mapa.encuadre, interior);
+    // Se estira el encuadre a la proporcion de la caja para no dejar dos
+    // tercios de la hoja en blanco. Tiene que ser el MISMO calculo que hace el
+    // servicio al pedir los tiles, o el fondo queda corrido.
+    const encuadre = expandirAProporcion(mapa.encuadre, interior);
+    const ajuste = ajustarACaja(encuadre, interior);
+
+    // La cartografia va PRIMERO —es fondo— y en el MISMO rectangulo que ocupa
+    // el plano: `ajuste.x0/y0/anchoPx/altoPx`, no la caja entera. Dibujarla en
+    // la caja completa fue el error anterior: el encuadre es cuadrado y la caja
+    // apaisada, asi que las calles quedaban corridas respecto del recorrido.
+    if (fondo && fondo.tiles.length > 0) {
+      doc.save();
+      // El recorte impide que un tile se derrame sobre la leyenda de abajo.
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).clip();
+      for (const tile of fondo.tiles) {
+        try {
+          doc.image(tile.datos, ajuste.x0 + tile.x, ajuste.y0 + tile.y, {
+            width: tile.tam,
+            height: tile.tam,
+          });
+        } catch {
+          // Un tile ilegible no puede tumbar el informe entero.
+        }
+      }
+      // Velo blanco: baja el contraste del mapa para que el recorrido resalte.
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).fillOpacity(0.3).fill(BLANCO);
+      doc.fillOpacity(1);
+      doc.restore();
+      doc.rect(ajuste.x0, ajuste.y0, ajuste.anchoPx, ajuste.altoPx).stroke(PALETA.linea);
+    }
 
     // Orden de capas: primero el trazado, despues los escaneos desviados y al
     // final los puntos. Asi una marca de punto nunca queda tapada por la linea.
@@ -135,10 +172,15 @@ export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrid
     // doc.text avanza el cursor por su cuenta: se fija la posicion de la nota
     // siguiente a mano, o el interlineado real termina siendo el doble del que
     // se reservo y la ultima nota se cae de la hoja.
+    //
+    // El alto se MIDE y no se asume: dar por hecho una linea por nota hacia que
+    // una nota larga se dibujara encima de la siguiente. Se veia como texto
+    // pisado en el informe, sin ningun error de por medio.
     const y = doc.y;
-    doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris)
-      .text(nota, x0, y, { width: caja.ancho, lineBreak: false });
-    doc.y = y + ALTO_NOTA;
+    doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris);
+    const alto = doc.heightOfString(nota, { width: caja.ancho });
+    doc.text(nota, x0, y, { width: caja.ancho });
+    doc.y = y + Math.max(alto, ALTO_NOTA);
   }
   doc.x = x0;
   doc.y += 4;
@@ -415,13 +457,32 @@ function dibujarLeyenda(doc: PDFKit.PDFDocument, x0: number, ancho: number): voi
  * lectura posible — el jefe de operaciones concluiria que el guardia no paso
  * por donde en realidad si paso.
  */
-export function armarNotas(mapa: MapaRecorrido): string[] {
+export function armarNotas(mapa: MapaRecorrido, fondo: FondoCartografico | null = null): string[] {
   const notas: string[] = [];
+  if (fondo) {
+    // Obligatoria por la licencia ODbL: si se dibuja el mapa, se cita.
+    notas.push(`Cartografía: ${fondo.atribucion}.`);
+  }
 
   if (mapa.hayDatos) {
     notas.push(
       `Recorrido registrado: ${formatearDistancia(mapa.distanciaTrazaM)} · ` +
         `${formatearEntero(mapa.trazaTotalRegistrada)} posición(es) de GPS.`,
+    );
+  }
+
+  // Un punto que la ronda incluye pero el plano no muestra tiene que decirse
+  // con nombre y distancia. Si solo desapareciera, el supervisor leeria un mapa
+  // incompleto creyendolo completo — que es peor que el mapa ilegible de antes.
+  if (mapa.puntosFueraDelPlano.length > 0) {
+    const nombres = mapa.puntosFueraDelPlano
+      .slice(0, 3)
+      .map((punto) => `${punto.numero}. ${recortar(punto.nombre, 18)} a ${formatearDistancia(punto.distanciaM)}`)
+      .join(', ');
+    const resto =
+      mapa.puntosFueraDelPlano.length > 3 ? ` y ${mapa.puntosFueraDelPlano.length - 3} más` : '';
+    notas.push(
+      `${mapa.puntosFueraDelPlano.length} punto(s) en otra ubicación, fuera del plano: ${nombres}${resto}.`,
     );
   }
 
@@ -478,9 +539,13 @@ export function armarNotas(mapa: MapaRecorrido): string[] {
     );
   }
 
-  notas.push(
-    'Plano a escala sin cartografía de fondo: las distancias son reales, el entorno no se dibuja.',
-  );
+  // Solo cuando NO hay cartografia: con fondo la frase seria falsa, y decirle
+  // al supervisor que no hay mapa mientras mira uno es peor que no decir nada.
+  if (!fondo) {
+    notas.push(
+      'Plano a escala sin cartografía de fondo: las distancias son reales, el entorno no se dibuja.',
+    );
+  }
   return notas;
 }
 
