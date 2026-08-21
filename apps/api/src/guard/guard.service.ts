@@ -483,10 +483,27 @@ export class GuardService {
     >(
       `
         WITH updated AS (
-          UPDATE patrols
-          SET status = 'en_curso', started_at = now()
-          WHERE id = $1 AND guard_id = $2 AND status = 'pendiente'
-          RETURNING id, status, started_at
+          UPDATE patrols p
+          SET status = 'en_curso',
+              started_at = now(),
+              -- La lista de puntos se congela al INICIAR, no al generar la
+              -- ronda. Una ronda pendiente creada anoche sale con la ruta de
+              -- HOY: si el supervisor agrego un punto a las 17:00, el turno de
+              -- las 22:00 lo incluye sin que nadie borre ni regenere nada.
+              --
+              -- El COALESCE es la red: si la ruta se quedo sin puntos, se
+              -- conserva la lista con que nacio la ronda. Arrancar con cero
+              -- puntos esperados daria una ronda imposible de cumplir.
+              expected_checkpoint_ids = COALESCE(
+                (
+                  SELECT jsonb_agg(rc.checkpoint_id::text ORDER BY rc.position)
+                  FROM route_checkpoints rc
+                  WHERE rc.route_id = p.route_id
+                ),
+                p.expected_checkpoint_ids
+              )
+          WHERE p.id = $1 AND p.guard_id = $2 AND p.status = 'pendiente'
+          RETURNING p.id, p.status, p.started_at
         )
         SELECT id, status, started_at FROM updated
       `,
@@ -659,8 +676,22 @@ export class GuardService {
       // perderia la evidencia de lo que el guardia ya recorrio.
       await this.gpsPolicy.assertPatrolStartAllowed(guardId, patrolId);
       await this.tenantContext.manager.query(
-        `UPDATE patrols SET status = 'en_curso', started_at = now()
-         WHERE id = $1 AND status = 'pendiente'`,
+        // Mismo refresco que en el inicio explicito: una ronda puede arrancar
+        // por aca —el guardia escanea sin tocar "iniciar"— y tiene que salir
+        // con la ruta vigente igual. Si solo se hiciera en el otro camino, el
+        // comportamiento dependeria de por donde entro el guardia.
+        `UPDATE patrols p
+         SET status = 'en_curso',
+             started_at = now(),
+             expected_checkpoint_ids = COALESCE(
+               (
+                 SELECT jsonb_agg(rc.checkpoint_id::text ORDER BY rc.position)
+                 FROM route_checkpoints rc
+                 WHERE rc.route_id = p.route_id
+               ),
+               p.expected_checkpoint_ids
+             )
+         WHERE p.id = $1 AND p.status = 'pendiente'`,
         [patrolId],
       );
     }
