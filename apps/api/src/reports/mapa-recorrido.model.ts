@@ -68,6 +68,23 @@ const MARGEN_ENCUADRE = 0.08;
 const ALCANCE_ESCANEO_DESVIADO = 5;
 
 /**
+ * Cuantas veces la dispersion tipica del recinto puede alejarse un punto antes
+ * de quedar fuera del plano.
+ *
+ * Existe porque un solo punto lejano arruina el mapa entero y NADIE se entera.
+ * Paso en Janssen: una ronda con catorce puntos dentro de 157 metros y dos en
+ * otra instalacion a 6,9 km obligo al plano a encuadrar 4.170 metros, y el
+ * recorrido real quedo ocupando el 2,6 % del ancho — dos circulitos sueltos en
+ * una hoja en blanco, con la barra de escala marcando 2 km.
+ *
+ * El encuadre se calcula sobre el NUCLEO del recinto y lo que quede lejos se
+ * cuenta al pie, igual que ya se hacia con los escaneos desviados. Diez veces
+ * la dispersion mediana deja pasar cualquier recinto real —incluso uno alargado
+ * como una carretera— y solo aparta lo que esta en otra ubicacion.
+ */
+const ALCANCE_PUNTO_LEJANO = 10;
+
+/**
  * Las dos marcas que hablan de la POSICION del escaneo. Las otras
  * (reloj_desfasado, dispositivo_duplicado, velocidad_imposible) son senales
  * validas pero no se dibujan en el mapa: no dicen donde estaba el telefono.
@@ -154,6 +171,13 @@ export interface PuntoSinCoordenada {
   readonly nombre: string;
 }
 
+export interface PuntoLejano {
+  readonly numero: number;
+  readonly nombre: string;
+  /** Distancia al centro del recinto dibujado, en metros. */
+  readonly distanciaM: number;
+}
+
 export interface MapaRecorrido {
   /** false = no hay una sola coordenada con que dibujar. El informe lo dice, no lo esconde. */
   readonly hayDatos: boolean;
@@ -164,6 +188,12 @@ export interface MapaRecorrido {
   readonly puntos: readonly MarcaPuntoMapa[];
   /** Puntos esperados que no tienen coordenada cargada: no se pueden dibujar. */
   readonly puntosSinCoordenada: readonly PuntoSinCoordenada[];
+  /**
+   * Puntos con coordenada valida pero tan lejos del resto que dibujarlos
+   * dejaria el recinto reducido a una mancha. No se pierden: se nombran al pie
+   * con su distancia, para que se vea que la ronda los incluye.
+   */
+  readonly puntosFueraDelPlano: readonly PuntoLejano[];
   readonly traza: readonly PuntoTrazaMapa[];
   readonly escaneosDesviados: readonly MarcaEscaneoMapa[];
   /**
@@ -322,6 +352,7 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
       encuadre: encuadreDe([], spanMinimoM),
       puntos: [],
       puntosSinCoordenada,
+      puntosFueraDelPlano: [],
       traza: [],
       escaneosDesviados: [],
       escaneosFueraDelPlano: [],
@@ -352,10 +383,32 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     desviacionM: d.desviacionM,
   }));
 
+  // Primero se decide QUE forma el recinto. Un punto en otra instalacion
+  // —coordenada correcta, pero a kilometros— no puede definir el encuadre:
+  // arrastraria la escala hasta dejar el recorrido en una mancha.
+  const { nucleo: puntosDelNucleo, lejanas: puntosLejanos, centro } = separarNucleo(
+    marcasPunto,
+    spanMinimoM,
+  );
+  const puntosFueraDelPlano: PuntoLejano[] = puntosLejanos.map((marca) => ({
+    numero: marca.numero,
+    nombre: marca.nombre,
+    distanciaM: redondear(Math.hypot(marca.este - centro.este, marca.norte - centro.norte)),
+  }));
+  // La traza se acota contra el mismo nucleo: un salto de GPS con buena
+  // precision declarada pasa el filtro de error y estiraria el plano igual.
+  const trazaDelNucleo =
+    puntosDelNucleo.length > 0
+      ? marcasTraza.filter((marca) =>
+          cabeEnElPlano(marca, encuadreDe(puntosDelNucleo, spanMinimoM)),
+        )
+      : marcasTraza;
+  const trazaFueraDelPlano = marcasTraza.length - trazaDelNucleo.length;
+
   // Se separa lo que cabe de lo que no contra el encuadre del recinto. Cuando
   // NO hay recinto que dibujar —ni puntos ni recorrido—, los escaneos son lo
   // unico que hay y todos entran: ahi no hay nada que puedan aplastar.
-  const base: PosicionMapa[] = [...marcasPunto, ...marcasTraza];
+  const base: PosicionMapa[] = [...puntosDelNucleo, ...trazaDelNucleo];
   const encuadreDelRecinto = encuadreDe(base, spanMinimoM);
   const dentro =
     base.length > 0
@@ -368,17 +421,60 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     trazaDesactivada: !trazaActivada,
     origen,
     encuadre: encuadreDe([...base, ...dentro], spanMinimoM),
-    puntos: marcasPunto,
+    puntos: puntosDelNucleo,
     puntosSinCoordenada,
-    traza: marcasTraza,
+    puntosFueraDelPlano,
+    traza: trazaDelNucleo,
     escaneosDesviados: dentro,
     escaneosFueraDelPlano: fuera,
     escaneosGpsSinPosicion,
     trazaDescartadaPorError,
-    trazaSubmuestreada: trazaDibujable.length < trazaValida.length,
+    trazaSubmuestreada: trazaDibujable.length < trazaValida.length || trazaFueraDelPlano > 0,
     trazaTotalRegistrada: traza.length,
     distanciaTrazaM,
   };
+}
+
+/**
+ * Separa el nucleo del recinto de lo que esta demasiado lejos.
+ *
+ * Se usa la MEDIANA y no el promedio a proposito: el promedio se lo lleva el
+ * outlier: con catorce puntos juntos y dos a 6,9 km, el centro promedio cae en
+ * el medio del campo y entonces "todo" parece lejano. La mediana ni se entera
+ * de los dos.
+ *
+ * El umbral sale de la propia dispersion del recinto, no de un numero fijo en
+ * metros: una bodega de 50 m y una planta de 800 m son los dos recintos
+ * legitimos, y un limite absoluto tendria que elegir a cual romperle el mapa.
+ */
+function separarNucleo<T extends PosicionMapa>(
+  posiciones: readonly T[],
+  spanMinimo: number,
+): { nucleo: T[]; lejanas: T[]; centro: { este: number; norte: number } } {
+  const centro = {
+    este: mediana(posiciones.map((p) => p.este)),
+    norte: mediana(posiciones.map((p) => p.norte)),
+  };
+  if (posiciones.length < 3) {
+    return { nucleo: [...posiciones], lejanas: [], centro };
+  }
+  const distancias = posiciones.map((p) => Math.hypot(p.este - centro.este, p.norte - centro.norte));
+  // Piso en `spanMinimo`: sin el, un recinto donde todos los puntos caen casi
+  // encima (dispersion ~0) daria umbral cero y apartaria hasta al vecino.
+  const umbral = Math.max(mediana(distancias) * ALCANCE_PUNTO_LEJANO, spanMinimo);
+  const nucleo: T[] = [];
+  const lejanas: T[] = [];
+  posiciones.forEach((p, i) => (distancias[i]! <= umbral ? nucleo : lejanas).push(p));
+  // Si el criterio dejaria el plano vacio, no se aparta nada: mejor un mapa
+  // feo que ninguno.
+  return nucleo.length === 0 ? { nucleo: [...posiciones], lejanas: [], centro } : { nucleo, lejanas, centro };
+}
+
+function mediana(valores: readonly number[]): number {
+  if (valores.length === 0) return 0;
+  const orden = [...valores].sort((a, b) => a - b);
+  const medio = Math.floor(orden.length / 2);
+  return orden.length % 2 === 0 ? (orden[medio - 1]! + orden[medio]!) / 2 : orden[medio]!;
 }
 
 /** ¿Esta marca cabe en un plano de este recinto sin volverlo ilegible? */

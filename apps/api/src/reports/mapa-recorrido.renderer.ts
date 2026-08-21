@@ -92,7 +92,8 @@ interface CajaPlano {
  */
 export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrido): void {
   const notas = armarNotas(mapa);
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA + 12);
+  // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
+  asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
@@ -135,10 +136,15 @@ export function dibujarMapaRecorrido(doc: PDFKit.PDFDocument, mapa: MapaRecorrid
     // doc.text avanza el cursor por su cuenta: se fija la posicion de la nota
     // siguiente a mano, o el interlineado real termina siendo el doble del que
     // se reservo y la ultima nota se cae de la hoja.
+    //
+    // El alto se MIDE y no se asume: dar por hecho una linea por nota hacia que
+    // una nota larga se dibujara encima de la siguiente. Se veia como texto
+    // pisado en el informe, sin ningun error de por medio.
     const y = doc.y;
-    doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris)
-      .text(nota, x0, y, { width: caja.ancho, lineBreak: false });
-    doc.y = y + ALTO_NOTA;
+    doc.font('Helvetica').fontSize(7.5).fillColor(PALETA.gris);
+    const alto = doc.heightOfString(nota, { width: caja.ancho });
+    doc.text(nota, x0, y, { width: caja.ancho });
+    doc.y = y + Math.max(alto, ALTO_NOTA);
   }
   doc.x = x0;
   doc.y += 4;
@@ -422,6 +428,21 @@ export function armarNotas(mapa: MapaRecorrido): string[] {
     notas.push(
       `Recorrido registrado: ${formatearDistancia(mapa.distanciaTrazaM)} · ` +
         `${formatearEntero(mapa.trazaTotalRegistrada)} posición(es) de GPS.`,
+    );
+  }
+
+  // Un punto que la ronda incluye pero el plano no muestra tiene que decirse
+  // con nombre y distancia. Si solo desapareciera, el supervisor leeria un mapa
+  // incompleto creyendolo completo — que es peor que el mapa ilegible de antes.
+  if (mapa.puntosFueraDelPlano.length > 0) {
+    const nombres = mapa.puntosFueraDelPlano
+      .slice(0, 3)
+      .map((punto) => `${punto.numero}. ${recortar(punto.nombre, 18)} a ${formatearDistancia(punto.distanciaM)}`)
+      .join(', ');
+    const resto =
+      mapa.puntosFueraDelPlano.length > 3 ? ` y ${mapa.puntosFueraDelPlano.length - 3} más` : '';
+    notas.push(
+      `${mapa.puntosFueraDelPlano.length} punto(s) en otra ubicación, fuera del plano: ${nombres}${resto}.`,
     );
   }
 
