@@ -46,6 +46,39 @@ async function main(): Promise<void> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    // Rotacion explicita: cambia el correo Y la contraseña del superadmin que
+    // ya existe, y tira los tokens de accion pendientes. Hace falta cuando la
+    // cuenta quedo con una direccion equivocada: quien controle ese buzon puede
+    // pedir un reseteo de contraseña cuando quiera y quedarse con la
+    // plataforma entera. Apagada por defecto.
+    if (process.env.BOOTSTRAP_ROTAR === 'true') {
+      const superadmin = await client.query<{ id: string; email: string }>(
+        `SELECT u.id, u.email FROM users u
+          JOIN platform_memberships m ON m.user_id = u.id
+         WHERE m.role_key = 'SUPERADMIN'
+         ORDER BY u.created_at LIMIT 1`,
+      );
+      const actual = superadmin.rows[0];
+      if (actual) {
+        const passwordHash = await hash(password, {
+          type: argon2id,
+          memoryCost: 65_536,
+          timeCost: 3,
+          parallelism: 1,
+        });
+        await client.query('BEGIN');
+        await client.query(
+          `UPDATE users SET email = $2, password_hash = $3, updated_at = now() WHERE id = $1`,
+          [actual.id, email, passwordHash],
+        );
+        await client.query('DELETE FROM auth_action_tokens WHERE user_id = $1', [actual.id]);
+        await client.query('COMMIT');
+        console.log('bootstrap: superadmin rotado de %s a %s, tokens pendientes borrados',
+          actual.email, email);
+        return;
+      }
+    }
+
     const existentes = await client.query<{ id: string }>(
       'SELECT id FROM users WHERE lower(email) = $1',
       [email],
