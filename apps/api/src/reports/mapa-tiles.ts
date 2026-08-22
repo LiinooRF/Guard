@@ -29,7 +29,13 @@ const TAM_TILE = 256;
 /** Tope duro de tiles por informe: acota latencia y consumo de cuota. */
 const MAX_TILES = 24;
 const TIMEOUT_MS = 6_000;
-const ZOOM_MAX = 19;
+/**
+ * Zoom maximo al que se piden tiles. Configurable porque depende del proveedor:
+ * MapTiler sirve calles hasta z22, otros cortan antes y devuelven 404. Si se
+ * pide mas de lo que hay, el informe sale sin fondo — por eso es una variable y
+ * no un numero fijo aca dentro.
+ */
+const ZOOM_MAX = Number(process.env.MAP_TILES_MAX_ZOOM) || 19;
 const ZOOM_MIN = 12;
 
 export interface TileDibujable {
