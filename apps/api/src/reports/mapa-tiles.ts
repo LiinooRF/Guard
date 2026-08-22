@@ -86,13 +86,24 @@ export function elegirZoom(recuadro: RecuadroGeografico, maxTiles = MAX_TILES): 
   return ZOOM_MIN;
 }
 
+/** El dominio del panel: es el origen que el proveedor tiene autorizado. */
+const portal = (process.env.WEB_PUBLIC_URL ?? '').replace(/\/+$/, '');
+
 async function bajarTile(url: string): Promise<Buffer | null> {
   for (let intento = 0; intento < 2; intento += 1) {
     const corte = AbortSignal.timeout(TIMEOUT_MS);
     try {
       const respuesta = await fetch(url, {
         signal: corte,
-        headers: { 'User-Agent': 'SentryCore-Informe/1.0' },
+        headers: {
+          'User-Agent': 'SentryCore-Informe/1.0',
+          // El proveedor de tiles suele restringir la clave por origen. El
+          // informe lo genera el servidor, que no manda Origin por si solo, y
+          // esas peticiones se rechazan con 403: el PDF salia sin cartografia
+          // aunque la clave estuviera bien. Se identifica con el dominio del
+          // panel, que es el que esta autorizado.
+          ...(portal ? { Origin: portal, Referer: `${portal}/` } : {}),
+        },
       });
       if (!respuesta.ok) return null;
       return Buffer.from(await respuesta.arrayBuffer());
