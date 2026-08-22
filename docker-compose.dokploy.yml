@@ -128,7 +128,8 @@ services:
       - sh
       - -c
       - >-
-        node node_modules/typeorm/cli.js migration:run
+        node apps/api/dist/database/asegurar-rol-app.js
+        && node node_modules/typeorm/cli.js migration:run
         -d apps/api/dist/database/data-source.js
         && { [ "$$RUN_DEMO_SEED" != "true" ]
         || node apps/api/dist/database/seeds/development.js; }

@@ -28,9 +28,19 @@ async function main(): Promise<void> {
     throw new Error('BOOTSTRAP_SUPERADMIN_PASSWORD debe tener al menos 12 caracteres');
   }
 
-  const databaseUrl = process.env.DATABASE_ADMIN_URL ?? process.env.DATABASE_URL;
+  // La credencial administrativa, NO la de la aplicacion: `users` tiene RLS
+  // FORCE y el rol de la app no puede insertar ahi. Cayendo a DATABASE_URL el
+  // bootstrap moria con "new row violates row-level security policy" en el
+  // primer arranque de una instalacion nueva.
+  const databaseUrl =
+    process.env.DATABASE_MIGRATION_URL ??
+    process.env.MIGRATION_DATABASE_URL ??
+    process.env.DATABASE_ADMIN_URL;
   if (!databaseUrl) {
-    throw new Error('Falta DATABASE_ADMIN_URL/DATABASE_URL');
+    throw new Error(
+      'El bootstrap necesita la credencial administrativa ' +
+        '(DATABASE_MIGRATION_URL, MIGRATION_DATABASE_URL o DATABASE_ADMIN_URL)',
+    );
   }
 
   const client = new Client({ connectionString: databaseUrl });
