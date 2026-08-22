@@ -184,6 +184,21 @@ async function seedTenant(
          instructions = EXCLUDED.instructions`,
       [demo.checkpointIds[0], demo.checkpointIds[1], demo.tenantId, demo.siteId],
     );
+    // Un punto admite UNA sola etiqueta nfc activa (`tags_checkpoint_tech_uniq`,
+    // parcial WHERE is_active). Si el punto ya tiene otra —una que registro un
+    // instalador, o la de una corrida anterior con otros UIDs— el INSERT de
+    // abajo la viola y revienta: el `ON CONFLICT (uid)` NO cubre ese choque,
+    // porque el conflicto no es por uid sino por (tenant, punto, tech). Eso
+    // tumbaba el arranque entero de la API, no solo la demo.
+    //
+    // Se desactiva en vez de borrar: los escaneos ya hechos apuntan a la
+    // etiqueta y el historial tiene que seguir resolviendo.
+    await client.query(
+      `UPDATE tags SET is_active = false
+        WHERE tenant_id = $1 AND checkpoint_id IN ($2, $3) AND tech = 'nfc'
+          AND is_active AND uid <> ALL($4::text[])`,
+      [demo.tenantId, demo.checkpointIds[0], demo.checkpointIds[1], demo.tagUids],
+    );
     await client.query(
       `INSERT INTO tags (tenant_id, checkpoint_id, tech, uid)
        VALUES
