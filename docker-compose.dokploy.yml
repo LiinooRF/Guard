@@ -132,6 +132,7 @@ services:
         -d apps/api/dist/database/data-source.js
         && { [ "$$RUN_DEMO_SEED" != "true" ]
         || node apps/api/dist/database/seeds/development.js; }
+        && node apps/api/dist/database/seeds/bootstrap.js
         && exec node apps/api/dist/main.js
     environment:
       # staging valida distinto que production (permite mailpit, exige igual
@@ -145,6 +146,15 @@ services:
       # recorrido sobre estos tiles. Si falta, el PDF sale igual pero con el
       # plano a escala sin fondo — nunca falla por esto.
       MAP_TILE_URL: ${MAP_TILE_URL:-}
+      # Hasta que zoom pedir tiles: depende del proveedor (MapTiler llega a 22,
+      # otros cortan antes y devuelven 404).
+      MAP_TILES_MAX_ZOOM: ${MAP_TILES_MAX_ZOOM:-19}
+      # La PRIMERA cuenta de una instalacion en blanco. El seed de desarrollo se
+      # niega en production, asi que sin esto la base recien migrada no tiene
+      # ningun usuario y no hay como pasar del login. Solo crea si no existe:
+      # nunca le devuelve la clave inicial a una cuenta ya en uso.
+      BOOTSTRAP_SUPERADMIN_EMAIL: ${BOOTSTRAP_SUPERADMIN_EMAIL:-}
+      BOOTSTRAP_SUPERADMIN_PASSWORD: ${BOOTSTRAP_SUPERADMIN_PASSWORD:-}
       # Las fotos viven en un volumen persistente: sin esto un redeploy las pierde.
       EVIDENCE_PATH: /data/evidence
       MAILPIT_HOST: ${MAILPIT_HOST:-localhost}
