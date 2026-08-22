@@ -141,6 +141,10 @@ services:
       # CORS y proteccion CSRF validan contra este origen: debe ser el dominio
       # real del panel o el login desde el navegador se rechaza.
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      # La MISMA cartografia que el panel: el informe dibuja el plano del
+      # recorrido sobre estos tiles. Si falta, el PDF sale igual pero con el
+      # plano a escala sin fondo — nunca falla por esto.
+      MAP_TILE_URL: ${MAP_TILE_URL:-}
       # Las fotos viven en un volumen persistente: sin esto un redeploy las pierde.
       EVIDENCE_PATH: /data/evidence
       MAILPIT_HOST: ${MAILPIT_HOST:-localhost}

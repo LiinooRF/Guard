@@ -273,7 +273,7 @@ export async function dibujarCuerpo(
   // liviano de correo); un mapa con `hayDatos` en false SI se dibuja, porque
   // explicarle al lector que no hubo posiciones vale mas que una pagina muda.
   if (modelo.mapa) {
-    dibujarMapaRecorrido(doc, modelo.mapa);
+    dibujarMapaRecorrido(doc, modelo.mapa, modelo.fondoMapa);
   }
 
   if (opciones.bitacora === false) {

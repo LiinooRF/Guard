@@ -1,12 +1,21 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { QueryFailedError } from 'typeorm';
 
 import { AuditService } from '../audit/audit.service';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { RulesService } from '../rules/rules.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import type { RouteOrderMode } from '../supervisor/dto/create-route.dto';
+import type { CrearRecurrenciaDto } from './dto/recurrencia.dto';
 import type { ReplaceShiftPatternsDto } from './dto/shift-pattern.dto';
+import { SQL_EXPANDIR_RECURRENCIAS } from './recurrencias.sql';
 
 /**
  * Quien dispara la generacion. No es un adorno: el SUPERVISOR esta limitado a
@@ -264,6 +273,16 @@ export class SchedulingService {
       await this.supervisor.ensureAssignedSite(input.siteId, supervisorId);
     }
 
+    // Las reglas recurrentes se expanden ANTES de planificar: `planificar`
+    // parte de `shift_assignments`, asi que una regla que todavia no se
+    // materializo no existe para el generador. Es idempotente, asi que correr
+    // la generacion dos veces el mismo dia no duplica turnos.
+    const desdeRecurrencias = await this.expandirRecurrencias(
+      input.serviceDate,
+      input.siteId ?? null,
+      supervisorId,
+    );
+
     const filas = await this.planificar(input.serviceDate, input.siteId ?? null, supervisorId);
     const rutas = await this.secuenciasDeRuta(
       [...new Set(filas.filter((f) => f.route_id !== null).map((f) => f.route_id as string))],
@@ -360,6 +379,10 @@ export class SchedulingService {
       generated,
       skipped,
       skippedByReason: Object.fromEntries(motivos),
+      // Cuantos turnos salieron de una regla recurrente y no de una carga
+      // manual. Va en la respuesta para que el panel pueda decir "3 de estos 8
+      // los puso la regla de los martes" en vez de un total mudo.
+      assignmentsFromRecurrences: desdeRecurrencias,
     };
   }
 
@@ -441,6 +464,154 @@ export class SchedulingService {
       siteId,
       supervisorId,
     ]);
+  }
+
+  /**
+   * Materializa las reglas recurrentes que aplican a esa fecha.
+   *
+   * Devuelve cuantas asignaciones NUEVAS creo. Las que ya existian —porque el
+   * supervisor las cargo a mano o porque ya se expandio antes— no se tocan: la
+   * decision manual gana sobre la automatica.
+   */
+  private async expandirRecurrencias(
+    serviceDate: string,
+    siteId: string | null,
+    supervisorId: string | null,
+  ): Promise<number> {
+    const creadas = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      SQL_EXPANDIR_RECURRENCIAS,
+      [serviceDate, siteId, supervisorId],
+    );
+    if (creadas.length > 0) {
+      this.logger.log(
+        JSON.stringify({
+          event: 'recurrencias_expandidas',
+          service_date: serviceDate,
+          asignaciones_creadas: creadas.length,
+        }),
+      );
+    }
+    return creadas.length;
+  }
+
+
+  // ------------------------------------------------- reglas recurrentes (#—)
+
+  /**
+   * Crea la regla "este guardia, este turno, estos dias".
+   *
+   * NO materializa nada aca: las asignaciones se crean al generar las rondas
+   * del dia. Expandir un año de turnos al crear la regla llenaria la tabla de
+   * filas que nadie pidio, y cambiar la regla obligaria a limpiarlas.
+   */
+  async crearRecurrencia(shiftId: string, supervisorId: string, input: CrearRecurrenciaDto) {
+    await this.ensureShiftAssigned(shiftId, supervisorId);
+
+    const filas = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `INSERT INTO shift_recurrences
+         (tenant_id, shift_id, guard_id, weekdays, starts_on, ends_on)
+       VALUES (app_tenant_id(), $1, $2, $3::smallint[], $4::date, $5::date)
+       RETURNING id`,
+      [shiftId, input.guardId, input.weekdays, input.startsOn, input.endsOn ?? null],
+    ).catch((error: unknown) => {
+      // El indice parcial `shift_recurrences_una_activa` es el que impide dos
+      // reglas vivas para el mismo guardia y turno. Se traduce a un mensaje
+      // util en vez de un 500 con jerga de PostgreSQL.
+      if (
+        error instanceof QueryFailedError &&
+        (error.driverError as { code?: string } | undefined)?.code === '23505'
+      ) {
+        throw new ConflictException(
+          'Ese guardia ya tiene una asignación recurrente activa en este turno. ' +
+            'Dala de baja antes de crear otra.',
+        );
+      }
+      throw error;
+    });
+
+    await this.registrarAuditoriaRecurrencia(
+      supervisorId, filas[0]?.id ?? null, 'recurrencia.creada',
+      `Asignación recurrente creada: días ${input.weekdays.join(', ')} desde ${input.startsOn}`,
+    );
+    return { id: filas[0]?.id ?? null };
+  }
+
+  /** Las reglas de un turno, activas primero. */
+  async listarRecurrencias(shiftId: string, supervisorId: string) {
+    await this.ensureShiftAssigned(shiftId, supervisorId);
+    const filas = await this.tenantContext.manager.query<Array<{
+      id: string; guard_id: string; guard_name: string; weekdays: number[];
+      starts_on: string; ends_on: string | null; is_active: boolean; asignaciones: string;
+    }>>(
+      `SELECT r.id, r.guard_id,
+              (u.given_name || ' ' || u.family_name) AS guard_name,
+              r.weekdays, r.starts_on, r.ends_on, r.is_active,
+              (SELECT count(*) FROM shift_assignments a WHERE a.recurrence_id = r.id) AS asignaciones
+       FROM shift_recurrences r
+       JOIN users u ON u.id = r.guard_id
+       WHERE r.shift_id = $1
+       ORDER BY r.is_active DESC, r.starts_on DESC`,
+      [shiftId],
+    );
+    return filas.map((f) => ({
+      id: f.id,
+      guardId: f.guard_id,
+      guardName: f.guard_name,
+      weekdays: f.weekdays,
+      startsOn: f.starts_on,
+      endsOn: f.ends_on,
+      isActive: f.is_active,
+      /** Turnos ya materializados por esta regla. */
+      assignmentsCreated: Number(f.asignaciones),
+    }));
+  }
+
+  /**
+   * Da de baja o reactiva una regla.
+   *
+   * Dar de baja NO borra los turnos ya materializados: los que estan en el
+   * calendario se trabajaron o se van a trabajar, y hacerlos desaparecer
+   * dejaria rondas colgando de un turno inexistente. Deja de crear nuevos.
+   */
+  async cambiarActivaRecurrencia(recurrenceId: string, supervisorId: string, activa: boolean) {
+    const filas = await this.tenantContext.manager.query<Array<{ id: string; shift_id: string }>>(
+      `UPDATE shift_recurrences r
+       SET is_active = $2, updated_at = now()
+       WHERE r.id = $1
+         AND EXISTS (
+           SELECT 1 FROM shifts s
+           JOIN supervisor_sites ss ON ss.site_id = s.site_id
+           WHERE s.id = r.shift_id AND ss.supervisor_id = $3
+         )
+       RETURNING r.id, r.shift_id`,
+      [recurrenceId, activa, supervisorId],
+    );
+    if (!filas[0]) {
+      throw new NotFoundException('No encontramos esa asignación recurrente en tus recintos');
+    }
+    await this.registrarAuditoriaRecurrencia(
+      supervisorId, recurrenceId,
+      activa ? 'recurrencia.reactivada' : 'recurrencia.dada_de_baja',
+      activa ? 'Asignación recurrente reactivada' : 'Asignación recurrente dada de baja',
+    );
+    return { id: filas[0].id, isActive: activa };
+  }
+
+  private async registrarAuditoriaRecurrencia(
+    supervisorId: string, recurrenceId: string | null, accion: string, resumen: string,
+  ) {
+    const actores = await this.tenantContext.manager.query<Array<{ label: string }>>(
+      `SELECT (given_name || ' ' || family_name) AS label FROM users WHERE id = $1`,
+      [supervisorId],
+    );
+    await this.audit.record({
+      actorId: supervisorId,
+      actorLabel: actores[0]?.label ?? 'Supervisor',
+      action: accion,
+      entityType: 'shift_recurrence',
+      entityId: recurrenceId ?? undefined,
+      summary: resumen,
+    });
   }
 
   /** Snapshot de puntos por ruta, en el orden de la secuencia definida. */

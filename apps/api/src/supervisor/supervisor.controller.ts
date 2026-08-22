@@ -174,6 +174,24 @@ export class SupervisorController {
     return this.supervisor.createShift(params.siteId, request.user.sub, input);
   }
 
+  /**
+   * Retira un turno del calendario, o lo vuelve a poner.
+   *
+   * `PATCH .../active` y no `DELETE` a proposito: el turno tiene asignaciones,
+   * y esas tienen rondas con escaneos, fotos e informes. Borrarlo dejaria ese
+   * historial sin dueño. Dado de baja deja de generar rondas y sale de las
+   * listas, que es lo que se busca al querer "eliminarlo".
+   */
+  @Patch('shifts/:shiftId/active')
+  @Permissions('shifts:manage')
+  cambiarActivoTurno(
+    @Param() params: ShiftParam,
+    @Body() input: UpdateActiveDto,
+    @Req() request: Autenticado,
+  ) {
+    return this.supervisor.cambiarActivoTurno(params.shiftId, request.user.sub, input.isActive);
+  }
+
   @Post('shifts/:shiftId/assignments')
   @Permissions('shifts:manage')
   assignShift(

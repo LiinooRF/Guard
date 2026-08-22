@@ -11,6 +11,10 @@ type Shift = {
   id: string; name: string; startsAt: string; endsAt: string; weekdays: number[];
   crossesMidnight: boolean; isActive: boolean;
 };
+type Recurrence = {
+  id: string; guardId: string; guardName: string; weekdays: number[];
+  startsOn: string; endsOn: string | null; isActive: boolean; assignmentsCreated: number;
+};
 type Assignment = {
   id: string; shiftId: string; shiftName: string; startsAt: string; endsAt: string;
   serviceDate: string; guardId: string; guardName: string; status: string;
@@ -28,6 +32,7 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedShiftId, setSelectedShiftId] = useState('');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [recurrences, setRecurrences] = useState<Recurrence[]>([]);
   const [editingGuardId, setEditingGuardId] = useState<string | null>(null);
   const [guardNfcInput, setGuardNfcInput] = useState('');
   const [message, setMessage] = useState('');
@@ -50,6 +55,17 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
     }
     return map;
   }, [assignments, dates]);
+
+  /**
+   * Las reglas viven POR TURNO, asi que se recargan al cambiar de turno y no
+   * junto con la semana: el resto del panel no depende de ellas.
+   */
+  const loadRecurrences = useCallback(async (shiftId: string) => {
+    if (!shiftId) { setRecurrences([]); return; }
+    try {
+      setRecurrences(await request<Recurrence[]>(apiUrl, `/scheduling/shifts/${shiftId}/recurrences`));
+    } catch { setRecurrences([]); }
+  }, [apiUrl]);
 
   const loadWeek = useCallback(async () => {
     if (!siteId) return;
@@ -189,6 +205,64 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
     } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
   }
 
+  /**
+   * Deja la asignacion fija: guardia + dias, sin fecha de termino.
+   *
+   * No crea los turnos aca. La regla se materializa al generar cada dia, que es
+   * lo que permite corregirla o darla de baja sin tener que limpiar un año de
+   * asignaciones ya escritas.
+   */
+  async function fijarAsignacion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(''); setMessage('');
+    const form = new FormData(event.currentTarget);
+    const shiftId = String(form.get('recShiftId'));
+    const dias = form.getAll('recWeekday').map(Number);
+    try {
+      if (!shiftId) throw new Error('Elige el turno al que se fija la asignación.');
+      if (!dias.length) throw new Error('Marca al menos un día.');
+      await request(apiUrl, `/scheduling/shifts/${shiftId}/recurrences`, {
+        method: 'POST',
+        body: JSON.stringify({
+          guardId: String(form.get('recGuardId')),
+          weekdays: dias,
+          startsOn: String(form.get('recStartsOn')),
+          ...(form.get('recEndsOn') ? { endsOn: String(form.get('recEndsOn')) } : {}),
+        }),
+      });
+      setMessage('Asignación fija creada. Desde ahora el turno se arma solo cada semana.');
+      await loadRecurrences(shiftId);
+    } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
+  }
+
+  async function retirarRegla(recurrenceId: string, shiftId: string) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      await request(apiUrl, `/scheduling/recurrences/${recurrenceId}/active`, {
+        method: 'PATCH', body: JSON.stringify({ isActive: false }),
+      });
+      // Los turnos ya creados por la regla NO se borran: pueden estar
+      // trabajandose. Se dice explicito para que nadie lo descubra despues.
+      setMessage('Regla dada de baja. Los turnos ya programados siguen en el calendario.');
+      await loadRecurrences(shiftId);
+    } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
+  }
+
+  async function retirarTurno(shiftId: string, nombre: string) {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const r = await request<{ pendingAssignments: number }>(
+        apiUrl, `/supervisor/shifts/${shiftId}/active`,
+        { method: 'PATCH', body: JSON.stringify({ isActive: false }) },
+      );
+      setMessage(
+        r.pendingAssignments > 0
+          ? `Turno «${nombre}» retirado. Quedan ${r.pendingAssignments} asignación(es) ya programadas en el calendario.`
+          : `Turno «${nombre}» retirado. No genera más rondas.`,
+      );
+      await loadWeek();
+    } catch (cause) { setError(messageOf(cause)); } finally { setBusy(false); }
+  }
+
   async function reassign(assignmentId: string, guardId: string) {
     if (!guardId) return;
     setBusy(true); setError(''); setMessage('');
@@ -259,6 +333,27 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
               <div className="schedule-inline"><label>Inicio<input name="startsAt" type="time" required /></label><label>Fin<input name="endsAt" type="time" required /></label></div>
               <fieldset><legend>Recurrencia semanal</legend>{DAY_NAMES.map((day, i) => <label key={day}><input type="checkbox" name="weekday" value={(i + 1) % 7} defaultChecked={i < 5} />{day}</label>)}</fieldset>
               <button disabled={busy || !siteId} type="submit">{busy ? 'Creando turno…' : 'Crear turno'}</button>
+
+              {shifts.length ? (
+                <div className="schedule-turnos-vigentes">
+                  <h4>Turnos de este recinto</h4>
+                  <ul>
+                    {shifts.map((shift) => (
+                      <li key={shift.id}>
+                        <span><strong>{shift.name}</strong> · {shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</span>
+                        <button type="button" className="secondary-button danger-button" disabled={busy}
+                                onClick={() => void retirarTurno(shift.id, shift.name)}>
+                          Retirar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="schedule-nota">
+                    Retirar deja de generar rondas nuevas. Los turnos ya programados siguen en el
+                    calendario y el historial no se toca.
+                  </p>
+                </div>
+              ) : null}
             </form>
             <form onSubmit={programWeek}>
               <h3>2. Programar semana completa</h3>
@@ -300,6 +395,72 @@ export function SupervisorSchedule({ apiUrl }: { apiUrl: string }) {
               <button disabled={busy || !shifts.length || !routes.length || !guards.length} type="submit">
                 {busy ? 'Programando semana…' : !shifts.length ? 'Crea un turno en paso 1 primero' : !routes.length ? 'Crea una ruta activa primero' : !guards.length ? 'Sin guardias disponibles' : 'Revisar choques y programar'}
               </button>
+            </form>
+            <form onSubmit={fijarAsignacion} className="schedule-fija">
+              <h3>3. Asignación fija (opcional)</h3>
+              <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                Para turnos que se repiten siempre: se arma solo cada semana, sin volver a cargarlo.
+                El paso 2 sigue sirviendo para una semana puntual o para corregir un día.
+              </p>
+              <label>
+                Turno
+                <select name="recShiftId" required value={selectedShiftId}
+                        onChange={(event) => { setSelectedShiftId(event.target.value); void loadRecurrences(event.target.value); }}>
+                  {!shifts.length ? <option value="">⚠️ Primero crea un turno en el paso 1</option> : null}
+                  {shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} · {shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</option>)}
+                </select>
+              </label>
+              <label>
+                Guardia
+                <select name="recGuardId" required>
+                  {!guards.length ? <option value="">⚠️ No hay guardias en este recinto</option> : null}
+                  {guards.map((guard) => <option key={guard.id} value={guard.id}>{guard.name}</option>)}
+                </select>
+              </label>
+              <fieldset>
+                <legend>Días fijos</legend>
+                {DAY_NAMES.map((day, i) => (
+                  <label key={day}>
+                    <input type="checkbox" name="recWeekday" value={(i + 1) % 7} defaultChecked={i < 5} />
+                    {day}
+                  </label>
+                ))}
+              </fieldset>
+              <div className="schedule-inline">
+                <label>Desde<input name="recStartsOn" type="date" required defaultValue={monday} /></label>
+                <label title="Se deja vacío para un turno fijo sin término, que es lo normal">
+                  Hasta (opcional)<input name="recEndsOn" type="date" />
+                </label>
+              </div>
+              <button disabled={busy || !shifts.length} type="submit">
+                {busy ? 'Guardando…' : 'Dejar asignación fija'}
+              </button>
+
+              {recurrences.length ? (
+                <div className="schedule-reglas">
+                  <h4>Asignaciones fijas de este turno</h4>
+                  <ul>
+                    {recurrences.filter((r) => r.isActive).map((r) => (
+                      <li key={r.id}>
+                        <span>
+                          <strong>{r.guardName}</strong>
+                          {' · '}
+                          {r.weekdays.length === 7
+                            ? 'todos los días'
+                            : r.weekdays.slice().sort().map((d) => DAY_NAMES[(d + 6) % 7]).join(', ')}
+                          {' · desde '}{r.startsOn}
+                          {r.endsOn ? ` hasta ${r.endsOn}` : ''}
+                        </span>
+                        <small>{r.assignmentsCreated} turno(s) ya generados</small>
+                        <button type="button" className="secondary-button" disabled={busy}
+                                onClick={() => void retirarRegla(r.id, selectedShiftId)}>
+                          Dar de baja
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </form>
           </div>
 

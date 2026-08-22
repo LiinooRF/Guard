@@ -315,7 +315,13 @@ export class PatrolReportService {
       ? await this.mapaRecorrido.construir(patrolId, modelo.puntos, { requester })
       : null;
 
-    return { ...modelo, mapa };
+    // La cartografia se baja ACA y no al dibujar: el PDF se escribe en
+    // streaming y no admite esperas en el medio. Si falla —sin red, sin llave,
+    // proveedor caido— devuelve null y el plano sale a escala, sin fondo, como
+    // siempre. El informe nunca depende de que responda un tercero.
+    const fondoMapa = mapa?.hayDatos ? await this.mapaRecorrido.fondoDe(mapa) : null;
+
+    return { ...modelo, mapa, fondoMapa };
   }
 
   /**

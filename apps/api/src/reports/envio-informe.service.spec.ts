@@ -81,6 +81,7 @@ const MODELO: InformeRonda = {
   anexo: [],
   incluyeAnexo: false,
   mapa: null,
+  fondoMapa: null,
 };
 
 function modeloCon(pct: number, omitidos: string[] = []): InformeRonda {

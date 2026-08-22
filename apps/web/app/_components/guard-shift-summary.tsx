@@ -141,7 +141,7 @@ export function GuardShiftSummary({
       ) : null}
 
       <div className="guardia-novedades-turno">
-        <h3>Novedades del turno</h3>
+        <h3>Novedades de la ronda</h3>
         {estado.novedades.length ? (
           <ul>
             {estado.novedades.map((novedad) => (
@@ -161,7 +161,7 @@ export function GuardShiftSummary({
             ))}
           </ul>
         ) : (
-          <p className="guardia-nota">No registraste novedades en este turno.</p>
+          <p className="guardia-nota">No registraste novedades en esta ronda.</p>
         )}
         <p className="guardia-nota">Se listan las registradas desde este teléfono.</p>
       </div>

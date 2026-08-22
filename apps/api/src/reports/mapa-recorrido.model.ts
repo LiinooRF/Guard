@@ -68,6 +68,23 @@ const MARGEN_ENCUADRE = 0.08;
 const ALCANCE_ESCANEO_DESVIADO = 5;
 
 /**
+ * Cuantas veces la dispersion tipica del recinto puede alejarse un punto antes
+ * de quedar fuera del plano.
+ *
+ * Existe porque un solo punto lejano arruina el mapa entero y NADIE se entera.
+ * Paso en Janssen: una ronda con catorce puntos dentro de 157 metros y dos en
+ * otra instalacion a 6,9 km obligo al plano a encuadrar 4.170 metros, y el
+ * recorrido real quedo ocupando el 2,6 % del ancho — dos circulitos sueltos en
+ * una hoja en blanco, con la barra de escala marcando 2 km.
+ *
+ * El encuadre se calcula sobre el NUCLEO del recinto y lo que quede lejos se
+ * cuenta al pie, igual que ya se hacia con los escaneos desviados. Diez veces
+ * la dispersion mediana deja pasar cualquier recinto real —incluso uno alargado
+ * como una carretera— y solo aparta lo que esta en otra ubicacion.
+ */
+const ALCANCE_PUNTO_LEJANO = 10;
+
+/**
  * Las dos marcas que hablan de la POSICION del escaneo. Las otras
  * (reloj_desfasado, dispositivo_duplicado, velocidad_imposible) son senales
  * validas pero no se dibujan en el mapa: no dicen donde estaba el telefono.
@@ -154,6 +171,13 @@ export interface PuntoSinCoordenada {
   readonly nombre: string;
 }
 
+export interface PuntoLejano {
+  readonly numero: number;
+  readonly nombre: string;
+  /** Distancia al centro del recinto dibujado, en metros. */
+  readonly distanciaM: number;
+}
+
 export interface MapaRecorrido {
   /** false = no hay una sola coordenada con que dibujar. El informe lo dice, no lo esconde. */
   readonly hayDatos: boolean;
@@ -164,6 +188,12 @@ export interface MapaRecorrido {
   readonly puntos: readonly MarcaPuntoMapa[];
   /** Puntos esperados que no tienen coordenada cargada: no se pueden dibujar. */
   readonly puntosSinCoordenada: readonly PuntoSinCoordenada[];
+  /**
+   * Puntos con coordenada valida pero tan lejos del resto que dibujarlos
+   * dejaria el recinto reducido a una mancha. No se pierden: se nombran al pie
+   * con su distancia, para que se vea que la ronda los incluye.
+   */
+  readonly puntosFueraDelPlano: readonly PuntoLejano[];
   readonly traza: readonly PuntoTrazaMapa[];
   readonly escaneosDesviados: readonly MarcaEscaneoMapa[];
   /**
@@ -268,7 +298,15 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     trazaValida.push({ coord, instante: fila.recorded_at_device });
   }
 
-  const trazaDibujable = submuestrear(trazaValida, maxPuntosTraza);
+  // Antes de submuestrear se limpian los SALTOS. El filtro por error de GPS no
+  // los agarra: una posicion puede venir con precision declarada de 20 m y aun
+  // asi estar 500 m del recorrido real, porque la señal reboto. En la ronda del
+  // 21-08 habia diez tramos con velocidad imposible, uno de 553 metros en un
+  // solo paso — a 133 km/h. Dibujados, convertian el plano en una maraña de
+  // rayas rectas que cruzaban manzanas enteras.
+  const trazaSinSaltos = quitarSaltos(trazaValida);
+  const trazaDibujable = suavizar(submuestrear(trazaSinSaltos, maxPuntosTraza));
+  const trazaDescartadaPorSalto = trazaValida.length - trazaSinSaltos.length;
 
   // Escaneos con anomalia de posicion. Los que no dejaron coordenada se cuentan
   // aparte: "no se sabe donde estaba" es informacion, y borrarla del informe
@@ -322,6 +360,7 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
       encuadre: encuadreDe([], spanMinimoM),
       puntos: [],
       puntosSinCoordenada,
+      puntosFueraDelPlano: [],
       traza: [],
       escaneosDesviados: [],
       escaneosFueraDelPlano: [],
@@ -352,10 +391,32 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     desviacionM: d.desviacionM,
   }));
 
+  // Primero se decide QUE forma el recinto. Un punto en otra instalacion
+  // —coordenada correcta, pero a kilometros— no puede definir el encuadre:
+  // arrastraria la escala hasta dejar el recorrido en una mancha.
+  const { nucleo: puntosDelNucleo, lejanas: puntosLejanos, centro } = separarNucleo(
+    marcasPunto,
+    spanMinimoM,
+  );
+  const puntosFueraDelPlano: PuntoLejano[] = puntosLejanos.map((marca) => ({
+    numero: marca.numero,
+    nombre: marca.nombre,
+    distanciaM: redondear(Math.hypot(marca.este - centro.este, marca.norte - centro.norte)),
+  }));
+  // La traza se acota contra el mismo nucleo: un salto de GPS con buena
+  // precision declarada pasa el filtro de error y estiraria el plano igual.
+  const trazaDelNucleo =
+    puntosDelNucleo.length > 0
+      ? marcasTraza.filter((marca) =>
+          cabeEnElPlano(marca, encuadreDe(puntosDelNucleo, spanMinimoM)),
+        )
+      : marcasTraza;
+  const trazaFueraDelPlano = marcasTraza.length - trazaDelNucleo.length;
+
   // Se separa lo que cabe de lo que no contra el encuadre del recinto. Cuando
   // NO hay recinto que dibujar —ni puntos ni recorrido—, los escaneos son lo
   // unico que hay y todos entran: ahi no hay nada que puedan aplastar.
-  const base: PosicionMapa[] = [...marcasPunto, ...marcasTraza];
+  const base: PosicionMapa[] = [...puntosDelNucleo, ...trazaDelNucleo];
   const encuadreDelRecinto = encuadreDe(base, spanMinimoM);
   const dentro =
     base.length > 0
@@ -368,17 +429,119 @@ export function construirMapaRecorrido(entrada: EntradaMapa): MapaRecorrido {
     trazaDesactivada: !trazaActivada,
     origen,
     encuadre: encuadreDe([...base, ...dentro], spanMinimoM),
-    puntos: marcasPunto,
+    puntos: puntosDelNucleo,
     puntosSinCoordenada,
-    traza: marcasTraza,
+    puntosFueraDelPlano,
+    traza: trazaDelNucleo,
     escaneosDesviados: dentro,
     escaneosFueraDelPlano: fuera,
     escaneosGpsSinPosicion,
     trazaDescartadaPorError,
-    trazaSubmuestreada: trazaDibujable.length < trazaValida.length,
+    trazaSubmuestreada:
+      trazaDibujable.length < trazaValida.length || trazaFueraDelPlano > 0 || trazaDescartadaPorSalto > 0,
     trazaTotalRegistrada: traza.length,
     distanciaTrazaM,
   };
+}
+
+/** Velocidad por encima de la cual el tramo no lo hizo una persona caminando. */
+const MAX_KMH_A_PIE = 12;
+
+/**
+ * Descarta las posiciones que implican un salto imposible desde la anterior.
+ *
+ * Se compara contra la ULTIMA POSICION ACEPTADA y no contra la inmediata
+ * anterior: si se comparara contra la anterior sin mas, un salto seguido de
+ * otro salto de vuelta se validaria solo — la ida es imposible, pero la vuelta
+ * tambien lo es y las dos "concuerdan" entre si.
+ */
+function quitarSaltos(
+  posiciones: readonly { coord: Coordenada; instante: Date }[],
+): { coord: Coordenada; instante: Date }[] {
+  if (posiciones.length <= 2) return [...posiciones];
+  const salida = [posiciones[0]!];
+  for (const actual of posiciones.slice(1)) {
+    const ultima = salida[salida.length - 1]!;
+    const segundos = Math.max(
+      (actual.instante.getTime() - ultima.instante.getTime()) / 1000,
+      1,
+    );
+    const metros = haversineM(
+      ultima.coord.lat, ultima.coord.lng, actual.coord.lat, actual.coord.lng,
+    );
+    const kmh = (metros / segundos) * 3.6;
+    if (kmh <= MAX_KMH_A_PIE) salida.push(actual);
+  }
+  // Si el criterio se comio casi todo, la ronda probablemente fue en vehiculo:
+  // mejor dibujar el recorrido crudo que uno inventado con cuatro puntos.
+  return salida.length >= 3 ? salida : [...posiciones];
+}
+
+/**
+ * Media movil de tres: le saca el temblor a la linea sin inventar recorrido.
+ *
+ * Cada posicion pasa a ser el promedio de sus vecinas REALES, asi que el
+ * trazado sigue pasando por donde paso el guardia; solo deja de vibrar por el
+ * ruido del GPS, que a 30 metros de error hace zigzaguear una linea recta.
+ */
+function suavizar(
+  posiciones: readonly { coord: Coordenada; instante: Date }[],
+): { coord: Coordenada; instante: Date }[] {
+  if (posiciones.length < 3) return [...posiciones];
+  return posiciones.map((actual, i) => {
+    if (i === 0 || i === posiciones.length - 1) return actual;
+    const previa = posiciones[i - 1]!.coord;
+    const siguiente = posiciones[i + 1]!.coord;
+    return {
+      instante: actual.instante,
+      coord: {
+        lat: (previa.lat + actual.coord.lat * 2 + siguiente.lat) / 4,
+        lng: (previa.lng + actual.coord.lng * 2 + siguiente.lng) / 4,
+      },
+    };
+  });
+}
+
+/**
+ * Separa el nucleo del recinto de lo que esta demasiado lejos.
+ *
+ * Se usa la MEDIANA y no el promedio a proposito: el promedio se lo lleva el
+ * outlier: con catorce puntos juntos y dos a 6,9 km, el centro promedio cae en
+ * el medio del campo y entonces "todo" parece lejano. La mediana ni se entera
+ * de los dos.
+ *
+ * El umbral sale de la propia dispersion del recinto, no de un numero fijo en
+ * metros: una bodega de 50 m y una planta de 800 m son los dos recintos
+ * legitimos, y un limite absoluto tendria que elegir a cual romperle el mapa.
+ */
+function separarNucleo<T extends PosicionMapa>(
+  posiciones: readonly T[],
+  spanMinimo: number,
+): { nucleo: T[]; lejanas: T[]; centro: { este: number; norte: number } } {
+  const centro = {
+    este: mediana(posiciones.map((p) => p.este)),
+    norte: mediana(posiciones.map((p) => p.norte)),
+  };
+  if (posiciones.length < 3) {
+    return { nucleo: [...posiciones], lejanas: [], centro };
+  }
+  const distancias = posiciones.map((p) => Math.hypot(p.este - centro.este, p.norte - centro.norte));
+  // Piso en `spanMinimo`: sin el, un recinto donde todos los puntos caen casi
+  // encima (dispersion ~0) daria umbral cero y apartaria hasta al vecino.
+  const umbral = Math.max(mediana(distancias) * ALCANCE_PUNTO_LEJANO, spanMinimo);
+  const nucleo: T[] = [];
+  const lejanas: T[] = [];
+  posiciones.forEach((p, i) => (distancias[i]! <= umbral ? nucleo : lejanas).push(p));
+  // Si el criterio dejaria el plano vacio, no se aparta nada: mejor un mapa
+  // feo que ninguno.
+  return nucleo.length === 0 ? { nucleo: [...posiciones], lejanas: [], centro } : { nucleo, lejanas, centro };
+}
+
+function mediana(valores: readonly number[]): number {
+  if (valores.length === 0) return 0;
+  const orden = [...valores].sort((a, b) => a - b);
+  const medio = Math.floor(orden.length / 2);
+  return orden.length % 2 === 0 ? (orden[medio - 1]! + orden[medio]!) / 2 : orden[medio]!;
 }
 
 /** ¿Esta marca cabe en un plano de este recinto sin volverlo ilegible? */
@@ -393,6 +556,31 @@ function cabeEnElPlano(posicion: PosicionMapa, encuadre: EncuadreMapa): boolean 
     Math.abs(posicion.este - centroEste) <= alcance &&
     Math.abs(posicion.norte - centroNorte) <= alcance
   );
+}
+
+/**
+ * El encuadre, de vuelta a latitud y longitud.
+ *
+ * `proyectar` pasa de grados a metros para poder dibujar a escala; para pedir
+ * cartografia hay que deshacer ese camino, porque los tiles se piden por
+ * coordenadas. Es la inversa exacta de `proyectar`, con el mismo origen.
+ */
+export function recuadroGeograficoDe(mapa: MapaRecorrido): {
+  latMin: number;
+  latMax: number;
+  lonMin: number;
+  lonMax: number;
+} | null {
+  if (!mapa.origen) return null;
+  const { lat, lng } = mapa.origen;
+  const gradosPorMetroLat = 1 / (RADIO_TIERRA_M * (Math.PI / 180));
+  const gradosPorMetroLon = gradosPorMetroLat / Math.cos((lat * Math.PI) / 180);
+  return {
+    latMin: lat + mapa.encuadre.norteMin * gradosPorMetroLat,
+    latMax: lat + mapa.encuadre.norteMax * gradosPorMetroLat,
+    lonMin: lng + mapa.encuadre.esteMin * gradosPorMetroLon,
+    lonMax: lng + mapa.encuadre.esteMax * gradosPorMetroLon,
+  };
 }
 
 // -------------------------------------------------------------- proyeccion
@@ -485,6 +673,32 @@ export interface AjusteMapa {
  * tienen que medir lo mismo en el papel, o la barra de escala deja de valer y
  * dos puntos igual de lejos se ven a distancias distintas.
  */
+/**
+ * Estira el encuadre hasta la proporcion de la caja, SIN recortar nada.
+ *
+ * El encuadre nace del contenido y la caja del informe es apaisada, asi que el
+ * plano quedaba centrado ocupando 149 de 495 puntos de ancho: dos tercios de la
+ * caja en blanco. Se agranda el lado corto en METROS, que es como decir
+ * "muestrame mas alrededor": el recorrido se dibuja igual y a la misma escala,
+ * pero se aprovecha la hoja y se ve mas contexto.
+ *
+ * Solo agranda, nunca achica: recortar dejaria puntos fuera del plano, que es
+ * justo lo que se acaba de arreglar.
+ */
+export function expandirAProporcion(encuadre: EncuadreMapa, caja: CajaDibujo): EncuadreMapa {
+  const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
+  const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
+  const proporcionCaja = caja.ancho / Math.max(caja.alto, 1e-6);
+  const proporcionMapa = anchoM / altoM;
+
+  if (proporcionMapa < proporcionCaja) {
+    const sobra = (altoM * proporcionCaja - anchoM) / 2;
+    return { ...encuadre, esteMin: encuadre.esteMin - sobra, esteMax: encuadre.esteMax + sobra };
+  }
+  const sobra = (anchoM / proporcionCaja - altoM) / 2;
+  return { ...encuadre, norteMin: encuadre.norteMin - sobra, norteMax: encuadre.norteMax + sobra };
+}
+
 export function ajustarACaja(encuadre: EncuadreMapa, caja: CajaDibujo): AjusteMapa {
   const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
   const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);

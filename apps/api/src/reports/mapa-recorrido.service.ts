@@ -5,13 +5,26 @@ import { TenantContextService } from '../database/tenant-context/tenant-context.
 import { RulesService } from '../rules/rules.service';
 import { SupervisorService } from '../supervisor/supervisor.service';
 import {
+  ajustarACaja,
   construirMapaRecorrido,
+  expandirAProporcion,
+  recuadroGeograficoDe,
   type CoordenadaPuntoRow,
   type EscaneoGpsRow,
   type MapaRecorrido,
   type TrazaRow,
 } from './mapa-recorrido.model';
 import type { FilaPunto } from './patrol-report.model';
+import { obtenerFondo, type FondoCartografico } from './mapa-tiles';
+
+/**
+ * Medidas de la caja del plano en el PDF, en puntos, y su margen interior.
+ * Copiadas del renderer: si dejan de coincidir, el fondo queda corrido respecto
+ * de las marcas — que es exactamente el defecto que se corrigio aca.
+ */
+const CAJA_ANCHO_PT = 515;
+const CAJA_ALTO_PT = 250;
+const PADDING_PT = 10;
 
 /**
  * Datos del mapa del recorrido para el informe de ronda (#79).
@@ -126,6 +139,37 @@ export class MapaRecorridoService {
       // salia sin trayecto aunque el guardia hubiera aceptado y hubiera puntos.
       trazaActivada: reglas.gpsTrackingEnabled,
     });
+  }
+
+  /**
+   * Cartografia de fondo del plano, o null si no se puede.
+   *
+   * El proveedor sale de `MAP_TILE_URL`, la MISMA variable que ya usa el panel
+   * web: dos configuraciones distintas para el mismo mapa terminarian mostrando
+   * cartografias que no coinciden entre pantalla e informe.
+   */
+  async fondoDe(mapa: MapaRecorrido): Promise<FondoCartografico | null> {
+    if (!mapa.origen) return null;
+    // Los tiles se piden con el tamaño del RECTANGULO QUE OCUPA EL PLANO, no
+    // con el de la caja: el encuadre es cuadrado y la caja apaisada, asi que el
+    // plano se dibuja centrado y mas chico. Pedirlos del tamaño de la caja
+    // dejaba las calles corridas respecto del recorrido.
+    const interior = {
+      x: 0,
+      y: 0,
+      ancho: CAJA_ANCHO_PT - PADDING_PT * 2,
+      alto: CAJA_ALTO_PT - PADDING_PT * 2,
+    };
+    // Mismo encuadre expandido que usa el renderer: si difiere, el fondo se corre.
+    const encuadre = expandirAProporcion(mapa.encuadre, interior);
+    const ajuste = ajustarACaja(encuadre, interior);
+    const recuadro = recuadroGeograficoDe({ ...mapa, encuadre });
+    if (!recuadro) return null;
+    return obtenerFondo(
+      recuadro,
+      { ancho: ajuste.anchoPx, alto: ajuste.altoPx },
+      process.env.MAP_TILE_URL,
+    );
   }
 
   /**

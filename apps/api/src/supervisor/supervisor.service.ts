@@ -11,6 +11,7 @@ import { QueryFailedError } from 'typeorm';
 
 import { normalizarUidNfc } from '../admin/uid-nfc';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
+import { AuditService } from '../audit/audit.service';
 import { RulesService } from '../rules/rules.service';
 import type { AssignShiftDto, CreateShiftDto } from './dto/create-shift.dto';
 import type { CreatePatrolDto } from './dto/create-patrol.dto';
@@ -76,7 +77,20 @@ export class SupervisorService {
   constructor(
     private readonly tenantContext: TenantContextService,
     private readonly rules: RulesService,
+    // Dar de baja un turno saca rondas del calendario: queda auditado con
+    // nombre y propietario, como el resto de las acciones que cambian lo que
+    // el guardia va a encontrar en terreno.
+    private readonly audit: AuditService,
   ) {}
+
+  /** Nombre legible del actor para el registro de auditoria. */
+  private async etiquetaDe(actorId: string): Promise<string> {
+    const filas = await this.tenantContext.manager.query<Array<{ label: string }>>(
+      `SELECT (given_name || ' ' || family_name) AS label FROM users WHERE id = $1`,
+      [actorId],
+    );
+    return filas[0]?.label ?? 'Supervisor';
+  }
 
   /**
    * El SUPERVISOR esta limitado a SUS recintos asignados, no a todo el tenant.
@@ -715,6 +729,63 @@ export class SupervisorService {
       ],
     );
     return { id: shiftId, crossesMidnight: input.startsAt > input.endsAt };
+  }
+
+  /**
+   * Retira un turno del calendario, o lo vuelve a poner.
+   *
+   * Se da de BAJA, no se borra, por lo mismo que las rutas: un turno tiene
+   * asignaciones, y esas asignaciones tienen rondas con sus escaneos, fotos e
+   * informes. Borrarlo dejaria ese historial colgando de un turno que ya no
+   * existe, y los informes de meses pasados no podrian decir a que turno
+   * pertenecio cada ronda.
+   *
+   * Dado de baja deja de generar rondas nuevas —el planificador exige
+   * `s.is_active`— y desaparece de las listas para asignar, que es lo que se
+   * pide cuando alguien dice "eliminar el turno".
+   */
+  async cambiarActivoTurno(shiftId: string, supervisorId: string, activo: boolean) {
+    const filas = await this.tenantContext.manager.query<
+      Array<{ id: string; name: string; site_id: string }>
+    >(
+      `UPDATE shifts s
+       SET is_active = $2
+       WHERE s.id = $1
+         AND EXISTS (
+           SELECT 1 FROM supervisor_sites ss
+           WHERE ss.site_id = s.site_id AND ss.supervisor_id = $3
+         )
+       RETURNING s.id, s.name, s.site_id`,
+      [shiftId, activo, supervisorId],
+    );
+    if (!filas[0]) {
+      throw new NotFoundException('No encontramos ese turno en tus recintos');
+    }
+
+    // Cuantas asignaciones FUTURAS quedan colgando. No se tocan —pueden estar
+    // trabajandose hoy— pero el supervisor tiene que enterarse de que siguen
+    // ahi, o va a creer que dar de baja el turno vacio el calendario.
+    const pendientes = await this.tenantContext.manager.query<Array<{ total: string }>>(
+      `SELECT count(*)::text AS total FROM shift_assignments
+       WHERE shift_id = $1 AND service_date >= CURRENT_DATE`,
+      [shiftId],
+    );
+
+    await this.audit.record({
+      actorId: supervisorId,
+      actorLabel: await this.etiquetaDe(supervisorId),
+      action: activo ? 'turno.reactivado' : 'turno.dado_de_baja',
+      entityType: 'shift',
+      entityId: shiftId,
+      summary: `${activo ? 'Reactivado' : 'Dado de baja'} el turno "${filas[0].name}"`,
+    });
+
+    return {
+      id: filas[0].id,
+      isActive: activo,
+      /** Asignaciones de hoy en adelante que siguen en el calendario. */
+      pendingAssignments: Number(pendientes[0]?.total ?? 0),
+    };
   }
 
   async assignShift(shiftId: string, supervisorId: string, input: AssignShiftDto) {
