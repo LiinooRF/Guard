@@ -16,8 +16,12 @@ QUE NO se prueba aca: que una ronda EN CURSO no cambie. Eso vive en las pruebas
 unitarias, porque exige un estado que este guion no deberia forzar en un
 despliegue compartido.
 """
+import base64
+import hashlib
+import hmac
 import json
 import os
+import uuid
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -173,21 +177,64 @@ check('el guardia inicia la ronda', estado in (200, 201),
       'HTTP %s %s' % (estado, cuerpo[:200]))
 
 # ------------------------------------------------------------- la comprobacion
-estado, cuerpo, _ = pedir('GET', API + '/guard/home', None, guardia, agente=UA_APP)
-home = json_de(cuerpo)
-patrulla = (home or {}).get('patrol') or {}
-esperados = patrulla.get('checkpoints') or patrulla.get('expectedCheckpoints') or []
-nombres = {(c.get('name') or c.get('checkpointName') or '') for c in esperados} if esperados else set()
+# NO se mira /guard/home: ese endpoint devuelve UNA ronda del guardia y en un
+# despliegue compartido bien puede ser otra —cada corrida de este guion deja una
+# ronda en curso—. Una version anterior de esta prueba fallaba por eso teniendo
+# el servidor bien. Se comprueba contra ESTA ronda y por el camino del guardia
+# real: escanear la etiqueta del punto nuevo. Si la ronda se quedo con la lista
+# vieja, el servidor contesta 409 "no pertenece a esta ronda" — Janssen exacto.
+uid_extra = uuid.uuid4().hex[:16]
+estado, cuerpo, _ = pedir(
+    'POST', API + '/checkpoints/supervisor/checkpoints/%s/tags' % extra['id'],
+    {'uid': uid_extra}, supervisor)
+check('se instala una etiqueta en el punto nuevo', estado in (200, 201),
+      'HTTP %s %s' % (estado, cuerpo[:200]))
 
-check('la ronda iniciada incluye los 3 puntos, no los 2 con que nacio',
-      len(esperados) >= 3,
-      'la ronda quedo con %d punto(s): %s' % (len(esperados), sorted(nombres)))
+llave = os.urandom(32)
+dispositivo = str(uuid.uuid4())
+pedir('POST', API + '/guard/device-signing-key',
+      {'deviceId': dispositivo, 'key': base64.b64encode(llave).decode()},
+      guardia, agente=UA_APP)
 
-# La comprobacion que de verdad importa: el punto agregado DESPUES de generar la
-# ronda tiene que estar. Se busca por su nombre unico, no por posicion.
-check('  y entre ellos esta el punto agregado despues de generarla',
-      any(NOMBRE_EXTRA in n for n in nombres),
-      'no aparece "%s" en %s' % (NOMBRE_EXTRA, sorted(nombres)))
+escaneo = {'uid': uid_extra, 'method': 'nfc', 'clientScanId': str(uuid.uuid4()),
+           'deviceId': dispositivo, 'latitude': -33.45, 'longitude': -70.66}
+contenido = json.dumps(
+    ['v1', escaneo['clientScanId'], escaneo['deviceId'], escaneo['uid'],
+     escaneo['method'], None, escaneo['latitude'], escaneo['longitude'], None],
+    separators=(',', ':'))
+escaneo['signature'] = hmac.new(
+    llave, contenido.encode('utf-8'), hashlib.sha256).hexdigest()
+estado, cuerpo, _ = pedir('POST', API + '/guard/patrols/%s/scans' % ronda['id'],
+                          escaneo, guardia, agente=UA_APP)
+
+check('el guardia escanea el punto agregado DESPUES de generar la ronda',
+      estado in (200, 201), 'HTTP %s %s' % (estado, cuerpo[:240]))
+check('  y no lo rechazan con "no pertenece a esta ronda"',
+      estado != 409, cuerpo[:240])
+
+# ----------------------------------------------------- el control negativo
+# Sin esto el OK de arriba no dice nada: si el servidor aceptara cualquier
+# etiqueta, la prueba pasaria igual con el fallo puesto. Un punto que NUNCA
+# estuvo en la ruta tiene que seguir dando 409 contra la misma ronda.
+estado, cuerpo, _ = pedir(
+    'POST', API + '/checkpoints/supervisor/sites/%s/checkpoints' % sitio['id'],
+    {'name': 'e2e punto ajeno %s' % marca, 'kind': 'normal'}, supervisor)
+ajeno = json_de(cuerpo)
+uid_ajeno = uuid.uuid4().hex[:16]
+pedir('POST', API + '/checkpoints/supervisor/checkpoints/%s/tags' % ajeno['id'],
+      {'uid': uid_ajeno}, supervisor)
+
+otro = {'uid': uid_ajeno, 'method': 'nfc', 'clientScanId': str(uuid.uuid4()),
+        'deviceId': dispositivo, 'latitude': -33.45, 'longitude': -70.66}
+contenido = json.dumps(
+    ['v1', otro['clientScanId'], otro['deviceId'], otro['uid'], otro['method'],
+     None, otro['latitude'], otro['longitude'], None], separators=(',', ':'))
+otro['signature'] = hmac.new(
+    llave, contenido.encode('utf-8'), hashlib.sha256).hexdigest()
+estado, cuerpo, _ = pedir('POST', API + '/guard/patrols/%s/scans' % ronda['id'],
+                          otro, guardia, agente=UA_APP)
+check('un punto ajeno a la ronda SI se rechaza (409)', estado == 409,
+      'HTTP %s %s' % (estado, cuerpo[:240]))
 
 # ------------------------------------------------------------------ limpieza
 # Se da de baja lo que creo la prueba. No se borra: el historial de la ronda que
@@ -195,8 +242,10 @@ check('  y entre ellos esta el punto agregado despues de generarla',
 # puntos en el recinto demo — y eso fue justo lo que hizo pasar por casualidad a
 # una version anterior de esta prueba.
 pedir('PATCH', API + '/supervisor/routes/%s/active' % ruta['id'], {'isActive': False}, supervisor)
-pedir('PATCH', API + '/checkpoints/supervisor/checkpoints/%s/active' % extra['id'],
-      {'isActive': False}, supervisor)
+for punto in (extra, ajeno):
+    if punto.get('id'):
+        pedir('PATCH', API + '/checkpoints/supervisor/checkpoints/%s/active' % punto['id'],
+              {'isActive': False}, supervisor)
 
 print('=' * 72)
 print('RESULTADO: %d fallas' % len(fallas))
