@@ -157,6 +157,9 @@ services:
       # Descarta una base que nacio con el rol equivocado. Se niega si encuentra
       # usuarios, asi que no puede borrar datos de una instalacion en uso.
       REINICIAR_BASE_SI_VACIA: ${REINICIAR_BASE_SI_VACIA:-false}
+      # Cambia correo y contraseña del superadmin que ya existe. Apagada salvo
+      # que haga falta corregir una cuenta que quedo con la direccion errada.
+      BOOTSTRAP_ROTAR: ${BOOTSTRAP_ROTAR:-false}
       BOOTSTRAP_SUPERADMIN_EMAIL: ${BOOTSTRAP_SUPERADMIN_EMAIL:-}
       BOOTSTRAP_SUPERADMIN_PASSWORD: ${BOOTSTRAP_SUPERADMIN_PASSWORD:-}
       # Las fotos viven en un volumen persistente: sin esto un redeploy las pierde.
