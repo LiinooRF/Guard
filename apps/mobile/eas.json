@@ -40,7 +40,17 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_WEB_URL": "https://control.voxtilabs.cl"
+        "EXPO_PUBLIC_WEB_URL": "https://sentrycore.voxtilabs.cl"
+      }
+    },
+    "produccion-apk": {
+      "extends": "base",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_WEB_URL": "https://sentrycore.voxtilabs.cl"
       }
     }
   },
