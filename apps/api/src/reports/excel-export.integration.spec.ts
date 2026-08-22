@@ -93,7 +93,7 @@ describeDatabase('exportacion a Excel (esquema real y RLS)', () => {
           contexto,
           reglas,
           new BrandingService(contexto),
-          new SupervisorService(contexto, reglas),
+          new SupervisorService(contexto, reglas, { record: async () => undefined } as never),
         );
         return operacion(servicio, runner);
       });

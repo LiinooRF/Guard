@@ -188,7 +188,7 @@ function SinAsignacion({ apiUrl, mensaje }: { apiUrl: string; mensaje?: string }
         <span className="empty-icon" aria-hidden="true">
           ✓
         </span>
-        <h2>No tienes un turno asignado</h2>
+        <h2>No tienes una ronda asignada</h2>
         <p>{mensaje ?? 'Cuando te asignen una ronda, aparecerá aquí automáticamente.'}</p>
       </section>
     </>
