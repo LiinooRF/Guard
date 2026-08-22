@@ -15,6 +15,9 @@ const PATRON_JWT = /eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+/g;
 // PATRON_JWT de pura casualidad; el refresh es randomBytes(48).base64url y
 // ningun otro patron lo toca — por eso va explicito y no solo por si acaso.
 const PATRON_COOKIE = /(connect\.sid|sentrycore_access|sentrycore_refresh)=[A-Za-z0-9._~+/=%-]+/gi;
+const PATRON_SECRETO =
+  /\b(password|passwd|contrasena|clave|secret|secreto|refresh_token|access_token|api[_-]?key|apikey|pin|otp)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;)}\]]+)/gi;
+const PATRON_RUTA_PERSONAL = /((?:\/home\/|\/Users\/)|(?:[A-Za-z]:\\Users\\))[^/\\\s"']+/g;
 const PATRON_HEX_KEY = /([0-9a-f]{32,64})/gi;
 
 export function sanitizarTexto(texto: string | null | undefined): string {
@@ -24,7 +27,9 @@ export function sanitizarTexto(texto: string | null | undefined): string {
     .replace(PATRON_BEARER, 'Bearer [REDACTED]')
     .replace(PATRON_JWT, '[JWT_REDACTED]')
     .replace(PATRON_COOKIE, '$1=[REDACTED]')
+    .replace(PATRON_SECRETO, '$1=[REDACTED]')
     .replace(PATRON_EMAIL, '[EMAIL_REDACTED]')
+    .replace(PATRON_RUTA_PERSONAL, '$1[USUARIO_REDACTED]')
     .replace(PATRON_HEX_KEY, (match) => (match.length >= 32 ? '[KEY_REDACTED]' : match))
     .trim();
 }

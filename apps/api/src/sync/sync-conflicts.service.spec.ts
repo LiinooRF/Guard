@@ -180,6 +180,31 @@ describe('SyncConflictsService — marcas atrasadas (#73)', () => {
     });
   });
 
+  it('guarda la marca atrasada con método QR y coordenadas satelitales', async () => {
+    const query = consultas([[/INSERT INTO late_scans/, [{ id: 'late-qr-1' }]]]);
+    const { servicio: srv } = servicio(query);
+
+    const atrasoQr: DatosDeAtraso = {
+      ...ATRASO,
+      method: 'qr',
+      tagUid: 'VXQ-ZE7OSHLBFVJT3CZ3C4KPAPF2Z4',
+      latitude: -33.4372,
+      longitude: -70.6506,
+      accuracyM: 8,
+      clockOffsetMs: 5000,
+    };
+
+    await expect(srv.registrarAtrasado(atrasoQr)).resolves.toBe('late-qr-1');
+
+    const [, parametros] = query.mock.calls[0] as [string, unknown[]];
+    expect(parametros[3]).toBe('VXQ-ZE7OSHLBFVJT3CZ3C4KPAPF2Z4');
+    expect(parametros[4]).toBe('qr');
+    expect(parametros[12]).toBe(5000);
+    expect(parametros[13]).toBe(-33.4372);
+    expect(parametros[14]).toBe(-70.6506);
+    expect(parametros[15]).toBe(8);
+  });
+
   it('la ronda que no es de este guardia no la decide este modulo', async () => {
     const query = consultas([[/FROM patrols/, []]]);
     const { servicio: srv } = servicio(query);

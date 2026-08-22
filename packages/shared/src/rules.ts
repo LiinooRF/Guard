@@ -1184,3 +1184,46 @@ export function pickRulesForScope(
   }
   return permitido as Partial<PatrolRules>;
 }
+
+/* ------------------------------------------------------------------ *
+ * Licenciamiento y cuotas por plan (#100, ADR 0106)
+ *
+ * Modelo de cuotas por plan:
+ *   - Starter: 15 GAM (Guardias Activos Mensuales / Máximos)
+ *   - Pro: 60 GAM
+ *   - Enterprise: 100+ GAM
+ * ------------------------------------------------------------------ */
+
+export interface SubscriptionPlanQuota {
+  key: string;
+  name: string;
+  maxActiveGuards: number;
+  maxSites: number;
+}
+
+export const PLAN_QUOTAS: Record<string, SubscriptionPlanQuota> = {
+  starter: { key: 'starter', name: 'Starter', maxActiveGuards: 15, maxSites: 5 },
+  base: { key: 'base', name: 'Starter', maxActiveGuards: 15, maxSites: 5 },
+  pro: { key: 'pro', name: 'Pro', maxActiveGuards: 60, maxSites: 25 },
+  enterprise: { key: 'enterprise', name: 'Enterprise', maxActiveGuards: 100, maxSites: 100 },
+};
+
+export const DEFAULT_PLAN_KEY = 'starter';
+
+export function resolvePlanQuota(planKey: string | null | undefined): SubscriptionPlanQuota {
+  if (!planKey) return PLAN_QUOTAS.starter!;
+  const normalized = planKey.toLowerCase();
+  return (
+    PLAN_QUOTAS[normalized] ?? {
+      key: normalized,
+      name: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+      maxActiveGuards: 15,
+      maxSites: 5,
+    }
+  );
+}
+
+export function formatQuotaExceededMessage(limit: number): string {
+  return `Has alcanzado el límite de ${limit} guardias activos para tu plan actual. Contacta a soporte para ampliar tu suscripción`;
+}
+

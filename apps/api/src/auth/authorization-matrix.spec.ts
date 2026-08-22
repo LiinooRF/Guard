@@ -89,6 +89,7 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(AuthController, 'revokeAllSessions', ['account:sessions:manage'], ALL_ROLES),
 
   secured(AdminController, 'listUsers', ['tenant:users:manage'], ['ADMIN'], true),
+  secured(AdminController, 'getQuota', ['tenant:users:manage'], ['ADMIN'], true),
   secured(AdminController, 'getAuthPolicy', ['tenant:security:manage'], ['ADMIN'], true),
   secured(AdminController, 'updateAuthPolicy', ['tenant:security:manage'], ['ADMIN'], true),
   secured(AdminController, 'securityEvents', ['tenant:security:manage'], ['ADMIN'], true),

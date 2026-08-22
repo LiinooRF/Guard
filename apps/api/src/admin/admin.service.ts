@@ -6,6 +6,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  formatQuotaExceededMessage,
+  resolvePlanQuota,
+} from '@sentrycore/shared';
 import { argon2id, hash } from 'argon2';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
@@ -18,7 +22,8 @@ import { filasDe } from '../consent/sql-result';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { CreateCheckpointDto } from './dto/create-checkpoint.dto';
 import type { CreateSiteDto } from './dto/create-site.dto';
-import type { CreateTenantUserDto, UpdateTenantUserDto } from './dto/create-user.dto';
+import type { CreateTenantUserDto, UpdateTenantUserDto } from './dto/create-tenant-user.dto';
+
 import type { ImportCheckpointRowDto } from './dto/import-checkpoints.dto';
 import type { RegisterTagDto } from './dto/register-tag.dto';
 import type { SiteBusinessHourDto, SiteHolidayDto } from './dto/site-calendar.dto';
@@ -266,12 +271,60 @@ export class AdminService {
     }));
   }
 
+  async getTenantQuota() {
+    const rows = await this.tenantContext.manager.query<Array<{
+      plan_key: string | null;
+      plan_name: string | null;
+      user_limit: number | null;
+      active_guards: string | number;
+    }>>(`
+      SELECT
+        tenant.plan_key,
+        plan.name AS plan_name,
+        plan.user_limit,
+        (
+          SELECT count(*)::int
+          FROM memberships m
+          JOIN users u ON u.id = m.user_id
+          WHERE m.tenant_id = tenant.id
+            AND m.role_key = 'GUARDIA'
+            AND u.is_active = true
+        ) AS active_guards
+      FROM tenants tenant
+      LEFT JOIN subscription_plans plan ON plan.key = tenant.plan_key
+      WHERE tenant.id = app_tenant_id()
+    `);
+    const row = rows[0];
+    const planKey = row?.plan_key ?? 'starter';
+    const planQuota = resolvePlanQuota(planKey);
+    const limit = planQuota.maxActiveGuards;
+    const activeGuardsCount = Number(row?.active_guards ?? 0);
+    return {
+      planKey,
+      planName: row?.plan_name ?? planQuota.name,
+      maxActiveGuards: limit,
+      activeGuardsCount,
+      isLimitReached: activeGuardsCount >= limit,
+      isNearLimit: limit > 0 && activeGuardsCount / limit >= 0.8,
+    };
+  }
+
+  async assertGuardQuotaAvailable(): Promise<void> {
+    const quota = await this.getTenantQuota();
+    if (quota.isLimitReached) {
+      throw new BadRequestException(formatQuotaExceededMessage(quota.maxActiveGuards));
+    }
+  }
+
   async createUser(input: CreateTenantUserDto) {
     if (!input.email && !input.username) {
       throw new BadRequestException('Debes indicar correo o nombre de usuario');
     }
     if (!input.email && !input.password) {
       throw new BadRequestException('La credencial sin correo requiere una clave inicial');
+    }
+    if (input.role === 'GUARDIA') {
+      await this.assertGuardQuotaAvailable();
     }
     const userId = randomUUID();
     const provisionalPassword = input.email
@@ -348,6 +401,23 @@ export class AdminService {
   }
 
   async setUserActive(userId: string, isActive: boolean) {
+    if (isActive) {
+      const user = await this.tenantContext.manager.query<Array<{
+        is_active: boolean;
+        role_key: string;
+      }>>(
+        `SELECT users.is_active, memberships.role_key
+         FROM users
+         JOIN memberships ON memberships.user_id = users.id
+         WHERE users.id = $1
+           AND memberships.tenant_id = app_tenant_id()`,
+        [userId],
+      );
+      if (user[0] && !user[0].is_active && user[0].role_key === 'GUARDIA') {
+        await this.assertGuardQuotaAvailable();
+      }
+    }
+
     /*
      * `filasDe` porque un UPDATE pelado devuelve [filas, rowCount] y no filas:
      * leido como arreglo mide 2 pase lo que pase, asi que el 404 de abajo no se
@@ -378,8 +448,9 @@ export class AdminService {
     const current = await this.tenantContext.manager.query<Array<{
       id: string;
       role_key: 'SUPERVISOR' | 'GUARDIA';
+      is_active: boolean;
     }>>(
-      `SELECT users.id, memberships.role_key
+      `SELECT users.id, memberships.role_key, users.is_active
        FROM users
        JOIN memberships ON memberships.user_id = users.id
        WHERE users.id = $1
@@ -390,6 +461,9 @@ export class AdminService {
     if (!user) throw new NotFoundException('Usuario administrable no encontrado');
 
     const roleChanged = user.role_key !== input.role;
+    if (roleChanged && input.role === 'GUARDIA' && user.is_active) {
+      await this.assertGuardQuotaAvailable();
+    }
     let removedSiteAssignments = 0;
     if (roleChanged && input.role === 'GUARDIA') {
       // La asignacion referencia la membresia SUPERVISOR. Se retira antes de

@@ -8,9 +8,11 @@
  */
 
 import {
+  clasificarPrecisionGps,
   construirModelo,
   esCoordenadaValida,
   firmaDelContenido,
+  formatearPrecisionGps,
   puntosDeTraza,
   type PuntoMapa,
   type TrazaMapa,
@@ -60,6 +62,24 @@ describe('esCoordenadaValida', () => {
     expect(esCoordenadaValida(91, 0)).toBe(false);
     expect(esCoordenadaValida(0, 181)).toBe(false);
     expect(esCoordenadaValida(Number.NaN, -70.6)).toBe(false);
+  });
+});
+
+describe('clasificarPrecisionGps y formatearPrecisionGps', () => {
+  it('identifica puntos sin coordenada', () => {
+    expect(clasificarPrecisionGps(null, null, 10)).toBe('sin_coordenada');
+    expect(clasificarPrecisionGps(0, 0, 10)).toBe('sin_coordenada');
+  });
+
+  it('clasifica precisión óptima vs estimada (subterránea)', () => {
+    expect(clasificarPrecisionGps(-33.45, -70.66, 15)).toBe('optimo');
+    expect(clasificarPrecisionGps(-33.45, -70.66, 85)).toBe('estimado');
+  });
+
+  it('formatea texto de precisión de manera clara', () => {
+    expect(formatearPrecisionGps(null)).toBe('Precisión no informada');
+    expect(formatearPrecisionGps(12.4)).toBe('±12 m');
+    expect(formatearPrecisionGps(85.8)).toContain('señal estimada (subterráneo');
   });
 });
 

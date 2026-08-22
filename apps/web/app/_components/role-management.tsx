@@ -258,17 +258,28 @@ function formatClp(value: number) {
   }).format(value);
 }
 
+export interface TenantQuota {
+  planKey: string;
+  planName: string;
+  maxActiveGuards: number;
+  activeGuardsCount: number;
+  isLimitReached: boolean;
+  isNearLimit: boolean;
+}
+
 export function AdminManagement({
   users,
   sites,
   authPolicy,
   securityEvents,
+  quota,
   apiUrl,
 }: {
   users: TenantUser[];
   sites: TenantSite[];
   authPolicy: AuthPolicy;
   securityEvents: SecurityEvent[];
+  quota?: TenantQuota | null;
   apiUrl: string;
 }) {
   const router = useRouter();
@@ -287,6 +298,16 @@ export function AdminManagement({
     }),
     [deferredUserQuery, userRole, users],
   );
+
+  const activeGuards = useMemo(
+    () => users.filter((u) => u.role === 'GUARDIA' && u.isActive).length,
+    [users],
+  );
+  const guardLimit = quota?.maxActiveGuards ?? 15;
+  const planName = quota?.planName ?? 'Starter';
+  const limitReached = quota?.isLimitReached ?? (activeGuards >= guardLimit);
+  const nearLimit = quota?.isNearLimit ?? (guardLimit > 0 && activeGuards / guardLimit >= 0.8);
+
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -408,7 +429,43 @@ export function AdminManagement({
       {message && <p className="management-message sticky-message" role="status">{message}</p>}
       <div className="management-grid">
         <section className="management-card">
-          <div className="card-heading"><div><span className="eyebrow">Personas</span><h2>Crear usuario</h2></div></div>
+          <div className="card-heading">
+            <div>
+              <span className="eyebrow">Personas · Plan {planName}</span>
+              <h2>Crear usuario</h2>
+            </div>
+            <span className={`status-pill ${limitReached ? 'suspended' : 'active'}`}>
+              {activeGuards}/{guardLimit} guardias
+            </span>
+          </div>
+          {limitReached ? (
+            <div className="quota-warning-box" role="alert" style={{
+              padding: '0.75rem 1rem',
+              marginBottom: '1rem',
+              borderRadius: '0.375rem',
+              background: '#fef2f2',
+              border: '1px solid #fca5a5',
+              color: '#991b1b',
+              fontSize: '0.875rem',
+            }}>
+              <strong>Límite de guardias alcanzado ({activeGuards}/{guardLimit})</strong>
+              <p style={{ margin: '0.25rem 0 0' }}>
+                Has alcanzado el límite de {guardLimit} guardias activos para tu plan actual. Contacta a soporte para ampliar tu suscripción.
+              </p>
+            </div>
+          ) : nearLimit ? (
+            <div className="quota-info-box" style={{
+              padding: '0.75rem 1rem',
+              marginBottom: '1rem',
+              borderRadius: '0.375rem',
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+              color: '#92400e',
+              fontSize: '0.875rem',
+            }}>
+              <span>Estás cerca del límite de tu plan ({activeGuards}/{guardLimit} guardias activos en Plan {planName}).</span>
+            </div>
+          ) : null}
           <form className="management-form" onSubmit={createUser}>
             <label>Nombre<input name="givenName" required /></label>
             <label>Apellido<input name="familyName" required /></label>
@@ -422,7 +479,14 @@ export function AdminManagement({
         </section>
       </div>
       <section className="management-card management-wide" id="usuarios">
-        <div className="card-heading"><div><span className="eyebrow">Accesos</span><h2>Usuarios de la empresa</h2></div><span className="status-pill">{visibleUsers.length} de {users.length}</span></div>
+        <div className="card-heading">
+          <div>
+            <span className="eyebrow">Accesos · Plan {planName} ({activeGuards}/{guardLimit} guardias activos)</span>
+            <h2>Usuarios de la empresa</h2>
+          </div>
+          <span className="status-pill">{visibleUsers.length} de {users.length}</span>
+        </div>
+
         <div className="tenant-filters user-filters">
           <label>
             <span>Buscar</span>

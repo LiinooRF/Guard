@@ -15,10 +15,30 @@ import {
   MAX_ZOOM_POR_DEFECTO,
   TILES_PUBLICOS_OSM,
   entornoDeTilesDelServidor,
+  formatearAtribucionTileLayer,
   resolverOrigenTiles,
 } from './mapa-tiles';
 
 const PROVEEDOR = 'https://tiles.midominio.cl/rondas/{z}/{x}/{y}.png';
+
+describe('formatearAtribucionTileLayer', () => {
+  it('devuelve atribución OpenStreetMap con enlace cuando no hay proveedor extra', () => {
+    const atrib = formatearAtribucionTileLayer(null);
+    expect(atrib).toContain('https://www.openstreetmap.org/copyright');
+    expect(atrib).toContain('colaboradores de OpenStreetMap');
+  });
+
+  it('concatena atribución del proveedor con la de OpenStreetMap', () => {
+    const atrib = formatearAtribucionTileLayer('© MapTiler');
+    expect(atrib).toContain('colaboradores de OpenStreetMap');
+    expect(atrib).toContain('© MapTiler');
+  });
+
+  it('no duplica si la cadena ya contiene OpenStreetMap', () => {
+    const atrib = formatearAtribucionTileLayer('© OpenStreetMap contributors');
+    expect(atrib).toBe('© OpenStreetMap contributors');
+  });
+});
 
 describe('resolverOrigenTiles', () => {
   it('usa el proveedor configurado y no muestra ningun aviso', () => {

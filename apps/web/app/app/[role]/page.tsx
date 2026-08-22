@@ -29,6 +29,7 @@ import {
   type PlatformBilling,
   type PlatformTenant,
   PlatformManagement,
+  type TenantQuota,
   type TenantSite,
   type TenantUser,
   type SecurityEvent,
@@ -185,7 +186,7 @@ export default async function RoleDashboard({
   const needsOverview = view === 'resumen' || (!isSupervisor && ['informes', 'envios'].includes(view));
   const needsSites = !isSupervisor && ['personas', 'recintos', 'envios'].includes(view);
 
-  const [overview, users, sites, sessions, authPolicy, securityEvents, routeEditorSites] = await Promise.all([
+  const [overview, users, sites, sessions, authPolicy, securityEvents, routeEditorSites, quota] = await Promise.all([
     needsOverview ? loadTenantOverview() : Promise.resolve(null),
     !isSupervisor && view === 'personas' ? loadAdminUsers() : Promise.resolve([]),
     needsSites ? loadAdminSites() : Promise.resolve([]),
@@ -193,6 +194,7 @@ export default async function RoleDashboard({
     !isSupervisor && view === 'personas' ? loadAuthPolicy() : Promise.resolve(defaultAuthPolicy()),
     !isSupervisor && view === 'personas' ? loadSecurityEvents() : Promise.resolve([]),
     isSupervisor && view === 'planificacion' ? loadRouteEditorSites() : Promise.resolve([]),
+    !isSupervisor && view === 'personas' ? loadTenantQuota() : Promise.resolve(null),
   ]);
 
   const resumen = (
@@ -293,6 +295,7 @@ export default async function RoleDashboard({
           sites={sites}
           authPolicy={authPolicy}
           securityEvents={securityEvents}
+          quota={quota}
           apiUrl={publicApiUrl()}
         />
       </div>
@@ -505,6 +508,10 @@ function loadAuthPolicy() {
 
 function loadSecurityEvents() {
   return authenticatedGet<SecurityEvent[]>('/admin/security/events', []);
+}
+
+function loadTenantQuota() {
+  return authenticatedGet<TenantQuota | null>('/admin/quota', null);
 }
 
 function defaultAuthPolicy(): AuthPolicy {

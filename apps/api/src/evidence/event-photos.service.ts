@@ -74,6 +74,8 @@ export class EventPhotosService {
     });
     await writeFile(rutaAbsoluta, archivo.buffer);
 
+    const pesoBytes = Math.max(archivo.size, archivo.buffer.length);
+    const takenAtLimpio = takenAtDevice?.trim() || null;
     const insertadas = await this.tenantContext.manager.query<
       Array<{ id: string; created_at: Date }>
     >(
@@ -87,11 +89,11 @@ export class EventPhotosService {
         eventId,
         rutaRelativa,
         archivo.mimetype,
-        archivo.size,
+        pesoBytes,
         imagen.width,
         imagen.height,
         imagen.sha256,
-        takenAtDevice ?? null,
+        takenAtLimpio,
       ],
     );
     const foto = insertadas[0];
@@ -106,11 +108,11 @@ export class EventPhotosService {
       id: foto.id,
       eventId,
       mimeType: archivo.mimetype,
-      sizeBytes: archivo.size,
+      sizeBytes: pesoBytes,
       width: imagen.width,
       height: imagen.height,
       sha256: imagen.sha256,
-      takenAtDevice: takenAtDevice ?? null,
+      takenAtDevice: takenAtLimpio,
       createdAt: foto.created_at,
     };
   }

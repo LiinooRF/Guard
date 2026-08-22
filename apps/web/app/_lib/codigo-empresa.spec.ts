@@ -99,6 +99,29 @@ describe('código de empresa fijado en el teléfono', () => {
     expect(() => olvidarCodigoEmpresa()).not.toThrow();
   });
 
+  it('valida límites de longitud de 3 a 48 caracteres', () => {
+    expect(esCodigoEmpresaValido('abc')).toBe(true);
+    expect(esCodigoEmpresaValido('ab')).toBe(false);
+    const largo48 = 'a'.repeat(48);
+    const largo49 = 'a'.repeat(49);
+    expect(esCodigoEmpresaValido(largo48)).toBe(true);
+    expect(esCodigoEmpresaValido(largo49)).toBe(false);
+  });
+
+  it('valida reglas de guiones en el slug', () => {
+    expect(esCodigoEmpresaValido('mi-empresa-123')).toBe(true);
+    expect(esCodigoEmpresaValido('-empresa')).toBe(false);
+    expect(esCodigoEmpresaValido('empresa-')).toBe(false);
+    expect(esCodigoEmpresaValido('empresa--andina')).toBe(false);
+    expect(esCodigoEmpresaValido('empresa_andina')).toBe(false);
+    expect(esCodigoEmpresaValido('empresa.cl')).toBe(false);
+  });
+
+  it('normaliza mayúsculas y espacios antes de validar y guardar', () => {
+    guardarCodigoEmpresa('   Empresa-Norte-99   ');
+    expect(leerCodigoEmpresa()).toBe('empresa-norte-99');
+  });
+
   it('en el render del servidor, sin window, tampoco explota', () => {
     delete (globalThis as { window?: unknown }).window;
     expect(leerCodigoEmpresa()).toBe('');
