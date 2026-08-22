@@ -21,6 +21,45 @@ function usuarioDe(url: string): string {
   }
   return decodeURIComponent(usuario);
 }
+
+/**
+ * Descarta una base que nacio mal, y SOLO si no hay nada que perder.
+ *
+ * Las migraciones tempranas otorgan permisos dentro de `IF EXISTS (rol)`: si el
+ * rol de la aplicacion todavia no existia —porque el volumen se creo con otro
+ * DATABASE_APP_USER— esos GRANT se saltan EN SILENCIO. La base queda a medias:
+ * las migraciones dicen haber corrido, la API levanta, y el login responde 500
+ * porque el rol no tiene EXECUTE sobre `authenticate_identity`. No hay forma de
+ * arreglarlo migrando de nuevo: para TypeORM ya esta todo aplicado.
+ *
+ * La salvaguarda es que haya CERO usuarios. Una instalacion en uso siempre
+ * tiene al menos uno, asi que esto no puede borrar datos de nadie: si encuentra
+ * usuarios, se niega y sigue de largo.
+ */
+async function reiniciarSiQuedoAMedias(adminUrl: string): Promise<void> {
+  if (process.env.REINICIAR_BASE_SI_VACIA !== 'true') return;
+
+  const client = new Client({ connectionString: adminUrl });
+  await client.connect();
+  try {
+    const hayTabla = await client.query<{ existe: boolean }>(
+      `SELECT to_regclass('public.users') IS NOT NULL AS existe`,
+    );
+    if (hayTabla.rows[0]?.existe) {
+      const usuarios = await client.query<{ total: string }>('SELECT count(*)::text AS total FROM users');
+      const total = Number(usuarios.rows[0]?.total ?? '0');
+      if (total > 0) {
+        console.log('rol-app: la base tiene %d usuario(s), NO se reinicia', total);
+        return;
+      }
+    }
+    console.log('rol-app: base sin usuarios y REINICIAR_BASE_SI_VACIA=true, se descarta el esquema');
+    await client.query('DROP SCHEMA public CASCADE');
+    await client.query('CREATE SCHEMA public');
+  } finally {
+    await client.end();
+  }
+}
 
 async function main(): Promise<void> {
   const appUrl = process.env.DATABASE_URL;
@@ -32,6 +71,8 @@ async function main(): Promise<void> {
     console.log('rol-app: sin DATABASE_URL o credencial administrativa, no hay nada que asegurar');
     return;
   }
+
+  await reiniciarSiQuedoAMedias(adminUrl);
 
   const rol = usuarioDe(appUrl);
   const clave = decodeURIComponent(new URL(appUrl).password);
