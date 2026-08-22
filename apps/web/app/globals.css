@@ -856,7 +856,15 @@ a.stats-boton { display: inline-flex; align-items: center; }
 .schedule-day article strong { font-size: .7rem; }.schedule-day article span { font-size: .68rem; font-weight: 700; }.schedule-day article small { color: var(--muted); font-size: .6rem; }.schedule-day article select { min-width: 0; width: 100%; margin-top: .25rem; }
 .schedule-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
 .schedule-forms form { display: grid; align-content: start; gap: .7rem; border: 1px solid var(--line); border-radius: .9rem; padding: 1.25rem; background: white; }.schedule-forms h3 { margin: 0; font-size: .9rem; }
-.schedule-forms button { min-height: 2.75rem; border: 0; border-radius: .65rem; padding: 0 1.25rem; font-weight: 700; font-size: .85rem; color: var(--marca-secundario-texto, #ffffff); background: var(--marca-secundario, var(--blue, #4263eb)); cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; justify-content: center; }
+.schedule-forms button { min-height: 2.75rem; border: 0; border-radius: .65rem; padding: 0 1.25rem; font-weight: 700; font-size: .85rem; color: var(--marca-secundario-texto, #ffffff); background: var(--marca-secundario, var(--blue, #4263eb)); cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; justify-content: center; }
+/* Listas de turnos vigentes y de asignaciones fijas: filas compactas con su accion al costado. */
+.schedule-turnos-vigentes, .schedule-reglas { margin-top: .35rem; border-top: 1px solid var(--line); padding-top: .7rem; }
+.schedule-turnos-vigentes h4, .schedule-reglas h4 { margin: 0 0 .5rem; font-size: .78rem; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.schedule-turnos-vigentes ul, .schedule-reglas ul { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.schedule-turnos-vigentes li, .schedule-reglas li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .65rem; font-size: .78rem; background: #fbfcfe; }
+.schedule-reglas li small { color: var(--muted); font-size: .68rem; }
+.schedule-turnos-vigentes button, .schedule-reglas button { min-height: 2.1rem; padding: 0 .8rem; font-size: .72rem; }
+.schedule-nota { margin: .6rem 0 0; color: var(--muted); font-size: .7rem; line-height: 1.45; }
 .schedule-forms button:hover:not(:disabled) { background: var(--blue-dark, #3048bc); box-shadow: 0 4px 12px rgba(66, 99, 235, 0.25); }
 .schedule-forms button:disabled { background: #cbd5e1 !important; color: #64748b !important; cursor: not-allowed !important; opacity: .85; box-shadow: none !important; }
 .schedule-forms label { display: grid; gap: .25rem; color: var(--muted); font-size: .65rem; font-weight: 750; }.schedule-forms input, .schedule-forms select { min-width: 0; min-height: 2.5rem; border: 1px solid #d9deea; border-radius: .6rem; padding: 0 .65rem; color: var(--ink); background: white; }
