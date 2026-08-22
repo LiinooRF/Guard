@@ -3,6 +3,7 @@ import { DEFAULT_PATROL_RULES, type PatrolRules } from '@sentrycore/shared';
 import { SupervisorService } from './supervisor.service';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
+import type { AuditService } from '../audit/audit.service';
 
 const SUPERVISOR = 'supervisor-id';
 
@@ -10,7 +11,11 @@ function servicio(query: jest.Mock, reglas: Partial<PatrolRules> = {}) {
   const rules = {
     effective: jest.fn().mockResolvedValue({ ...DEFAULT_PATROL_RULES, ...reglas }),
   } as unknown as RulesService;
-  return new SupervisorService({ manager: { query } } as unknown as TenantContextService, rules);
+  return new SupervisorService(
+    { manager: { query } } as unknown as TenantContextService,
+    rules,
+    { record: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService,
+  );
 }
 
 /** Math.random determinista: devuelve la secuencia dada, ciclando. */
