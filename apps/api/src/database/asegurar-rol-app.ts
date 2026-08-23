@@ -37,7 +37,15 @@ function usuarioDe(url: string): string {
  * usuarios, se niega y sigue de largo.
  */
 async function reiniciarSiQuedoAMedias(adminUrl: string): Promise<void> {
-  if (process.env.REINICIAR_BASE_SI_VACIA !== 'true') return;
+  // La segunda variable existe para bases QUE SI TIENEN datos y hay que
+  // descartar igual: staging con datos de demostracion que el seed regenera
+  // solo. El nombre es largo a proposito —quien lo escribe no puede alegar que
+  // no sabia— y en produccion se rechaza pase lo que pase.
+  const forzar = process.env.REINICIAR_BASE_AUNQUE_TENGA_DATOS === 'true';
+  if (forzar && process.env.NODE_ENV === 'production') {
+    throw new Error('REINICIAR_BASE_AUNQUE_TENGA_DATOS no se permite en produccion');
+  }
+  if (process.env.REINICIAR_BASE_SI_VACIA !== 'true' && !forzar) return;
 
   const client = new Client({ connectionString: adminUrl });
   await client.connect();
@@ -48,12 +56,16 @@ async function reiniciarSiQuedoAMedias(adminUrl: string): Promise<void> {
     if (hayTabla.rows[0]?.existe) {
       const usuarios = await client.query<{ total: string }>('SELECT count(*)::text AS total FROM users');
       const total = Number(usuarios.rows[0]?.total ?? '0');
-      if (total > 0) {
+      if (total > 0 && !forzar) {
         console.log('rol-app: la base tiene %d usuario(s), NO se reinicia', total);
         return;
       }
+      if (total > 0) {
+        console.log('rol-app: la base tiene %d usuario(s) y se pidio descartarla igual', total);
+      }
     }
-    console.log('rol-app: base sin usuarios y REINICIAR_BASE_SI_VACIA=true, se descarta el esquema');
+    console.log('rol-app: se descarta el esquema (%s)',
+      forzar ? 'REINICIAR_BASE_AUNQUE_TENGA_DATOS' : 'base sin usuarios');
     await client.query('DROP SCHEMA public CASCADE');
     await client.query('CREATE SCHEMA public');
   } finally {
