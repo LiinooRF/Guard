@@ -171,8 +171,9 @@ export class AuthController {
   @TenantScope()
   desbloquearAcceso(
     @Param('userId', ParseUUIDPipe) userId: string,
+    @Req() request: Request & { user: AuthenticatedUser },
   ): Promise<{ identidadesLiberadas: number }> {
-    return this.auth.desbloquearAcceso(userId);
+    return this.auth.desbloquearAcceso(userId, request.user.tenant_id);
   }
 
   @Post('password-reset/request')
