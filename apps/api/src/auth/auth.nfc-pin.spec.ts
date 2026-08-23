@@ -36,6 +36,7 @@ function crearServicio(query: jest.Mock, redisMock: Partial<Redis> = {}) {
     incr: jest.fn().mockResolvedValue(1),
     expire: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(0),
+    ttl: jest.fn().mockResolvedValue(-2),
     eval: jest.fn().mockImplementation((script: string) => {
       if (script.includes('identity_locked')) return 0;
       return 1;

@@ -39,6 +39,7 @@ function createGuard(metadata: Record<string, unknown>, payload = VALID_USER) {
   } as unknown as DataSource;
   const redis = {
     exists: jest.fn().mockResolvedValue(0),
+    ttl: jest.fn().mockResolvedValue(-2),
     get: jest.fn().mockResolvedValue(null),
     set: jest.fn().mockResolvedValue('OK'),
   } as unknown as Redis;

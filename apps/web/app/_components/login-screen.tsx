@@ -15,6 +15,13 @@ import {
 } from '../_lib/codigo-empresa';
 import { leerCredenciales } from './login-form-data';
 
+/**
+ * Plazo maximo para el login. Existe porque una peticion sin respuesta dejaba
+ * el boton en "Verificando…" indefinidamente: el usuario no podia distinguir
+ * "esta pensando" de "esto no va a contestar nunca".
+ */
+const TIEMPO_MAXIMO_MS = 20_000;
+
 export function LoginScreen() {
   const router = useRouter();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
@@ -111,6 +118,7 @@ export function LoginScreen() {
         const response = await fetch(`${apiUrl}/auth/nfc-login`, {
           method: 'POST',
           credentials: 'include',
+          signal: AbortSignal.timeout(TIEMPO_MAXIMO_MS),
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cardUid,
@@ -242,6 +250,10 @@ export function LoginScreen() {
         {
           method: 'POST',
           credentials: 'include',
+          // Sin plazo, una peticion que nunca contesta deja el boton en
+          // "Verificando…" para siempre y el guardia no sabe si esperar o
+          // reintentar. Veinte segundos son de sobra para un login.
+          signal: AbortSignal.timeout(TIEMPO_MAXIMO_MS),
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             identity: credenciales.identity,
@@ -282,9 +294,16 @@ export function LoginScreen() {
       }
       if (!response.ok || !result.user) {
         if (result.code === 'TENANT_CODE_MISMATCH') abrirEdicionDeCodigo();
+        // DEMASIADOS_INTENTOS tiene que llegar tal cual: decirle "revisa tus
+        // credenciales" a alguien que ya esta bloqueado lo empuja a reintentar,
+        // y cada reintento alarga el bloqueo hasta una hora. El mensaje del
+        // servidor trae los minutos que faltan.
+        const conMensajePropio =
+          result.code === 'TENANT_SUSPENDED' ||
+          result.code === 'TENANT_CODE_MISMATCH' ||
+          result.code === 'DEMASIADOS_INTENTOS';
         setErrorMessage(
-          (result.code === 'TENANT_SUSPENDED' || result.code === 'TENANT_CODE_MISMATCH') &&
-          typeof result.message === 'string'
+          conMensajePropio && typeof result.message === 'string'
             ? result.message
             : 'No pudimos iniciar sesión. Revisa tus credenciales e inténtalo nuevamente.',
         );
@@ -318,9 +337,12 @@ export function LoginScreen() {
 
       router.push(`/app/${result.user.role.toLowerCase()}`);
       router.refresh();
-    } catch {
+    } catch (error) {
+      const expiro = error instanceof DOMException && error.name === 'TimeoutError';
       setErrorMessage(
-        'No pudimos conectar con el servicio de acceso. Comprueba tu conexión e inténtalo nuevamente.',
+        expiro
+          ? 'El servidor tardó demasiado en responder. Vuelve a intentarlo.'
+          : 'No pudimos conectar con el servicio de acceso. Comprueba tu conexión e inténtalo nuevamente.',
       );
       setStatus(navigator.onLine ? 'error' : 'offline');
     }
