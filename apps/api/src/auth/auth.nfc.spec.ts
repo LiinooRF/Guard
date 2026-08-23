@@ -30,9 +30,14 @@ const DOS_EMPRESAS = [
   },
 ];
 
-function crearServicio(query: jest.Mock, redisMock: Partial<Redis> = {}) {
+function crearServicio(
+  query: jest.Mock,
+  redisMock: Partial<Redis> = {},
+  dataSourceExtra: Record<string, unknown> = {},
+) {
   const ds = {
     query,
+    ...dataSourceExtra,
   } as unknown as DataSource;
 
   const jwt = {
@@ -259,14 +264,24 @@ describe('AuthService · nfcLogin', () => {
       // limpiar tanto su correo como su nombre de usuario: si solo se limpia
       // uno, sigue sin poder entrar por la via que uso.
       const del = jest.fn().mockResolvedValue(6);
-      const query = jest.fn().mockResolvedValue([
-        { email: 'guardia@empresa.cl', username: 'guardia.turno' },
-      ]);
-      const auth = crearServicio(query, { del });
+      // La lectura va dentro de una transaccion con el tenant fijado: sin eso
+      // RLS devuelve vacio y el desbloqueo no libera nada.
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ email: 'guardia@empresa.cl', username: 'guardia.turno' }]);
+      const runner = {
+        connect: jest.fn(),
+        startTransaction: jest.fn(),
+        rollbackTransaction: jest.fn(),
+        release: jest.fn(),
+        manager: { query },
+      };
+      const auth = crearServicio(query, { del }, { createQueryRunner: () => runner });
 
-      await expect(auth.desbloquearAcceso('11111111-1111-4111-8111-111111111111')).resolves.toEqual({
-        identidadesLiberadas: 2,
-      });
+      await expect(
+        auth.desbloquearAcceso('11111111-1111-4111-8111-111111111111', 'empresa-1'),
+      ).resolves.toEqual({ identidadesLiberadas: 2 });
 
       const claves = del.mock.calls[0] as string[];
       expect(claves.filter((k) => k.startsWith('auth:login-lock:identity:'))).toHaveLength(2);

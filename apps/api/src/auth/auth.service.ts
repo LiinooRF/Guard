@@ -13,7 +13,7 @@ import { ROLES, type Role } from '@sentrycore/shared';
 import { argon2id, hash, verify } from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
-import { DataSource } from 'typeorm';
+import { DataSource, type QueryRunner } from 'typeorm';
 
 import { normalizarUidNfc } from '../admin/uid-nfc';
 import type { LoginDto } from './dto/login.dto';
@@ -478,11 +478,20 @@ export class AuthService {
    * Se limpian TODAS sus formas de identificarse —correo y nombre de usuario—
    * porque el bloqueo se guarda por lo que la persona escribio, no por su id.
    */
-  async desbloquearAcceso(userId: string): Promise<{ identidadesLiberadas: number }> {
+  async desbloquearAcceso(
+    userId: string,
+    tenantId: string | null,
+  ): Promise<{ identidadesLiberadas: number }> {
     if (this.redis.status === 'wait') await this.redis.connect();
-    const filas = await this.dataSource.query<Array<{ email: string | null; username: string | null }>>(
-      'SELECT email, username FROM users WHERE id = $1',
-      [userId],
+    // `users` tiene RLS: sin fijar el tenant en la conexion la consulta vuelve
+    // vacia y el desbloqueo dice haber hecho algo sin hacer nada. Se fija en
+    // una transaccion propia, como el resto de los servicios que leen fuera
+    // del ciclo normal de peticion.
+    const filas = await this.conTenant(tenantId, (runner) =>
+      runner.manager.query<Array<{ email: string | null; username: string | null }>>(
+        'SELECT email, username FROM users WHERE id = $1',
+        [userId],
+      ),
     );
     const identidades = [filas[0]?.email, filas[0]?.username].filter(
       (valor): valor is string => typeof valor === 'string' && valor.length > 0,
@@ -499,6 +508,30 @@ export class AuthService {
     });
     await this.redis.del(...claves);
     return { identidadesLiberadas: identidades.length };
+  }
+
+  /** Corre una lectura con el tenant fijado, para que RLS deje verla. */
+  private async conTenant<T>(
+    tenantId: string | null,
+    leer: (runner: QueryRunner) => Promise<T>,
+  ): Promise<T> {
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await runner.manager.query(
+        `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', '', true)`,
+        [tenantId ?? ''],
+      );
+      const resultado = await leer(runner);
+      await runner.rollbackTransaction();
+      return resultado;
+    } catch (error) {
+      await runner.rollbackTransaction();
+      throw error;
+    } finally {
+      await runner.release();
+    }
   }
 
   private async clearFailedLogin(identityHash: string): Promise<void> {
