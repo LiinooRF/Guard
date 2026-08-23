@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
