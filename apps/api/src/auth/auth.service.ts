@@ -63,11 +63,23 @@ interface LoginSecurityPolicy {
   maxLockSeconds: number;
 }
 
+/*
+ * Valores pensados para gente en terreno, no para una consola de banco.
+ *
+ * Los anteriores —5 intentos, bloqueo de 5 minutos que escalaba hasta 60—
+ * castigaban de mas al usuario legitimo: un guardia de noche, con guantes y un
+ * teclado de telefono, gasta cinco intentos sin ser un atacante. Y una hora
+ * afuera con el turno empezado no es una molestia, es un turno perdido.
+ *
+ * Diez intentos por cuarto de hora siguen frenando la fuerza bruta —son 40 por
+ * hora contra un espacio de claves enorme— y el bloqueo arranca en un minuto,
+ * que basta para cortar un script sin arruinarle el turno a nadie.
+ */
 const DEFAULT_LOGIN_POLICY: LoginSecurityPolicy = {
-  maxAttempts: 5,
+  maxAttempts: 10,
   windowSeconds: 15 * 60,
-  baseLockSeconds: 5 * 60,
-  maxLockSeconds: 60 * 60,
+  baseLockSeconds: 60,
+  maxLockSeconds: 15 * 60,
 };
 
 /**
