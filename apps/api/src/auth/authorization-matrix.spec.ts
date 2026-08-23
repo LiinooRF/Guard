@@ -87,6 +87,8 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(AuthController, 'sessions', ['account:sessions:manage'], ALL_ROLES),
   secured(AuthController, 'revokeSession', ['account:sessions:manage'], ALL_ROLES),
   secured(AuthController, 'revokeAllSessions', ['account:sessions:manage'], ALL_ROLES),
+  // Desbloquear a un guardia es una accion de supervision, no de cuenta propia.
+  secured(AuthController, 'desbloquearAcceso', ['shifts:manage'], ['SUPERVISOR'], true),
 
   secured(AdminController, 'listUsers', ['tenant:users:manage'], ['ADMIN'], true),
   secured(AdminController, 'getQuota', ['tenant:users:manage'], ['ADMIN'], true),

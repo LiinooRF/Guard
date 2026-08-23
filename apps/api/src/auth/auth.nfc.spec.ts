@@ -254,6 +254,25 @@ describe('AuthService · nfcLogin', () => {
       );
     });
 
+    it('desbloquearAcceso borra el candado de todas las identidades del usuario', async () => {
+      // El bloqueo se guarda por lo que la persona ESCRIBIO, asi que hay que
+      // limpiar tanto su correo como su nombre de usuario: si solo se limpia
+      // uno, sigue sin poder entrar por la via que uso.
+      const del = jest.fn().mockResolvedValue(6);
+      const query = jest.fn().mockResolvedValue([
+        { email: 'guardia@empresa.cl', username: 'guardia.turno' },
+      ]);
+      const auth = crearServicio(query, { del });
+
+      await expect(auth.desbloquearAcceso('11111111-1111-4111-8111-111111111111')).resolves.toEqual({
+        identidadesLiberadas: 2,
+      });
+
+      const claves = del.mock.calls[0] as string[];
+      expect(claves.filter((k) => k.startsWith('auth:login-lock:identity:'))).toHaveLength(2);
+      expect(claves).toHaveLength(6);
+    });
+
     it('el 429 trae codigo y segundos, no solo un texto', async () => {
       // La pantalla necesita distinguir "bloqueado" de "clave equivocada": con
       // el mensaje generico el usuario reintenta y alarga su propio castigo.

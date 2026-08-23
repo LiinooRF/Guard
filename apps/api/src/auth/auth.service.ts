@@ -455,6 +455,40 @@ export class AuthService {
     return Number(locked) > 0 ? Number(locked) : 0;
   }
 
+  /**
+   * Levanta el bloqueo por intentos fallidos de un usuario.
+   *
+   * Antes no habia forma de hacerlo: el contador solo se limpiaba con un login
+   * exitoso, y estando bloqueado no se puede iniciar sesion. Un guardia que se
+   * equivoca cinco veces al empezar el turno quedaba hasta una hora afuera con
+   * su supervisor mirando sin poder ayudarlo.
+   *
+   * Se limpian TODAS sus formas de identificarse —correo y nombre de usuario—
+   * porque el bloqueo se guarda por lo que la persona escribio, no por su id.
+   */
+  async desbloquearAcceso(userId: string): Promise<{ identidadesLiberadas: number }> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const filas = await this.dataSource.query<Array<{ email: string | null; username: string | null }>>(
+      'SELECT email, username FROM users WHERE id = $1',
+      [userId],
+    );
+    const identidades = [filas[0]?.email, filas[0]?.username].filter(
+      (valor): valor is string => typeof valor === 'string' && valor.length > 0,
+    );
+    if (identidades.length === 0) return { identidadesLiberadas: 0 };
+
+    const claves = identidades.flatMap((identidad) => {
+      const hash = createHash('sha256').update(identidad).digest('hex');
+      return [
+        `auth:login-lock:identity:${hash}`,
+        `auth:login-attempts:identity:${hash}`,
+        `auth:login-lock-level:${hash}`,
+      ];
+    });
+    await this.redis.del(...claves);
+    return { identidadesLiberadas: identidades.length };
+  }
+
   private async clearFailedLogin(identityHash: string): Promise<void> {
     await this.redis.del(
       `auth:login-attempts:identity:${identityHash}`,

@@ -7,6 +7,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Req,
   Res,
@@ -23,6 +24,7 @@ import { CompleteAuthActionDto } from './dto/complete-auth-action.dto';
 import { HandoffTokenParams } from './dto/handoff-token.dto';
 import { Public } from './decorators/public.decorator';
 import { Permissions } from './decorators/permissions.decorator';
+import { TenantScope } from './decorators/tenant-scope.decorator';
 import { LoginDto } from './dto/login.dto';
 import { NfcLoginDto } from './dto/nfc-login.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
@@ -153,6 +155,24 @@ export class AuthController {
       HttpStatus.SEE_OTHER,
       new URL('/app', this.config.getOrThrow<string>('WEB_PUBLIC_URL')).toString(),
     );
+  }
+
+  /**
+   * Levanta el bloqueo por intentos fallidos de un guardia.
+   *
+   * Va con `shifts:manage` porque quien lo necesita es el supervisor que tiene
+   * al guardia parado en la puerta: el bloqueo dura hasta una hora y hasta hoy
+   * no habia forma de acortarlo. Queda auditado por el interceptor, como el
+   * resto de las acciones del supervisor.
+   */
+  @Post('desbloquear/:userId')
+  @HttpCode(HttpStatus.OK)
+  @Permissions('shifts:manage')
+  @TenantScope()
+  desbloquearAcceso(
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ): Promise<{ identidadesLiberadas: number }> {
+    return this.auth.desbloquearAcceso(userId);
   }
 
   @Post('password-reset/request')
