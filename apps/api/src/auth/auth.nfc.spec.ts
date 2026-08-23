@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -46,6 +46,7 @@ function crearServicio(query: jest.Mock, redisMock: Partial<Redis> = {}) {
     incr: jest.fn().mockResolvedValue(1),
     expire: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(0),
+    ttl: jest.fn().mockResolvedValue(-2),
     eval: jest.fn().mockImplementation((script: string) => {
       if (script.includes('identity_locked')) return 0;
       return 1;
@@ -231,22 +232,62 @@ describe('AuthService · nfcLogin', () => {
     it('rechaza con 429 si la identidad o IP ya está bloqueada', async () => {
       const auth = crearServicio(jest.fn().mockResolvedValue([]), {
         exists: jest.fn().mockResolvedValue(1),
+        ttl: jest.fn().mockResolvedValue(300),
       });
 
+      // El mensaje dice los MINUTOS que faltan: quien esta bloqueado necesita
+      // saber si espera o llama al supervisor.
       await expect(auth.nfcLogin({ cardUid: '04A1B2C3D4' })).rejects.toThrow(
-        new HttpException('Demasiados intentos. Espera antes de volver a intentarlo.', HttpStatus.TOO_MANY_REQUESTS),
+        'Demasiados intentos. Espera 5 minutos antes de volver a intentarlo.',
       );
     });
 
     it('bloquea tras exceder los intentos fallidos permitidos', async () => {
       const query = jest.fn().mockResolvedValue([]);
       const auth = crearServicio(query, {
-        eval: jest.fn().mockResolvedValue(1), // Lock triggered
+        // el script devuelve los segundos de bloqueo, no un booleano
+        eval: jest.fn().mockResolvedValue(600),
       });
 
       await expect(auth.nfcLogin({ cardUid: '04A1B2C3D4' })).rejects.toThrow(
-        new HttpException('Demasiados intentos. Espera antes de volver a intentarlo.', HttpStatus.TOO_MANY_REQUESTS),
+        'Demasiados intentos. Espera 10 minutos antes de volver a intentarlo.',
       );
+    });
+
+    it('desbloquearAcceso borra el candado de todas las identidades del usuario', async () => {
+      // El bloqueo se guarda por lo que la persona ESCRIBIO, asi que hay que
+      // limpiar tanto su correo como su nombre de usuario: si solo se limpia
+      // uno, sigue sin poder entrar por la via que uso.
+      const del = jest.fn().mockResolvedValue(6);
+      const query = jest.fn().mockResolvedValue([
+        { email: 'guardia@empresa.cl', username: 'guardia.turno' },
+      ]);
+      const auth = crearServicio(query, { del });
+
+      await expect(auth.desbloquearAcceso('11111111-1111-4111-8111-111111111111')).resolves.toEqual({
+        identidadesLiberadas: 2,
+      });
+
+      const claves = del.mock.calls[0] as string[];
+      expect(claves.filter((k) => k.startsWith('auth:login-lock:identity:'))).toHaveLength(2);
+      expect(claves).toHaveLength(6);
+    });
+
+    it('el 429 trae codigo y segundos, no solo un texto', async () => {
+      // La pantalla necesita distinguir "bloqueado" de "clave equivocada": con
+      // el mensaje generico el usuario reintenta y alarga su propio castigo.
+      const auth = crearServicio(jest.fn().mockResolvedValue([]), {
+        exists: jest.fn().mockResolvedValue(1),
+        ttl: jest.fn().mockResolvedValue(1800),
+      });
+
+      await expect(auth.nfcLogin({ cardUid: '04A1B2C3D4' })).rejects.toMatchObject({
+        response: {
+          code: 'DEMASIADOS_INTENTOS',
+          retryAfterSeconds: 1800,
+          message: 'Demasiados intentos. Espera 30 minutos antes de volver a intentarlo.',
+        },
+      });
     });
 
     it('limpia los intentos fallidos al tener éxito', async () => {

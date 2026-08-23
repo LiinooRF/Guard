@@ -70,6 +70,19 @@ const DEFAULT_LOGIN_POLICY: LoginSecurityPolicy = {
   maxLockSeconds: 60 * 60,
 };
 
+/**
+ * Redacta la espera en minutos: "espera 43 minutos" le dice al guardia si puede
+ * quedarse esperando o tiene que llamar a su supervisor. "Espera antes de
+ * volver a intentarlo" no le dice nada.
+ */
+function mensajeDeBloqueo(segundos: number): string {
+  if (segundos <= 90) {
+    return 'Demasiados intentos. Espera un minuto antes de volver a intentarlo.';
+  }
+  const minutos = Math.ceil(segundos / 60);
+  return `Demasiados intentos. Espera ${minutos} minutos antes de volver a intentarlo.`;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -182,9 +195,15 @@ export class AuthService {
           [rows[0].tenant_id, rows[0].user_id, identityHash],
         );
       }
-      if (locked) {
+      if (locked > 0) {
         throw new HttpException(
-          'Demasiados intentos. Espera antes de volver a intentarlo.',
+          {
+            // El codigo permite a la pantalla distinguir esto de una clave
+            // equivocada: son dos situaciones distintas y el consejo tambien.
+            code: 'DEMASIADOS_INTENTOS',
+            message: mensajeDeBloqueo(locked),
+            retryAfterSeconds: locked,
+          },
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
@@ -255,9 +274,15 @@ export class AuthService {
 
     if (guardRows.length === 0) {
       const locked = await this.recordFailedLogin(identityHash, ipHash, policy);
-      if (locked) {
+      if (locked > 0) {
         throw new HttpException(
-          'Demasiados intentos. Espera antes de volver a intentarlo.',
+          {
+            // El codigo permite a la pantalla distinguir esto de una clave
+            // equivocada: son dos situaciones distintas y el consejo tambien.
+            code: 'DEMASIADOS_INTENTOS',
+            message: mensajeDeBloqueo(locked),
+            retryAfterSeconds: locked,
+          },
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
@@ -291,9 +316,13 @@ export class AuthService {
       const coincide = await verify(pinHash, input.pin).catch(() => false);
       if (!coincide) {
         const locked = await this.recordFailedLogin(identityHash, ipHash, policy);
-        if (locked) {
+        if (locked > 0) {
           throw new HttpException(
-            'Demasiados intentos. Espera antes de volver a intentarlo.',
+            {
+              code: 'DEMASIADOS_INTENTOS',
+              message: mensajeDeBloqueo(locked),
+              retryAfterSeconds: locked,
+            },
             HttpStatus.TOO_MANY_REQUESTS,
           );
         }
@@ -344,23 +373,36 @@ export class AuthService {
 
   private async assertLoginNotLocked(identityHash: string, ipHash: string): Promise<void> {
     if (this.redis.status === 'wait') await this.redis.connect();
-    const locked = await this.redis.exists(
-      `auth:login-lock:identity:${identityHash}`,
-      `auth:login-lock:ip:${ipHash}`,
-    );
-    if (locked) {
+    // TTL en vez de EXISTS: cuesta lo mismo y permite decir cuantos minutos
+    // faltan. Un bloqueo sin plazo es indistinguible de una cuenta rota.
+    const [porIdentidad, porIp] = await Promise.all([
+      this.redis.ttl(`auth:login-lock:identity:${identityHash}`),
+      this.redis.ttl(`auth:login-lock:ip:${ipHash}`),
+    ]);
+    const restante = Math.max(porIdentidad, porIp);
+    if (restante > 0) {
       throw new HttpException(
-        'Demasiados intentos. Espera antes de volver a intentarlo.',
+        {
+          code: 'DEMASIADOS_INTENTOS',
+          message: mensajeDeBloqueo(restante),
+          retryAfterSeconds: restante,
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
   }
 
+  /**
+   * Devuelve los SEGUNDOS que dura el bloqueo, o 0 si todavia no hay bloqueo.
+   * Antes devolvia un booleano y el usuario recibia "revisa tus credenciales"
+   * estando bloqueado: seguia probando, y cada intento escalaba el castigo
+   * hasta una hora. Saber cuanto falta es lo que corta ese circulo.
+   */
   private async recordFailedLogin(
     identityHash: string,
     ipHash: string,
     policy: LoginSecurityPolicy,
-  ): Promise<boolean> {
+  ): Promise<number> {
     const now = Date.now();
     const member = `${now}:${randomUUID()}`;
     const script = `
@@ -389,7 +431,10 @@ export class AuthService {
         redis.call('SET', KEYS[4], '1', 'EX', ARGV[5])
         redis.call('DEL', KEYS[2])
       end
-      return identity_locked
+      if identity_locked == 1 then
+        return redis.call('TTL', KEYS[3])
+      end
+      return 0
     `;
     const locked = await this.redis.eval(
       script,
@@ -406,7 +451,42 @@ export class AuthService {
       policy.baseLockSeconds,
       policy.maxLockSeconds,
     );
-    return Number(locked) === 1;
+    // El script devuelve los segundos que faltan, o 0 si no quedo bloqueado.
+    return Number(locked) > 0 ? Number(locked) : 0;
+  }
+
+  /**
+   * Levanta el bloqueo por intentos fallidos de un usuario.
+   *
+   * Antes no habia forma de hacerlo: el contador solo se limpiaba con un login
+   * exitoso, y estando bloqueado no se puede iniciar sesion. Un guardia que se
+   * equivoca cinco veces al empezar el turno quedaba hasta una hora afuera con
+   * su supervisor mirando sin poder ayudarlo.
+   *
+   * Se limpian TODAS sus formas de identificarse —correo y nombre de usuario—
+   * porque el bloqueo se guarda por lo que la persona escribio, no por su id.
+   */
+  async desbloquearAcceso(userId: string): Promise<{ identidadesLiberadas: number }> {
+    if (this.redis.status === 'wait') await this.redis.connect();
+    const filas = await this.dataSource.query<Array<{ email: string | null; username: string | null }>>(
+      'SELECT email, username FROM users WHERE id = $1',
+      [userId],
+    );
+    const identidades = [filas[0]?.email, filas[0]?.username].filter(
+      (valor): valor is string => typeof valor === 'string' && valor.length > 0,
+    );
+    if (identidades.length === 0) return { identidadesLiberadas: 0 };
+
+    const claves = identidades.flatMap((identidad) => {
+      const hash = createHash('sha256').update(identidad).digest('hex');
+      return [
+        `auth:login-lock:identity:${hash}`,
+        `auth:login-attempts:identity:${hash}`,
+        `auth:login-lock-level:${hash}`,
+      ];
+    });
+    await this.redis.del(...claves);
+    return { identidadesLiberadas: identidades.length };
   }
 
   private async clearFailedLogin(identityHash: string): Promise<void> {
