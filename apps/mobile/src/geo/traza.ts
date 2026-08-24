@@ -43,8 +43,15 @@ let midiendo = false;
  */
 const MS_ESPERA_FIX = 12_000;
 
-/** Un fix viejo deja de ser verdad: mas alla de esto, mejor un hueco honesto. */
-const MS_MAX_FIX_CONOCIDO = 10 * 60_000;
+/**
+ * Un fix viejo deja de ser verdad: mas alla de esto, mejor un hueco honesto.
+ *
+ * Eran 10 minutos y era demasiado: caminando, en diez minutos un guardia cruza
+ * medio recinto, asi que ese punto viejo dibujaba en el informe un salto que
+ * nunca ocurrio. Dos minutos acotan el error a la distancia que se recorre en
+ * ese rato, y si no hay nada fresco el hueco se ve y se explica solo.
+ */
+const MS_MAX_FIX_CONOCIDO = 2 * 60_000;
 
 async function medir(emitir: (punto: PuntoDeTrazaPayload) => void): Promise<void> {
   // Un tick que encuentra al anterior todavia midiendo se salta: dos fixes en
@@ -58,9 +65,24 @@ async function medir(emitir: (punto: PuntoDeTrazaPayload) => void): Promise<void
     // hueco: track-summary lo mide y el proximo tick reintenta.
     const fresco = await Promise.race([
       Location.getCurrentPositionAsync({
-        // Balanced y no High: la traza es contexto ("por donde va"), no
-        // evidencia. La evidencia es el escaneo, que si usa High en su instante.
-        accuracy: Location.Accuracy.Balanced,
+        /*
+         * High y no Balanced.
+         *
+         * El razonamiento anterior era que la traza es contexto y la evidencia
+         * es el escaneo. Se sostiene en abstracto, pero choca con lo que pasa
+         * despues: ese trazo termina impreso en el informe que recibe el
+         * cliente, y ahi deja de ser contexto.
+         *
+         * Medido sobre un recorrido real en Janssen con Balanced: precision
+         * mediana de 66 m, picos de 215, y saltos de hasta 131 m entre puntos
+         * consecutivos. Balanced resuelve por antenas y wifi, asi que el
+         * guardia camina derecho y el informe dibuja un zigzag.
+         *
+         * High enciende el GPS. Con un fix por minuto el costo en bateria es
+         * moderado —se prende un instante y se apaga— y a cambio el recorrido
+         * pasa de decenas de metros de error a unos pocos.
+         */
+        accuracy: Location.Accuracy.High,
       }),
       new Promise<null>((resolver) => {
         setTimeout(() => resolver(null), MS_ESPERA_FIX);
