@@ -141,7 +141,10 @@ export interface PuenteGuardia {
    * degrada en silencio, igual que el QR en su dia.
    */
   soportaTraza: boolean;
-  iniciarTraza: (intervalSeconds: number) => void;
+  iniciarTraza: (
+    intervalSeconds: number,
+    destino?: { patrolId: string; apiBaseUrl: string },
+  ) => void;
   detenerTraza: () => void;
   alPuntoDeTraza: (fn: (punto: PuntoDeTrazaPayload) => void) => () => void;
   infoEquipo?: string;

@@ -97,7 +97,10 @@ export function useTrazaEnVivo({
           sampling?: { intervalSeconds?: number };
         };
         if (!politica.tracksLocation || cancelado) return;
-        puenteEstable.iniciarTraza(politica.sampling?.intervalSeconds ?? 60);
+        puenteEstable.iniciarTraza(politica.sampling?.intervalSeconds ?? 60, {
+          patrolId,
+          apiBaseUrl: apiUrl,
+        });
       } catch {
         // Sin politica no hay traza. La ronda sigue: la traza es contexto,
         // nunca condicion.
