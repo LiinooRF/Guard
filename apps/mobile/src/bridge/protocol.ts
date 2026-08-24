@@ -188,6 +188,16 @@ export interface RegistrarFirmaPayload {
 export interface IniciarTrazaPayload {
   /** Cada cuantos segundos. Sale del plan del servidor (GET /geo/policy). */
   readonly intervalSeconds: number;
+  /**
+   * A donde sube el shell las posiciones que toma con la pantalla apagada.
+   *
+   * OPCIONALES a proposito: un portal viejo no los manda y el shell se queda
+   * con el muestreo de primer plano de siempre. Solo cuando llegan los dos, el
+   * shell puede seguir midiendo en segundo plano — y ahi los necesita, porque
+   * en ese momento el WebView puede estar dormido y no hay quien suba nada.
+   */
+  readonly patrolId?: string;
+  readonly apiBaseUrl?: string;
 }
 
 /**
@@ -590,7 +600,9 @@ function payloadPortalValido(type: string, payload: unknown): boolean {
     // conocia. El emisor entero quedaba muerto y no habia error que lo
     // delatara. Agregar un tipo al protocolo son DOS ediciones, no una.
     case 'track.start':
-      return clavesPermitidas(payload, ['intervalSeconds']) &&
+      return clavesPermitidas(payload, ['intervalSeconds', 'patrolId', 'apiBaseUrl']) &&
+        (payload['patrolId'] === undefined || typeof payload['patrolId'] === 'string') &&
+        (payload['apiBaseUrl'] === undefined || typeof payload['apiBaseUrl'] === 'string') &&
         Number.isInteger(payload['intervalSeconds']) &&
         Number(payload['intervalSeconds']) >= 1 &&
         Number(payload['intervalSeconds']) <= 3_600;
