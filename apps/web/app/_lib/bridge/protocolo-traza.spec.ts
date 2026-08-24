@@ -1,4 +1,4 @@
-import { armarSobre, leerMensajeShell, TIPOS_SHELL } from './protocol';
+import { armarSobre, leerMensajePortal, leerMensajeShell, TIPOS_SHELL } from './protocol';
 
 /**
  * `track.point` tiene que SOBREVIVIR al validador (#280).
@@ -75,5 +75,45 @@ describe('track.point atraviesa el validador del portal (#280)', () => {
       'error', 'hello.ack', 'ready', 'incompatible',
     ];
     expect(sinValidacion.filter((t) => !esperados.includes(t))).toEqual([]);
+  });
+});
+
+describe('track.start acepta destino para el segundo plano', () => {
+  it('deja pasar el mensaje CON patrolId y apiBaseUrl', () => {
+    const sobre = armarSobre(
+      'track.start',
+      {
+        intervalSeconds: 60,
+        patrolId: 'f786680e-0000-4000-8000-000000000001',
+        apiBaseUrl: 'https://sentrycore.voxtilabs.cl/api',
+      },
+      { prefijo: 'web' },
+    );
+
+    const leido = leerMensajePortal(JSON.stringify(sobre));
+
+    expect(leido.ok).toBe(true);
+  });
+
+  it('sigue dejando pasar el mensaje SIN destino, como lo manda un portal viejo', () => {
+    // Esto es lo que garantiza que una app ya instalada no se rompa: el shell
+    // recibe lo de siempre y se queda con el muestreo de pantalla encendida.
+    const sobre = armarSobre('track.start', { intervalSeconds: 60 }, { prefijo: 'web' });
+
+    const leido = leerMensajePortal(JSON.stringify(sobre));
+
+    expect(leido.ok).toBe(true);
+  });
+
+  it('rechaza un destino que no es texto', () => {
+    const sobre = armarSobre(
+      'track.start',
+      { intervalSeconds: 60, patrolId: 42, apiBaseUrl: 'https://x.cl/api' },
+      { prefijo: 'web' },
+    );
+
+    const leido = leerMensajePortal(JSON.stringify(sobre));
+
+    expect(leido.ok).toBe(false);
   });
 });

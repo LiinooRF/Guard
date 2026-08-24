@@ -1,6 +1,10 @@
 import * as Location from 'expo-location';
 
 import type { IniciarTrazaPayload, PuntoDeTrazaPayload } from '../bridge/protocol';
+import {
+  detenerTrazaEnSegundoPlano,
+  iniciarTrazaEnSegundoPlano,
+} from './traza-fondo';
 
 /**
  * El muestreador de la traza en vivo (#280) — la mitad NATIVA del emisor que
@@ -123,6 +127,21 @@ export async function iniciarTraza(
   // el mapa cuando la ronda parte no debe esperar un minuto para ver algo.
   void medir(emitir);
   temporizador = setInterval(() => void medir(emitir), intervaloMs);
+
+  /*
+   * Y en paralelo, el muestreo del sistema para cuando la pantalla se apague.
+   * Los dos a la vez a proposito: el de arriba es el que se sabe que funciona
+   * y no se toca, este agrega los tramos que antes se perdian. Si ambos toman
+   * una posicion en el mismo instante el servidor deduplica por `recordedAt`,
+   * asi que el peor caso son puntos de mas, nunca de menos.
+   *
+   * Sin permiso de segundo plano —o si el portal no mando destino— esto no
+   * hace nada y todo sigue como antes.
+   */
+  void iniciarTrazaEnSegundoPlano(peticion.intervalSeconds, {
+    patrolId: peticion.patrolId,
+    apiBaseUrl: peticion.apiBaseUrl,
+  });
 }
 
 export function detenerTraza(): void {
@@ -130,4 +149,8 @@ export function detenerTraza(): void {
     clearInterval(temporizador);
     temporizador = undefined;
   }
+  // El servicio del sistema tambien: si queda vivo despues de cerrar la ronda,
+  // la notificacion sigue puesta y se estaria midiendo fuera del turno — que
+  // es justo lo que el aviso legal promete que no pasa.
+  void detenerTrazaEnSegundoPlano();
 }
