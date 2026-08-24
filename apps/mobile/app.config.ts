@@ -292,9 +292,22 @@ const config: ExpoConfig = {
      *   una regla de producto, no una preferencia — si el guardia puede elegir
      *   un archivo, fotografia la puerta cerrada una vez y reusa esa imagen
      *   todo el mes.
-     * - RECEIVE_BOOT_COMPLETED: no arrancamos nada al encender el telefono. Un
-     *   servicio de ubicacion que revive solo al bootear es exactamente el
-     *   patron que Play marca como rastreo fuera de turno.
+     * RECEIVE_BOOT_COMPLETED ya NO se bloquea, y conviene explicar por que sin
+     * perder la regla que lo bloqueaba.
+     *
+     * La regla sigue en pie: no arrancamos nada al encender el telefono, porque
+     * un servicio de ubicacion que revive solo al bootear es el patron que Play
+     * marca como rastreo fuera de turno. Lo que cambio es que ahora sabemos que
+     * el permiso y ese comportamiento son cosas distintas.
+     *
+     * expo-task-manager programa la tarea de la traza como un job PERSISTENTE,
+     * y Android rechaza esos jobs sin este permiso: sin el, la app se cae con
+     * `IllegalArgumentException: Requested job cannot be persisted` en cuanto
+     * empieza una ronda. Se vio en el telefono real.
+     *
+     * El arranque automatico se corta donde de verdad vive: en el manifiesto se
+     * redeclara `TaskBroadcastReceiver` SIN el filtro de BOOT_COMPLETED. Queda
+     * el permiso que el job necesita y no queda forma de revivir al bootear.
      */
     blockedPermissions: [
       'android.permission.RECORD_AUDIO',
@@ -302,7 +315,6 @@ const config: ExpoConfig = {
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.READ_MEDIA_IMAGES',
       'android.permission.READ_MEDIA_VIDEO',
-      'android.permission.RECEIVE_BOOT_COMPLETED',
     ],
 
     // El gesto de retroceso predictivo saca al guardia del WebView sin avisar y

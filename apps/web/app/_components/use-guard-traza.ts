@@ -99,7 +99,13 @@ export function useTrazaEnVivo({
         if (!politica.tracksLocation || cancelado) return;
         puenteEstable.iniciarTraza(politica.sampling?.intervalSeconds ?? 60, {
           patrolId,
-          apiBaseUrl: apiUrl,
+          /*
+           * ABSOLUTA. `apiUrl` suele ser "/api", que dentro del portal resuelve
+           * contra su propio origen. La tarea del shell corre fuera de la pagina:
+           * ahi una ruta relativa no resuelve contra nada y el envio muere con
+           * "cannot be cast to java.net.URL".
+           */
+          apiBaseUrl: new URL(apiUrl, window.location.origin).toString(),
         });
       } catch {
         // Sin politica no hay traza. La ronda sigue: la traza es contexto,
