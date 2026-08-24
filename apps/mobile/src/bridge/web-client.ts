@@ -133,7 +133,10 @@ export interface ClientePuente {
    * `track.start` y `track.stop` van sin respuesta (el muestreo es un grifo,
    * no una pregunta); cada posicion llega suelta a `alPuntoDeTraza`.
    */
-  readonly iniciarTraza: (intervalSeconds: number) => void;
+  readonly iniciarTraza: (
+    intervalSeconds: number,
+    destino?: { patrolId: string; apiBaseUrl: string },
+  ) => void;
   readonly detenerTraza: () => void;
   readonly alPuntoDeTraza: (fn: (punto: PuntoDeTrazaPayload) => void) => () => void;
   readonly desconectar: () => void;
@@ -395,10 +398,20 @@ export function crearClientePuente(): ClientePuente {
       return () => oyentesConexion.delete(fn);
     },
 
-    iniciarTraza: (intervalSeconds) => {
+    iniciarTraza: (intervalSeconds, destino) => {
       const puente = asegurarSuscripcion();
       if (puente === undefined) return;
-      puente.enviar(JSON.stringify(armarSobre('track.start', { intervalSeconds }, { prefijo: 'web' })));
+      // El destino va solo si esta completo: media direccion no sirve para
+      // subir nada y el shell tendria que adivinar.
+      const conDestino =
+        destino?.patrolId && destino?.apiBaseUrl
+          ? { patrolId: destino.patrolId, apiBaseUrl: destino.apiBaseUrl }
+          : {};
+      puente.enviar(
+        JSON.stringify(
+          armarSobre('track.start', { intervalSeconds, ...conDestino }, { prefijo: 'web' }),
+        ),
+      );
     },
 
     detenerTraza: () => {
