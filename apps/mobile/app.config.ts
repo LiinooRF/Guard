@@ -210,6 +210,12 @@ const config: ExpoConfig = {
       // NFC pegada y tocarla es lo que acredita la presencia fisica del
       // guardia. La Web NFC API (NDEFReader) NO esta expuesta dentro del
       // WebView de Android, asi que el escaneo es nativo si o si.
+      // RECEIVE_BOOT_COMPLETED — lo exige el job persistente con el que
+      // expo-task-manager registra la traza: sin el, Android rechaza el job y la
+      // app se cae al iniciar la ronda. NO habilita arrancar al bootear: el
+      // plugin local le quita ese filtro al receptor de expo.
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+
       'android.permission.NFC',
 
       // CAMERA — foto del estado de la puerta en los accesos criticos, y
