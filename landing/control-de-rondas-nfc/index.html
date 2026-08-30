@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="es-CL" data-mode="dia">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de rondas con NFC: cómo funciona y qué se necesita</title>
+<meta name="description" content="Cómo funciona el control de rondas con etiquetas NFC, qué equipos hacen falta, en qué se diferencia del QR y del papel, y qué huecos hay que cerrar.">
+<link rel="canonical" href="https://sentry.voxtilabs.cl/control-de-rondas-nfc/">
+<link rel="alternate" hreflang="es-cl" href="https://sentry.voxtilabs.cl/control-de-rondas-nfc/">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<meta name="author" content="VoxTi Labs">
+<meta name="geo.region" content="CL">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0D14" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="../favicon.ico" sizes="any">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="SentryCore">
+<meta property="og:locale" content="es_CL">
+<meta property="og:url" content="https://sentry.voxtilabs.cl/control-de-rondas-nfc/">
+<meta property="og:title" content="Control de rondas con NFC: cómo funciona y qué se necesita">
+<meta property="og:description" content="Cómo funciona el control de rondas con etiquetas NFC, qué equipos hacen falta, en qué se diferencia del QR y del papel, y qué huecos hay que cerrar.">
+<meta property="og:image" content="https://sentry.voxtilabs.cl/img/og-sentrycore.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../pulso.css">
+<style>
+.articulo { padding:64px 0 96px; }
+.articulo h1 { font-size:clamp(34px, 5vw, 48px); margin-bottom:24px; }
+.articulo h2 { font-size:27px; margin:48px 0 16px; }
+.articulo h3 { margin:32px 0 8px; }
+.articulo ul { margin:0 0 16px; padding-left:20px; max-width:66ch; }
+.articulo li { margin-bottom:8px; }
+.respuesta {
+  background:var(--bg-raised); border:1px solid var(--border); border-left:3px solid var(--action);
+  border-radius:22px; padding:24px 32px; margin:0 0 32px;
+}
+.respuesta p { margin:0; color:var(--text); font-size:18px; }
+.migas { font-size:13px; color:var(--text-muted); margin-bottom:24px; }
+.migas a { color:var(--text-muted); }
+.fuente { font-size:14px; color:var(--text-muted); }
+.actualizado {
+  font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--text-muted);
+  margin-bottom:16px; display:block;
+}
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "https://sentry.voxtilabs.cl/control-de-rondas-nfc/#articulo",
+      "headline": "Control de rondas con NFC: cómo funciona y qué se necesita",
+      "description": "Cómo funciona el control de rondas con etiquetas NFC, qué equipos hacen falta, en qué se diferencia del QR y del papel, y qué huecos hay que cerrar.",
+      "inLanguage": "es-CL",
+      "datePublished": "2026-08-30",
+      "dateModified": "2026-08-30",
+      "author": {
+        "@type": "Organization",
+        "name": "VoxTi Labs",
+        "url": "https://sentry.voxtilabs.cl/"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "VoxTi Labs",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://sentry.voxtilabs.cl/icon.svg"
+        }
+      },
+      "mainEntityOfPage": "https://sentry.voxtilabs.cl/control-de-rondas-nfc/",
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "SentryCore",
+        "url": "https://sentry.voxtilabs.cl/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "SentryCore",
+          "item": "https://sentry.voxtilabs.cl/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Control de rondas con NFC",
+          "item": "https://sentry.voxtilabs.cl/control-de-rondas-nfc/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://sentry.voxtilabs.cl/control-de-rondas-nfc/#preguntas",
+      "inLanguage": "es-CL",
+      "dateModified": "2026-08-30",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Cómo funciona un control de rondas con NFC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Se pega una etiqueta NFC en cada punto de control del recinto. El guardia acerca su teléfono a la etiqueta y el sistema registra qué punto marcó, a qué hora y en qué ronda. Como la etiqueta está físicamente en el lugar, marcarla exige haber llegado hasta ahí: eso es lo que convierte el registro en evidencia y no en una declaración."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué se necesita para implementar rondas con NFC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Un teléfono Android con NFC por guardia, etiquetas NFC estándar —las de tipo NTAG213 o superiores sirven— y una aplicación que lea la etiqueta y la asocie al punto de control. No hacen falta lectores propietarios ni un servidor instalado en el recinto. El supervisor trabaja desde el navegador."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cuánto cuesta una etiqueta NFC para control de rondas?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Las etiquetas NFC adhesivas o de PVC son insumos de bajo costo por unidad, y se compran en cantidad según los puntos de control de cada recinto. El costo relevante del proyecto no son las etiquetas: son las horas de instalar los puntos y dejarlos bien mapeados. Conviene pedir la cotización con el número de puntos por recinto, no por guardia."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué diferencia hay entre NFC, QR y código de barras para marcar puntos?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "El NFC exige proximidad física de centímetros y no se puede fotografiar: es el más difícil de falsear. El QR se puede fotografiar y volver a mostrar desde otra pantalla, aunque sirve bien como respaldo si una etiqueta falla. El código de barras tiene el mismo problema del QR y además se borra con el tiempo a la intemperie."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Funciona el control de rondas NFC sin internet?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. La lectura de la etiqueta es local, entre el teléfono y la etiqueta: no necesita conexión. Lo que sí necesita conexión es enviar el registro al servidor, y un sistema bien hecho lo guarda en el teléfono y lo sube después, conservando la hora en que realmente ocurrió la marca."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Se puede hacer trampa con las etiquetas NFC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Se puede intentar. El intento clásico es despegar la etiqueta y llevársela, por eso conviene instalarlas de forma que se destruyan al retirarlas y revisar el mapa de recorrido: una ronda completa marcada desde el mismo punto del mapa se ve de inmediato. Es la combinación de NFC más recorrido GPS la que cierra el hueco, no cada uno por separado."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Sirve NFC para condominios y edificios, o solo para grandes recintos?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sirve igual, y a veces mejor: un condominio tiene pocos puntos —portería, estacionamientos, bodegas, azotea— y la instalación se hace en una tarde. El comité de administración suele querer exactamente lo que este sistema entrega: saber si el guardia recorrió de noche, sin depender de lo que diga el turno saliente."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<div class="barra">
+  <div class="envoltorio">
+    <div class="producto"><a href="../" style="color:inherit; text-decoration:none">SentryCore <em>· VoxTi Labs</em></a></div>
+    <button class="interruptor" id="cambiarModo">Modo noche</button>
+  </div>
+</div>
+
+<main class="articulo">
+  <div class="envoltorio">
+    <nav class="migas" aria-label="Ruta"><a href="../">SentryCore</a> · Control de rondas con NFC</nav>
+    <span class="actualizado">Actualizado el 30 de agosto de 2026</span>
+    <h1>Control de rondas con NFC: cómo funciona y qué se necesita</h1>
+
+    <div class="respuesta">
+      <p>Se pega una etiqueta NFC en cada punto de control y el guardia la marca acercando el
+      teléfono. Como la etiqueta está en el lugar, marcarla <strong>exige haber estado ahí</strong>.
+      Eso es todo el truco: el registro deja de ser una declaración del guardia y pasa a ser
+      evidencia de que el recorrido ocurrió.</p>
+    </div>
+
+    <p>Esta página explica cómo funciona el control de rondas con NFC, qué hace falta para
+    implementarlo, en qué se diferencia del QR y del papel, y dónde están los huecos que hay
+    que cerrar.</p>
+
+    <h2>Cómo funciona, paso a paso</h2>
+    <ul>
+      <li><strong>Se instalan los puntos.</strong> Una etiqueta NFC por punto de control, pegada
+      donde el guardia debe llegar: portón, bodega, azotea, sala de máquinas.</li>
+      <li><strong>Se arma el recorrido.</strong> El supervisor ordena los puntos, define cuánto
+      debería demorar la ronda y con qué tolerancia, y si el orden es libre o estricto.</li>
+      <li><strong>El guardia marca.</strong> Acerca el teléfono a cada etiqueta. La app le dice
+      qué punto toca y cuántos van.</li>
+      <li><strong>El sistema registra.</strong> Punto, hora, ronda y —si está activado— la
+      posición GPS del recorrido.</li>
+      <li><strong>El informe sale solo.</strong> Puntos marcados, puntos omitidos y el trazado
+      sobre el mapa.</li>
+    </ul>
+
+    <h2>NFC, QR o papel: qué cambia</h2>
+    <table class="ficha">
+      <thead><tr><th>Método</th><th>Exige presencia</th><th>Se puede falsear</th><th>Aguanta a la intemperie</th></tr></thead>
+      <tbody>
+        <tr><td>Etiqueta NFC</td><td>Sí, a centímetros</td><td>Difícil: no se fotografía</td><td>Sí, en formato PVC o epoxi</td></tr>
+        <tr><td>Código QR</td><td>Solo visual</td><td>Sí: se fotografía y se muestra desde otra pantalla</td><td>Se decolora</td></tr>
+        <tr><td>Libro de novedades</td><td>No</td><td>Sí: se llena entero al final del turno</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:16px" class="fuente">Conviene tener el QR como respaldo del NFC, no como
+    reemplazo: sirve cuando una etiqueta falla o el teléfono del guardia no tiene NFC.</p>
+
+    <h2>Qué necesitas para empezar</h2>
+    <ul>
+      <li>Un teléfono Android con NFC por guardia. No hace falta que sea nuevo ni caro.</li>
+      <li>Etiquetas NFC estándar, una por punto de control. Para exterior, formato resistente.</li>
+      <li>La aplicación instalada en el teléfono y una cuenta por guardia.</li>
+      <li>Un navegador para el panel del supervisor. Sin servidores en el recinto.</li>
+    </ul>
+
+    <h2>Los huecos, dichos en voz alta</h2>
+    <p>Ningún sistema de rondas es infalible, y el que te diga lo contrario te está vendiendo algo.
+    Los dos huecos reales del NFC son: que alguien despegue la etiqueta y la marque desde otro
+    lado, y que el teléfono se quede sin batería a mitad del turno. El primero se cierra con
+    instalación destructiva y con el recorrido GPS —una ronda entera marcada desde el mismo punto
+    del mapa salta a la vista—. El segundo, con la política de carga del turno, que es un tema de
+    operación y no de software.</p>
+
+    <h2>Y la parte legal</h2>
+    <p>Si al NFC le sumas el registro del recorrido por GPS, entras en el terreno de los datos
+    personales del trabajador. Desde el <span class="dato">01-12-2026</span> eso lo regula la Ley
+    21.719 en Chile: consentimiento, finalidad, proporcionalidad y plazo de conservación.</p>
+    <p><a href="../ley-21719-geolocalizacion-guardias/">Qué exige la Ley 21.719 para geolocalizar a un guardia →</a><br>
+    <a href="../ley-21659-registro-de-rondas/">Qué debe poder acreditar tu empresa según la Ley 21.659 →</a></p>
+
+    <h2>Preguntas frecuentes</h2>
+    <div class="preguntas">
+      <details class="pregunta" open>
+        <summary><h3>¿Cómo funciona un control de rondas con NFC?</h3></summary>
+        <p>Se pega una etiqueta NFC en cada punto de control del recinto. El guardia acerca su teléfono a la etiqueta y el sistema registra qué punto marcó, a qué hora y en qué ronda. Como la etiqueta está físicamente en el lugar, marcarla exige haber llegado hasta ahí: eso es lo que convierte el registro en evidencia y no en una declaración.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Qué se necesita para implementar rondas con NFC?</h3></summary>
+        <p>Un teléfono Android con NFC por guardia, etiquetas NFC estándar —las de tipo NTAG213 o superiores sirven— y una aplicación que lea la etiqueta y la asocie al punto de control. No hacen falta lectores propietarios ni un servidor instalado en el recinto. El supervisor trabaja desde el navegador.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Cuánto cuesta una etiqueta NFC para control de rondas?</h3></summary>
+        <p>Las etiquetas NFC adhesivas o de PVC son insumos de bajo costo por unidad, y se compran en cantidad según los puntos de control de cada recinto. El costo relevante del proyecto no son las etiquetas: son las horas de instalar los puntos y dejarlos bien mapeados. Conviene pedir la cotización con el número de puntos por recinto, no por guardia.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Qué diferencia hay entre NFC, QR y código de barras para marcar puntos?</h3></summary>
+        <p>El NFC exige proximidad física de centímetros y no se puede fotografiar: es el más difícil de falsear. El QR se puede fotografiar y volver a mostrar desde otra pantalla, aunque sirve bien como respaldo si una etiqueta falla. El código de barras tiene el mismo problema del QR y además se borra con el tiempo a la intemperie.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Funciona el control de rondas NFC sin internet?</h3></summary>
+        <p>Sí. La lectura de la etiqueta es local, entre el teléfono y la etiqueta: no necesita conexión. Lo que sí necesita conexión es enviar el registro al servidor, y un sistema bien hecho lo guarda en el teléfono y lo sube después, conservando la hora en que realmente ocurrió la marca.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Se puede hacer trampa con las etiquetas NFC?</h3></summary>
+        <p>Se puede intentar. El intento clásico es despegar la etiqueta y llevársela, por eso conviene instalarlas de forma que se destruyan al retirarlas y revisar el mapa de recorrido: una ronda completa marcada desde el mismo punto del mapa se ve de inmediato. Es la combinación de NFC más recorrido GPS la que cierra el hueco, no cada uno por separado.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Sirve NFC para condominios y edificios, o solo para grandes recintos?</h3></summary>
+        <p>Sirve igual, y a veces mejor: un condominio tiene pocos puntos —portería, estacionamientos, bodegas, azotea— y la instalación se hace en una tarde. El comité de administración suele querer exactamente lo que este sistema entrega: saber si el guardia recorrió de noche, sin depender de lo que diga el turno saliente.</p>
+      </details>
+    </div>
+
+    <div class="cierre" style="margin-top:64px">
+      <h2 style="margin-top:0">¿Lo vemos con tu operación?</h2>
+      <p>Te mostramos el sistema con un recinto tuyo cargado, para que veas el informe con tus puntos y tu recorrido.</p>
+      <div class="acciones">
+        <a class="boton boton-primario" data-wa href="#contacto" rel="nofollow noopener">Escribir por WhatsApp</a>
+        <a class="boton boton-secundario" data-mail href="#contacto" rel="nofollow noopener">Escribir un correo</a>
+      </div>
+      <p class="contacto-nota">
+        Respondemos en horario hábil. <noscript>Los botones de contacto necesitan JavaScript activado: los
+        armamos en tu navegador para que ni el número ni el correo queden a la vista de los
+        recolectores de spam.</noscript>
+      </p>
+      <div class="acciones" style="margin-top:8px">
+        <a class="boton boton-fantasma" href="../">Ver SentryCore</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="envoltorio">
+    <div>
+      <div class="wordmark"><b>VoxTi</b> <span>Labs</span></div>
+      <p class="dato" style="margin-top:8px">78.478.274-3</p>
+    </div>
+    <p class="dato">sentry.voxtilabs.cl</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var boton = document.getElementById('cambiarModo');
+  var raiz = document.documentElement;
+  var guardado = null;
+  try { guardado = localStorage.getItem('modo'); } catch (e) {}
+  var prefiereNoche = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  aplicar(guardado || (prefiereNoche ? 'noche' : 'dia'));
+  function aplicar(modo) {
+    raiz.setAttribute('data-mode', modo);
+    boton.textContent = modo === 'noche' ? 'Modo día' : 'Modo noche';
+    try { localStorage.setItem('modo', modo); } catch (e) {}
+  }
+  boton.addEventListener('click', function () {
+    aplicar(raiz.getAttribute('data-mode') === 'noche' ? 'dia' : 'noche');
+  });
+})();
+</script>
+
+<script>
+/* Arma los destinos de contacto en el navegador: el HTML servido no los trae. */
+(function () {
+  var d = function (s) { return atob(s).split('').reverse().join(''); };
+  var tel = d('MzkwOTIwNzM5NjU=');
+  var correo = d('bGMuc2JhbGl0eG92QHNlY2l2cmVz');
+  var msg = 'Hola, vi SentryCore en la web y quiero saber más.';
+  var asunto = 'Consulta por SentryCore';
+  var enWa = document.querySelectorAll('[data-wa]');
+  for (var i = 0; i < enWa.length; i++) {
+    enWa[i].href = 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
+    enWa[i].target = '_blank';
+  }
+  var enMail = document.querySelectorAll('[data-mail]');
+  for (var j = 0; j < enMail.length; j++) {
+    enMail[j].href = 'mailto:' + correo + '?subject=' + encodeURIComponent(asunto);
+  }
+})();
+</script>
+</body>
+</html>
