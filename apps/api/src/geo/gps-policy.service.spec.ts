@@ -365,7 +365,8 @@ describe('GpsPolicyService — consumo de batería', () => {
       withinBudget: true,
       measurable: true,
     });
-    expect(informe.expectedSamples).toBe(481);
+    // 8 horas al intervalo por defecto (30 s), mas la muestra del instante 0.
+    expect(informe.expectedSamples).toBe(961);
   });
 
   /**

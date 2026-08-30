@@ -10,10 +10,13 @@ import type { PuntoDeTrazaPayload } from '../_lib/bridge/protocol';
  */
 
 /**
- * Mismo tope que `MAX_PUNTOS_POR_LOTE` del servidor (500): una ronda larga
- * completa a un punto por minuto, con margen. Sobre el tope se descarta EL MAS
- * VIEJO: si la ronda estuvo horas sin señal, el final del recorrido explica
- * mas que el principio.
+ * Mismo tope que `MAX_PUNTOS_POR_LOTE` del servidor (500): al intervalo por
+ * defecto de 30 s son mas de 4 horas sin señal antes de tocar el tope. Sobre
+ * el tope se descarta EL MAS VIEJO: si la ronda estuvo horas sin señal, el
+ * final del recorrido explica mas que el principio.
+ *
+ * El tope NO se sube solo: es el mismo numero que el DTO del servidor acepta
+ * por lote, y subirlo aca sin subirlo alla convierte la cola larga en un 400.
  */
 export const MAX_PUNTOS_EN_COLA = 500;
 

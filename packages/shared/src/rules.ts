@@ -80,13 +80,23 @@ export const patrolRulesSchema = z.object({
    * Cada cuantos segundos muestrea la posicion la app durante la ronda. Lo lee
    * el dispositivo: el intervalo no se codifica en el cliente. Mas frecuente =
    * traza mas fiel y bateria mas corta.
+   *
+   * POR QUE 30 Y NO 60. Con un punto por minuto, dos puntos de control que el
+   * guardia recorre en menos de un minuto caen entre muestras: el recorrido los
+   * une con una recta que no paso por ningun lado, y en el mapa se ve un salto.
+   * Se detecto en terreno haciendo la misma ronda con dos telefonos: el tramo
+   * corto entre puntos nunca quedaba bien trazado. 30 s duplica el costo de
+   * bateria y de filas, y es el piso razonable para dejarlo igual en todos los
+   * clientes; quien necesite mas fidelidad lo baja hasta 15 s por recinto, y
+   * quien tenga guardias con telefonos de bateria corta lo sube.
    */
-  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(60),
+  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(30),
 
   /**
    * Dias que se conserva la traza del recorrido. Mucho mas corta que la
    * retencion de fotos a proposito: la traza es mas invasiva y mucho mas
-   * voluminosa (un punto por minuto son ~480 filas por turno de 8 horas).
+   * voluminosa (al intervalo por defecto de 30 s son ~960 filas por turno de
+   * 8 horas).
    */
   gpsTrackRetentionDays: z.number().int().min(7).max(365).default(90),
 

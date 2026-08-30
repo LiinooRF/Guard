@@ -193,7 +193,7 @@ export class GeoService {
     // GET /api/geo/policy le dijeran numeros distintos al mismo telefono.
     //
     // Cuesta una cascada extra por LOTE, no por punto: con el plan por defecto
-    // (60 puntos cada 60 s) es una consulta por hora y por guardia.
+    // (60 puntos cada 30 s) es una consulta cada media hora y por guardia.
     const reglasDelRecinto = await this.rules.effective({ siteId: patrol.site_id });
 
     return {

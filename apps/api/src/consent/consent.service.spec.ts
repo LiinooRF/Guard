@@ -174,7 +174,7 @@ describe('ConsentService — la pantalla de consentimiento', () => {
       hasPolicy: true,
       actionRequired: 'ninguna',
       acceptance: { status: 'vigente' },
-      tracking: { sampleIntervalSeconds: 60, retentionDays: 90 },
+      tracking: { sampleIntervalSeconds: 30, retentionDays: 90 },
     });
   });
 
