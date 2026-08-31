@@ -33,7 +33,19 @@ import type { PatrolRules } from '@sentrycore/shared';
  * cuelgan de aca; el tercero lo amarra `gps-rules.spec.ts`, porque
  * `packages/shared` no puede importar de `apps/api`.
  */
-export const MAX_PUNTOS_POR_LOTE = 500;
+/**
+ * Tope de puntos por lote, y por lo tanto de la cola sin señal del cliente.
+ *
+ * Sube de 500 a 2.000 junto con el intervalo por defecto: a 15 s, 500 puntos
+ * son solo 2 horas de autonomia sin cobertura, y un turno de 8 horas en un
+ * recinto sin señal perderia el principio del recorrido en silencio —la cola
+ * descarta lo mas viejo—. 2.000 cubre el turno completo.
+ *
+ * Este numero y `MAX_PUNTOS_EN_COLA` (apps/web) son EL MISMO tope y se mueven
+ * juntos: si el cliente acumula mas de lo que el DTO acepta, la cola larga se
+ * convierte en un 400 justo cuando por fin hay señal para subirla.
+ */
+export const MAX_PUNTOS_POR_LOTE = 2_000;
 
 /** Lo que el telefono necesita saber para muestrear sin quemar la bateria. */
 export interface GpsSamplingPlan {

@@ -1,6 +1,7 @@
 import { patrolRulesSchema } from '@sentrycore/shared';
 
 import { GpsPolicyService } from './gps-policy.service';
+import { MAX_PUNTOS_POR_LOTE } from './gps-rules';
 import type { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import type { RulesService } from '../rules/rules.service';
 import type { SupervisorService } from '../supervisor/supervisor.service';
@@ -311,9 +312,14 @@ describe('GpsPolicyService — plan de muestreo', () => {
       .mockResolvedValueOnce(CONSENTIMIENTO)
       .mockResolvedValueOnce(permiso('concedido'));
 
-    const politica = await servicio(query, { gpsTrackBatchSize: 5000 }).policy('guard-1');
+    const politica = await servicio(query, {
+      gpsTrackBatchSize: MAX_PUNTOS_POR_LOTE + 3_000,
+    }).policy('guard-1');
 
-    expect(politica.sampling.batchSize).toBe(500);
+    // Contra la constante y no contra un numero escrito a mano: este mismo test
+    // se rompio al subir el tope de 500 a 2.000, que es exactamente el cambio
+    // que deberia haber pasado sin tocar el test.
+    expect(politica.sampling.batchSize).toBe(MAX_PUNTOS_POR_LOTE);
   });
 });
 
@@ -365,8 +371,8 @@ describe('GpsPolicyService — consumo de batería', () => {
       withinBudget: true,
       measurable: true,
     });
-    // 8 horas al intervalo por defecto (30 s), mas la muestra del instante 0.
-    expect(informe.expectedSamples).toBe(961);
+    // 8 horas al intervalo por defecto (15 s), mas la muestra del instante 0.
+    expect(informe.expectedSamples).toBe(1921);
   });
 
   /**

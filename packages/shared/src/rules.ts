@@ -81,22 +81,30 @@ export const patrolRulesSchema = z.object({
    * el dispositivo: el intervalo no se codifica en el cliente. Mas frecuente =
    * traza mas fiel y bateria mas corta.
    *
-   * POR QUE 30 Y NO 60. Con un punto por minuto, dos puntos de control que el
+   * POR QUE 15 Y NO 60. Con un punto por minuto, dos puntos de control que el
    * guardia recorre en menos de un minuto caen entre muestras: el recorrido los
    * une con una recta que no paso por ningun lado, y en el mapa se ve un salto.
    * Se detecto en terreno haciendo la misma ronda con dos telefonos: el tramo
-   * corto entre puntos nunca quedaba bien trazado. 30 s duplica el costo de
-   * bateria y de filas, y es el piso razonable para dejarlo igual en todos los
-   * clientes; quien necesite mas fidelidad lo baja hasta 15 s por recinto, y
-   * quien tenga guardias con telefonos de bateria corta lo sube.
+   * corto entre puntos nunca quedaba bien trazado.
+   *
+   * 15 s es el minimo que admite este parametro y cuadruplica el costo respecto
+   * de 60: cuatro veces la bateria y cuatro veces las filas (~1.920 por turno de
+   * 8 horas). Se elige igual porque el recorrido es lo que se imprime en el
+   * informe que recibe el cliente, y a esa frecuencia el trazo sigue al guardia
+   * en vez de aproximarlo. Quien tenga guardias con telefonos de bateria corta
+   * lo sube por recinto; el parametro existe justamente para eso.
+   *
+   * OJO AL CAMBIARLO: la cola sin señal guarda `MAX_PUNTOS_EN_COLA` posiciones.
+   * A 15 s son 8 horas de autonomia; bajar el intervalo sin subir ese tope hace
+   * que un turno largo sin cobertura pierda el principio del recorrido.
    */
-  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(30),
+  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(15),
 
   /**
    * Dias que se conserva la traza del recorrido. Mucho mas corta que la
    * retencion de fotos a proposito: la traza es mas invasiva y mucho mas
-   * voluminosa (al intervalo por defecto de 30 s son ~960 filas por turno de
-   * 8 horas).
+   * voluminosa (al intervalo por defecto de 15 s son ~1.920 filas por turno
+   * de 8 horas).
    */
   gpsTrackRetentionDays: z.number().int().min(7).max(365).default(90),
 
@@ -320,7 +328,7 @@ export const patrolRulesSchema = z.object({
    * (`MAX_PUNTOS_POR_LOTE` en apps/api/src/geo/gps-rules.ts). Un valor mayor se
    * recortaria en silencio al armar el plan.
    */
-  gpsTrackBatchSize: z.number().int().min(1).max(500).default(60),
+  gpsTrackBatchSize: z.number().int().min(1).max(2_000).default(60),
 
   /** Bajo este porcentaje de bateria se pasa a muestreo espaciado. 0 lo desactiva. */
   gpsTrackLowBatteryPct: z.number().int().min(0).max(50).default(15),
@@ -1090,7 +1098,7 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     // El tope es lo que acepta el endpoint de traza de una vez, no una
     // preferencia: MAX_PUNTOS_POR_LOTE en apps/api/src/geo/gps-rules.ts, con un
     // test que amarra los dos numeros.
-    max: 500,
+    max: 2_000,
     default: DEFAULT_PATROL_RULES.gpsTrackBatchSize,
     scopes: SOLO_EMPRESA,
     group: 'ubicacion',

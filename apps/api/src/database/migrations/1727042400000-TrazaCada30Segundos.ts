@@ -1,10 +1,10 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Baja el intervalo de muestreo de la traza de 60 a 30 segundos.
+ * Baja el intervalo de muestreo de la traza de 60 a 15 segundos.
  *
  * El default vive en `rules.ts`, asi que quien nunca configuro el parametro
- * hereda 30 sin que esta migracion haga nada. El problema son los que tienen
+ * hereda 15 sin que esta migracion haga nada. El problema son los que tienen
  * `gpsTrackIntervalSeconds: 60` GUARDADO como override: el valor anterior por
  * defecto, escrito en la base sin que nadie lo eligiera —basta con abrir el
  * panel de reglas y guardar para que el formulario persista todos los campos
@@ -17,10 +17,12 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * ve un salto. Se detecto en terreno repitiendo la misma ronda con dos
  * telefonos distintos.
  *
- * SE BORRA LA CLAVE, NO SE ESCRIBE 30. Quitar el override devuelve el
+ * SE BORRA LA CLAVE, NO SE ESCRIBE 15. Quitar el override devuelve el
  * parametro a "heredado", que es lo que era antes de que el formulario lo
  * escribiera. Si mañana el default vuelve a moverse, estas empresas lo
- * siguen; escribirles un 30 las dejaria ancladas de nuevo.
+ * siguen; escribirles un 15 las dejaria ancladas de nuevo. Ya paso una vez en
+ * esta misma rama: el valor iba a ser 30 y termino siendo 15 antes de
+ * desplegarse.
  *
  * Solo se toca el valor 60 EXACTO. Quien eligio 45, 90 o 300 tenia una razon
  * —bateria, telefonos viejos, un cliente que pidio menos registro— y su
@@ -45,7 +47,7 @@ export class TrazaCada30Segundos1727042400000 implements MigrationInterface {
    * La vuelta atras restituye el 60 explicito SOLO donde ahora no hay valor:
    * es lo mismo que heredaban antes del cambio. No se distingue de una empresa
    * que nunca lo configuro, y esa es la unica ambiguedad posible; escribir 60
-   * de mas es preferible a dejar en 30 a quien venia de 60 si el default se
+   * de mas es preferible a dejar en 15 a quien venia de 60 si el default se
    * revierte junto con esta migracion.
    */
   public async down(queryRunner: QueryRunner): Promise<void> {
