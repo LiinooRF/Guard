@@ -132,6 +132,26 @@ export class GeoService {
     if (!patrol) throw new NotFoundException('La ronda asignada no existe');
     if (patrol.status !== 'en_curso') throw new ConflictException(FUERA_DE_RONDA);
 
+    // Las reglas del RECINTO, y antes del filtrado: tanto el maximo error
+    // aceptable como la velocidad imposible se configuran hasta ese nivel, y
+    // son las que deciden que se guarda.
+    const reglasDelRecinto = await this.rules.effective({ siteId: patrol.site_id });
+
+    // La ultima posicion ya guardada es la referencia contra la que se mide el
+    // primer salto del lote. Sin esto, un lote que llega solo despues de
+    // recuperar señal empezaria a medir desde su propio primer punto y dejaria
+    // pasar justo el salto que separa el tramo sin cobertura del anterior.
+    const ultimaGuardada = await this.tenantContext.manager.query<
+      Array<{ recorded_at_device: Date; latitude: string; longitude: string }>
+    >(
+      `SELECT recorded_at_device, latitude, longitude
+         FROM patrol_tracks
+        WHERE patrol_id = $1
+        ORDER BY recorded_at_device DESC
+        LIMIT 1`,
+      [patrolId],
+    );
+
     const inicio = new Date(patrol.started_at ?? patrol.scheduled_start_at).getTime();
     // Mismo desfase de reloj que el escaneo (#63, #73). Es la MISMA regla ya
     // configurable, no un numero propio de este modulo: el telefono que llega
@@ -145,7 +165,29 @@ export class GeoService {
     const aceptados: TrackPointDto[] = [];
     let fueraDeTurno = 0;
     let duplicados = 0;
-    for (const punto of puntos) {
+    let imprecisos = 0;
+    let saltosImposibles = 0;
+
+    const maximoError = reglasDelRecinto.gpsTrackMaxAccuracyM;
+    const velocidadMaxima = reglasDelRecinto.impossibleSpeedKmh;
+
+    let referencia: { instante: number; latitude: number; longitude: number } | null =
+      ultimaGuardada[0]
+        ? {
+            instante: new Date(ultimaGuardada[0].recorded_at_device).getTime(),
+            latitude: Number(ultimaGuardada[0].latitude),
+            longitude: Number(ultimaGuardada[0].longitude),
+          }
+        : null;
+
+    // EN ORDEN DE RELOJ, no en el orden en que vinieron: el lote de un telefono
+    // que estuvo sin señal puede traerlos mezclados, y medir velocidad contra el
+    // punto equivocado inventa saltos que no existieron.
+    const enOrden = [...puntos].sort(
+      (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime(),
+    );
+
+    for (const punto of enOrden) {
       const instante = new Date(punto.recordedAt).getTime();
       if (Number.isNaN(instante) || instante < inicio || instante > limiteFuturo) {
         fueraDeTurno += 1;
@@ -156,7 +198,37 @@ export class GeoService {
         duplicados += 1;
         continue;
       }
+
+      // Precision peor que el maximo: el telefono mismo dice que no sabe donde
+      // esta. Un hueco en la traza es un dato honesto —track-summary lo mide—;
+      // una posicion a 146 m del guardia es un dato falso que despues alimenta
+      // el kilometraje y el mapa del informe.
+      if (punto.accuracyM !== null && punto.accuracyM !== undefined && punto.accuracyM > maximoError) {
+        imprecisos += 1;
+        continue;
+      }
+
+      // Y la precision declarada no alcanza: hay posiciones que dicen +-15 m y
+      // caen a cien metros del recorrido real. Lo que las delata es el salto
+      // contra la anterior ACEPTADA, no su propio numero.
+      if (referencia) {
+        const segundos = (instante - referencia.instante) / 1_000;
+        if (segundos > 0) {
+          const metros = haversineM(
+            referencia.latitude,
+            referencia.longitude,
+            punto.latitude,
+            punto.longitude,
+          );
+          if ((metros / segundos) * 3.6 > velocidadMaxima) {
+            saltosImposibles += 1;
+            continue;
+          }
+        }
+      }
+
       vistos.add(clave);
+      referencia = { instante, latitude: punto.latitude, longitude: punto.longitude };
       aceptados.push(punto);
     }
 
@@ -187,14 +259,6 @@ export class GeoService {
       duplicados += aceptados.length - guardados;
     }
 
-    // Segunda resolucion, ahora CON el recinto. El plan es lo unico que el
-    // telefono usa para muestrear y `gpsTrackIntervalSeconds` se configura hasta
-    // el nivel de recinto: devolver el del tenant hacia que este endpoint y
-    // GET /api/geo/policy le dijeran numeros distintos al mismo telefono.
-    //
-    // Cuesta una cascada extra por LOTE, no por punto: con el plan por defecto
-    // (60 puntos cada 30 s) es una consulta cada media hora y por guardia.
-    const reglasDelRecinto = await this.rules.effective({ siteId: patrol.site_id });
 
     return {
       patrolId,
@@ -202,6 +266,14 @@ export class GeoService {
       stored: guardados,
       duplicates: duplicados,
       outsideShift: fueraDeTurno,
+      /**
+       * Descartadas por calidad, contadas aparte de `outsideShift` a proposito:
+       * el telefono necesita distinguir "no me lo aceptaste porque no tocaba"
+       * de "no me lo aceptaste porque tu GPS venia mal", y quien mire el turno
+       * despues tambien.
+       */
+      imprecise: imprecisos,
+      impossibleJumps: saltosImposibles,
       sampleIntervalSeconds: reglasDelRecinto.gpsTrackIntervalSeconds,
       /** Plan completo: asi el telefono se reajusta sin pedir la politica aparte. */
       sampling: planDeMuestreo(reglasDelRecinto),
