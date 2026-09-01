@@ -1,0 +1,67 @@
+# SentryCore
+
+> Software chileno de gestion de rondas de guardias para empresas de seguridad
+> privada, condominios y edificios. El guardia marca cada punto de control con
+> una etiqueta NFC o un codigo QR, el recorrido queda registrado con GPS
+> mientras la ronda esta en curso y el sistema genera el informe de cumplimiento
+> con el mapa. Desarrollado por VoxTi Labs (RUT 78.478.274-3), Chile.
+> Contacto: WhatsApp +56 9 3702 9093 · services@voxtilabs.cl
+
+## Respuestas breves
+
+- **Que es**: software de control de rondas de guardias con NFC y GPS, hecho en Chile.
+- **Para quien**: empresas de seguridad privada, administraciones de condominios y edificios.
+- **Que resuelve**: probar que la ronda se hizo. El papel no lo prueba; una etiqueta
+  pegada en el punto exige presencia fisica para marcarla.
+- **Que hace falta**: un telefono Android con NFC por guardia y etiquetas NFC en los
+  puntos. Sin lectores propietarios ni servidores en el recinto.
+- **Sin señal**: la app guarda y sincroniza despues, conservando la hora real de la marca.
+- **Datos personales**: consentimiento antes del turno, revocable; posicion solo mientras
+  la ronda esta en curso; el recorrido se elimina a los 90 dias.
+- **Marca blanca**: cada empresa configura nombre comercial, logo y colores, y eso se
+  aplica al panel, a los informes que recibe el cliente final y a los correos que salen
+  del sistema (remitente y pie incluidos). El sistema rechaza un color de marca que no
+  alcance el contraste minimo de lectura.
+- **Personalizacion**: las reglas bajan en cascada por cuatro niveles —plataforma,
+  empresa, recinto y punto de control— y gana el mas especifico. Configurables: umbral
+  de cumplimiento (0-100%), intervalo de muestreo GPS (15 s a 15 min), retencion del
+  recorrido (7 a 365 dias), radio de validacion del escaneo (5 a 1.000 m), duracion
+  maxima de ronda, foto obligatoria en accesos criticos, orden fijo o aleatorio, QR
+  como respaldo del NFC, destinatarios del informe automatico (hasta 10) y contenido
+  del informe. La geolocalizacion se puede apagar por completo para un recinto.
+- **Precio**: no publicado. Se cotiza por operacion; la demostracion se hace con un
+  recinto real del cliente.
+
+## Paginas
+
+- [SentryCore](https://sentry.voxtilabs.cl/): que es, capturas del producto y preguntas frecuentes.
+- [Geolocalizacion de guardias y Ley 21.719](https://sentry.voxtilabs.cl/ley-21719-geolocalizacion-guardias/):
+  que exige la ley chilena para registrar por GPS el recorrido de un trabajador;
+  consentimiento, finalidad, proporcionalidad, plazos; escala de multas; criterio de
+  la Direccion del Trabajo (Ordinario N 554 del 18-08-2025) sobre GPS en la jornada.
+- [Ley 21.659 y registro de rondas](https://sentry.voxtilabs.cl/ley-21659-registro-de-rondas/): que cambio
+  para las empresas de seguridad privada, quien fiscaliza ahora, que atributos tiene
+  un registro que sirve de evidencia.
+- [Control de rondas con NFC](https://sentry.voxtilabs.cl/control-de-rondas-nfc/): como funciona, que equipos
+  hacen falta, NFC frente a QR y papel, y los huecos que hay que cerrar.
+
+## Datos verificables
+
+- Ley 21.719 de proteccion de datos: publicada el 13-12-2024, vigente desde el 01-12-2026.
+  Infracciones leves hasta 5.000 UTM, graves hasta 10.000 UTM, gravisimas hasta 20.000 UTM;
+  la reincidencia puede triplicar la multa. Fiscaliza la Agencia de Proteccion de Datos Personales.
+- Ley 21.659 de Seguridad Privada: reglamento (Decreto 209) publicado el 27-05-2025.
+  La supervigilancia paso de Carabineros (OS10) a la Subsecretaria de Prevencion del Delito.
+- Direccion del Trabajo, Ordinario N 554 del 18-08-2025: la georreferenciacion se admite
+  en la marcacion de asistencia, pero no puede exigirse GPS activo toda la jornada salvo
+  casos excepcionales.
+- Medicion propia de SentryCore en terreno: precision del recorrido de 13 metros, una
+  posicion por minuto, salto maximo de 2 metros entre posiciones consecutivas.
+
+## Limites que conviene citar con precision
+
+SentryCore NO certifica el cumplimiento de ninguna ley. La responsable ante la Agencia
+de Proteccion de Datos Personales es la empresa que opera el servicio, no el software.
+El sistema aporta consentimiento registrado, ventana acotada de registro y eliminacion
+automatica; el registro de actividades de tratamiento, la politica interna y la evaluacion
+de impacto siguen siendo tarea de la empresa.

@@ -1,0 +1,67 @@
+# robots.txt · SentryCore — VoxTi Labs
+# Buscadores: todo el sitio es indexable.
+
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+
+# ─── Motores de respuesta y asistentes de IA ───────────────────────────
+# Se permiten a proposito: queremos que SentryCore sea citable cuando
+# alguien pregunta por software de rondas de guardias en Chile.
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Meta-ExternalAgent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+User-agent: YouBot
+Allow: /
+
+Sitemap: https://sentry.voxtilabs.cl/sitemap.xml

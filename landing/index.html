@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="es-CL" data-mode="dia">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>SentryCore | Software de rondas de guardias con NFC y GPS en Chile</title>
+<meta name="description" content="Software chileno de rondas de guardias: cada punto se marca con NFC, el recorrido queda registrado y el informe con mapa sale solo. Listo para la Ley 21.719.">
+<link rel="canonical" href="https://sentry.voxtilabs.cl/">
+<link rel="alternate" hreflang="es-cl" href="https://sentry.voxtilabs.cl/">
+<link rel="alternate" hreflang="x-default" href="https://sentry.voxtilabs.cl/">
+<link rel="alternate" hreflang="es-cl" href="https://sentry.voxtilabs.cl/">
+<link rel="alternate" hreflang="x-default" href="https://sentry.voxtilabs.cl/">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+<meta name="author" content="VoxTi Labs">
+<meta name="publisher" content="VoxTi Labs">
+<meta name="geo.region" content="CL">
+<meta name="geo.placename" content="Chile">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0D14" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico" sizes="any">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SentryCore">
+<meta property="og:locale" content="es_CL">
+<meta property="og:url" content="https://sentry.voxtilabs.cl/">
+<meta property="og:title" content="SentryCore | Software de rondas de guardias con NFC y GPS en Chile">
+<meta property="og:description" content="El guardia marca cada punto con NFC o QR, el recorrido queda registrado durante el turno y el informe con mapa sale solo. Preparado para la Ley 21.719.">
+<meta property="og:image" content="https://sentry.voxtilabs.cl/img/og-sentrycore.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="SentryCore: la ronda se hizo y puedes probarlo. Panel con una ronda en curso y su recorrido sobre el mapa.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SentryCore | Software de rondas de guardias con NFC y GPS en Chile">
+<meta name="twitter:description" content="Acredita que la ronda se hizo: NFC en cada punto, recorrido durante el turno e informe con mapa. Preparado para la Ley 21.719.">
+<meta name="twitter:image" content="https://sentry.voxtilabs.cl/img/og-sentrycore.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="pulso.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://sentry.voxtilabs.cl/#voxtilabs",
+      "name": "VoxTi Labs",
+      "url": "https://sentry.voxtilabs.cl/",
+      "logo": "https://sentry.voxtilabs.cl/icon.svg",
+      "taxID": "78.478.274-3",
+      "address": {
+        "@type": "PostalAddress",
+        "addressCountry": "CL"
+      },
+      "areaServed": {
+        "@type": "Country",
+        "name": "Chile"
+      },
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "ventas",
+        "url": "https://sentry.voxtilabs.cl/#contacto",
+        "availableLanguage": "es",
+        "areaServed": "CL"
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://sentry.voxtilabs.cl/#sentrycore",
+      "name": "SentryCore",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "Software de gestión de rondas de guardias",
+      "operatingSystem": "Android 8.0 o superior; panel web en cualquier navegador",
+      "inLanguage": "es-CL",
+      "url": "https://sentry.voxtilabs.cl/",
+      "image": "https://sentry.voxtilabs.cl/img/og-sentrycore.png",
+      "description": "Software de gestión de rondas de guardias para empresas de seguridad privada en Chile. El guardia marca cada punto de control con una etiqueta NFC o un código QR, el recorrido queda registrado con GPS durante el turno y el sistema genera el informe de cumplimiento con el mapa. Preparado para la Ley 21.719 de protección de datos personales.",
+      "publisher": {
+        "@id": "https://sentry.voxtilabs.cl/#voxtilabs"
+      },
+      "provider": {
+        "@id": "https://sentry.voxtilabs.cl/#voxtilabs"
+      },
+      "countriesSupported": "CL",
+      "featureList": [
+        "Marcaje de puntos de control con etiquetas NFC o códigos QR",
+        "Registro del recorrido por GPS durante la ronda, una posición por minuto",
+        "Monitoreo en vivo de las rondas activas sobre cartografía real",
+        "Planificación de turnos diurnos, de tarde y nocturnos con detección de solapamientos",
+        "Informes de cumplimiento por recinto y por sucursal, exportables",
+        "Funcionamiento sin señal: los escaneos se guardan y se sincronizan al recuperar conexión",
+        "Consentimiento de geolocalización informado y revocable por el trabajador",
+        "Eliminación automática del recorrido a los 90 días",
+        "Separación de datos entre empresas impuesta en la base de datos",
+        "Marca blanca por empresa: nombre comercial, logo y colores propios en el panel, los informes y los correos",
+        "Validación de contraste del color de marca antes de guardarlo",
+        "Reglas en cascada por plataforma, empresa, recinto y punto de control",
+        "Umbral de cumplimiento, intervalo de muestreo GPS y retención configurables por recinto",
+        "Envío automático del informe al cerrar la ronda, con hasta 10 destinatarios",
+        "Geolocalización desactivable por completo para el cliente que no la quiera"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "priceCurrency": "CLP",
+        "availability": "https://schema.org/InStock",
+        "url": "https://sentry.voxtilabs.cl/#contacto",
+        "seller": {
+          "@id": "https://sentry.voxtilabs.cl/#voxtilabs"
+        }
+      },
+      "dateModified": "2026-08-30"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://sentry.voxtilabs.cl/#sitio",
+      "url": "https://sentry.voxtilabs.cl/",
+      "name": "SentryCore",
+      "inLanguage": "es-CL",
+      "publisher": {
+        "@id": "https://sentry.voxtilabs.cl/#voxtilabs"
+      },
+      "about": {
+        "@id": "https://sentry.voxtilabs.cl/#sentrycore"
+      },
+      "dateModified": "2026-08-30"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://sentry.voxtilabs.cl/#preguntas",
+      "inLanguage": "es-CL",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Qué es SentryCore?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SentryCore es un software chileno de gestión de rondas de guardias. El guardia marca cada punto de control acercando su teléfono a una etiqueta NFC —o leyendo un código QR—, el recorrido queda registrado con GPS durante el turno y el sistema genera solo el informe de cumplimiento con el mapa de lo que ocurrió."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo acredita SentryCore que la ronda se hizo de verdad?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Cada punto de control tiene una etiqueta NFC pegada en el lugar. Marcarla exige estar ahí físicamente, y el escaneo viaja firmado por el teléfono. A eso se suma el recorrido GPS, con una posición por minuto durante toda la ronda. El informe muestra los puntos marcados, los omitidos y el trazado sobre cartografía real."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué necesito para empezar: equipos, tarjetas, instalación?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Un teléfono Android con NFC por guardia y etiquetas NFC estándar en cada punto de control. No hay lectores propietarios ni servidores en el recinto: la app se instala en el teléfono y el panel del supervisor funciona en cualquier navegador."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Funciona si el recinto no tiene señal ni wifi?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. La app guarda los escaneos y las posiciones en el teléfono y los sube apenas vuelve la señal. El guardia ve en su pantalla si le queda algo por subir, y el supervisor ve la hora real en que ocurrió cada marca, no la hora en que llegó al servidor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Es legal registrar la ubicación de un guardia en Chile?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí, con reglas. Desde el 1 de diciembre de 2026 rige la Ley 21.719 y la geolocalización de un trabajador es un dato personal: exige consentimiento informado, finalidad determinada, proporcionalidad y un plazo de conservación. SentryCore pide el consentimiento antes del turno, solo registra mientras la ronda está en curso y elimina el recorrido a los 90 días. La responsable ante la Agencia de Protección de Datos sigue siendo tu empresa."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué pasa si el guardia no acepta que se registre su ubicación?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sigue trabajando igual. Puede rechazar el aviso de geolocalización, y también revocarlo después desde su teléfono: el registro se detiene de inmediato. Su decisión queda guardada con fecha y hora, que es justamente lo que la ley pide poder demostrar."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Sirve para la Ley 21.659 de Seguridad Privada?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "SentryCore deja registro verificable de las rondas, los turnos y las novedades de cada recinto, que es la evidencia que una empresa de seguridad privada necesita tener a mano. El cumplimiento del reglamento del 27 de mayo de 2025 depende de tu operación completa; el sistema aporta el registro, no el certificado."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo se ve lo que hizo el guardia anoche?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "En el panel del supervisor: monitoreo en vivo mientras la ronda ocurre, y después el informe de cumplimiento por recinto y por sucursal, con el recorrido dibujado sobre el mapa, los puntos marcados y los omitidos. Es lo que se le manda al cliente a fin de mes."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo se contrata SentryCore?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Desde los botones de contacto del sitio, por WhatsApp o por correo. La demostración se hace con un recinto tuyo cargado —tus puntos, tu recorrido— para que veas el informe con datos reales y no con un ejemplo."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿SentryCore se puede usar con la marca de mi empresa?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. Cada empresa configura su nombre comercial, su logo y sus colores, y eso se aplica al panel, a los informes que recibe el cliente y a los correos que salen del sistema, incluidos el remitente y el pie. Tu cliente ve tu marca, no la nuestra. La única restricción es de contraste: el sistema no acepta un color de marca que deje el texto ilegible."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Se puede configurar distinto para cada recinto o cliente?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. La configuración baja en cascada por cuatro niveles —plataforma, empresa, recinto y punto de control— y gana siempre el más específico. Puedes fijar un umbral de cumplimiento para toda la empresa y bajarlo en un recinto puntual, exigir foto solo en los accesos críticos de un cliente, o apagar la geolocalización en el recinto de quien no la quiera. El panel muestra de qué nivel salió cada valor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Qué se puede ajustar sin pedirle nada al proveedor?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "El umbral de cumplimiento, cada cuánto se registra la posición durante la ronda, cuántos días se conserva el recorrido, el radio de validación del escaneo, la duración máxima de una ronda, si el orden del recorrido es fijo o aleatorio, si se exige foto en los puntos críticos, si el QR sirve de respaldo del NFC, quiénes reciben el informe al cerrar la ronda y qué trae ese informe. Todo desde el panel del administrador."
+          }
+        }
+      ],
+      "dateModified": "2026-08-30"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<div class="barra">
+  <div class="envoltorio">
+    <div class="producto">SentryCore <em>· VoxTi Labs</em></div>
+    <button class="interruptor" id="cambiarModo">Modo noche</button>
+  </div>
+</div>
+
+<main id="contenido">
+<header class="portada">
+  <div class="envoltorio">
+    <span class="etiqueta">Software de rondas de guardias · Hecho en Chile</span>
+    <h1>La ronda se hizo.<br>Y puedes probarlo.</h1>
+    <p class="entrada">
+      Para empresas de seguridad privada: el guardia acerca el teléfono a la etiqueta de cada punto. El recorrido queda
+      registrado durante todo el turno. El informe sale solo, con el mapa de lo que
+      pasó esa noche.
+    </p>
+    <div class="acciones">
+      <a class="boton boton-secundario" href="#capturas">Ver el producto</a>
+      <a class="boton boton-fantasma" href="#como">Cómo funciona</a>
+      <a class="boton boton-fantasma" href="#marca">Personalización</a>
+      <a class="boton boton-fantasma" href="#preguntas">Preguntas frecuentes</a>
+    </div>
+
+    <div class="cifras">
+      <div class="cifra">
+        <div class="valor">13 <span class="unidad">m</span></div>
+        <span class="glosa">Precisión del recorrido, medida en terreno</span>
+      </div>
+      <div class="cifra">
+        <div class="valor">1 <span class="unidad">posición / min</span></div>
+        <span class="glosa">Durante toda la ronda, con el teléfono guardado</span>
+      </div>
+      <div class="cifra">
+        <div class="valor">90 <span class="unidad">días</span></div>
+        <span class="glosa">Después el recorrido se elimina</span>
+      </div>
+      <div class="cifra">
+        <div class="valor">2 <span class="unidad">m</span></div>
+        <span class="glosa">Salto máximo entre posiciones consecutivas</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="como">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Antes y después</h2>
+      <p>El trabajo no cambia. Cambia lo que queda registrado de ese trabajo.</p>
+    </div>
+    <div class="dispositivo">
+      <div class="bloque bloque-antes">
+        <span class="rotulo">Antes</span>
+        <p>
+          El guardia anota la ronda en un cuaderno. El supervisor llama por radio para
+          confirmar que pasó por el portón. Cuando el cliente pregunta si se hizo la ronda
+          de las tres de la mañana, alguien revisa hojas y contesta de memoria.
+        </p>
+      </div>
+      <div class="bloque bloque-despues">
+        <span class="rotulo">Después</span>
+        <p>
+          Cada punto queda marcado con hora y posición al acercar el teléfono. El supervisor
+          ve el avance en el mapa mientras ocurre. El informe de esa noche se manda tal como
+          salió, sin que nadie lo arme.
+        </p>
+      </div>
+    </div>
+
+    <ol class="secuencia">
+      <li>
+        <span class="rotulo">01</span>
+        <div>
+          <h3>Se marca el punto</h3>
+          <p>Una etiqueta NFC pegada en cada lugar del recorrido. El guardia acerca el teléfono y queda registrado con hora y posición. Si la etiqueta falla, hay código QR de respaldo.</p>
+        </div>
+      </li>
+      <li>
+        <span class="rotulo">02</span>
+        <div>
+          <h3>Se registra el camino</h3>
+          <p>Una posición por minuto mientras dura la ronda, aunque el teléfono esté guardado en el bolsillo. Fuera del turno no se registra nada: el servidor rechaza esas posiciones.</p>
+        </div>
+      </li>
+      <li>
+        <span class="rotulo">03</span>
+        <div>
+          <h3>Sale el informe</h3>
+          <p>Con el recorrido sobre el mapa real, los puntos marcados, los omitidos y las anomalías. Listo para enviar a tu cliente sin que nadie lo arme.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="capturas">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>El producto, sin maquetas</h2>
+      <p>Capturas del panel funcionando y de la aplicaci&oacute;n en el tel&eacute;fono del guardia.</p>
+    </div>
+
+    <figure class="captura captura-ancha">
+      <img src="img/panel-monitoreo-2026-08-30.png" alt="Monitoreo en vivo: mapa con la posici&oacute;n del guardia y la ronda en curso, actualizado cada cinco segundos." width="2130" height="704" decoding="async" fetchpriority="high">
+      <figcaption>
+        <h3>Monitoreo en vivo</h3>
+        <p>D&oacute;nde est&aacute; cada guardia ahora, con la hora de la &uacute;ltima posici&oacute;n y su precisi&oacute;n en metros. Se refresca solo, cada cinco segundos.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="captura captura-ancha">
+      <img src="img/panel-planificacion-2026-08-30.png" alt="Planificaci&oacute;n semanal con turnos diurno, tarde y nocturno asignados de lunes a viernes." width="2880" height="2000" decoding="async" loading="lazy">
+      <figcaption>
+        <h3>La semana, armada una vez</h3>
+        <p>Ventanas de turno reutilizables y la semana completa asignada de una pasada. Si dos turnos se pisan, el sistema lo dice antes de guardar.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="captura captura-ancha">
+      <img src="img/panel-informes-2026-08-30.png" alt="Informe de cumplimiento por sucursal y por recinto, con umbral y evoluci&oacute;n en el tiempo." width="2880" height="2000" decoding="async" loading="lazy">
+      <figcaption>
+        <h3>El cumplimiento, por escrito</h3>
+        <p>De peor a mejor, por sucursal y por recinto, contra el umbral que fijaste. Es lo que le mandas al cliente a fin de mes.</p>
+      </figcaption>
+    </figure>
+
+    <div class="galeria">
+      <figure class="captura">
+        <img class="captura-alta" src="img/panel-ronda-2026-08-30.png" alt="Tarjeta de una ronda en curso con avance 1 de 2 puntos y el recorrido dibujado sobre el mapa." width="1052" height="1020" decoding="async" loading="lazy">
+        <figcaption>
+          <h3>La ronda, punto por punto</h3>
+          <p>Avance, hora del &uacute;ltimo escaneo y el recorrido real sobre el plano. Sin esperar a que termine el turno.</p>
+        </figcaption>
+      </figure>
+      <figure class="captura">
+        <img class="captura-alta" src="img/app-guardia-2026-08-30.png" alt="Pantalla del guardia en el tel&eacute;fono: estado de sincronizaci&oacute;n, ronda asignada y punto 2 de 2." width="1170" height="2004" decoding="async" loading="lazy">
+        <figcaption>
+          <h3>La pantalla del guardia</h3>
+          <p>Qu&eacute; punto toca ahora y si qued&oacute; algo por subir. Nada m&aacute;s: el turno no es momento de explorar men&uacute;s.</p>
+        </figcaption>
+      </figure>
+    </div>
+    <p style="margin-top:24px; font-size:14px; color:var(--text-muted);">
+      Capturas tomadas del sistema en funcionamiento. Los nombres de empresa, recinto y guardias son de demostraci&oacute;n.
+    </p>
+  </div>
+</section>
+
+<section id="marca">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Con tu marca y con tus reglas</h2>
+      <p>El sistema es tuyo por dentro y por fuera: el cliente ve tu marca, y la operación se
+      ajusta a cómo trabajas tú, no al revés.</p>
+    </div>
+
+    <h3 style="margin-bottom:16px">Tu marca, no la nuestra</h3>
+    <p>Cada empresa configura su nombre comercial, su logo y sus colores. Eso se estampa en el
+    panel, en los informes que recibe tu cliente y en los correos que salen del sistema, con el
+    remitente y el pie que tú definas.</p>
+    <table class="ficha">
+      <thead><tr><th>Qué configuras</th><th>Dónde aparece</th></tr></thead>
+      <tbody>
+        <tr><td>Nombre comercial y logo</td><td>Panel, informes y correos</td></tr>
+        <tr><td>Color principal y secundario</td><td>Toda la interfaz y los informes</td></tr>
+        <tr><td>Nombre del remitente y pie de correo</td><td>Los correos que salen a tus clientes</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:24px"><strong>Con un límite que no negociamos:</strong> el sistema no
+    deja guardar un color de marca que no alcance el contraste mínimo de lectura. Un informe que
+    tu cliente no puede leer en el teléfono no sirve de nada, por lindo que se vea el color.</p>
+
+    <h3 style="margin:48px 0 16px">Tus reglas, en cuatro niveles</h3>
+    <p>La configuración baja en cascada: lo que fijas para la empresa vale en todos tus recintos,
+    y cada recinto —o incluso un punto de control puntual— puede tener su propia excepción. Gana
+    siempre el nivel más específico, y el panel te dice de qué nivel salió cada valor.</p>
+    <table class="ficha">
+      <thead><tr><th>Se ajusta por empresa o por recinto</th><th>Rango</th></tr></thead>
+      <tbody>
+        <tr><td>Umbral de cumplimiento del recinto</td><td><span class="dato">0–100 %</span></td></tr>
+        <tr><td>Cada cuánto se registra la posición durante la ronda</td><td><span class="dato">15 s – 15 min</span></td></tr>
+        <tr><td>Cuánto se conserva el recorrido antes de eliminarlo</td><td><span class="dato">7–365 días</span></td></tr>
+        <tr><td>Radio de validación del escaneo respecto del punto</td><td><span class="dato">5–1.000 m</span></td></tr>
+        <tr><td>Duración máxima de una ronda</td><td><span class="dato">5 min – 24 h</span></td></tr>
+        <tr><td>Foto obligatoria en accesos críticos o fuera de horario</td><td>Sí o no</td></tr>
+        <tr><td>Orden del recorrido fijo o aleatorio</td><td>Sí o no</td></tr>
+        <tr><td>Código QR como respaldo de la etiqueta NFC</td><td>Sí o no</td></tr>
+        <tr><td>Envío automático del informe al cerrar la ronda</td><td>Hasta <span class="dato">10</span> destinatarios</td></tr>
+        <tr><td>Contenido del informe: mapa, línea de tiempo, fotos</td><td>Sí o no, por separado</td></tr>
+        <tr><td>Registro de recorrido por GPS</td><td>Se puede apagar del todo</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:24px" class="fuente">Si un cliente tuyo no quiere geolocalización, se
+    apaga para ese recinto y las rondas siguen acreditándose con las etiquetas. La decisión es de
+    cada operación, no del software.</p>
+  </div>
+</section>
+
+<section id="ley">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Listo para la Ley 21.719</h2>
+      <p>
+        Desde el <span class="dato">01-12-2026</span> la geolocalización de un trabajador es
+        un dato personal con todas las de la ley. Registrar por dónde anduvo tu guardia deja
+        de ser una decisión técnica y pasa a tener reglas: base legal, finalidad, plazo y
+        derechos. SentryCore ya trae eso resuelto en el producto.
+      </p>
+      <p>
+        Cuidado con lo que esto significa: quien responde ante la Agencia de Protección de
+        Datos es tu empresa, no el software. Lo que sigue es lo que el sistema hace por ti,
+        no un certificado de cumplimiento.
+      </p>
+    </div>
+
+    <table class="ficha">
+      <thead>
+        <tr><th>Lo que exige la ley</th><th>Lo que ya hace SentryCore</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Consentimiento libre e informado</td>
+          <td>El guardia lee qué se registra y decide antes de empezar el turno. Puede negarse y sigue trabajando igual. Su respuesta queda con fecha y hora.</td>
+        </tr>
+        <tr>
+          <td>Finalidad determinada</td>
+          <td>La ubicación se usa para acreditar la ronda. Nada más, y así se lo dice el aviso al trabajador.</td>
+        </tr>
+        <tr>
+          <td>Proporcionalidad del tratamiento</td>
+          <td>Solo se registra mientras la ronda está en curso. Fuera del turno el servidor rechaza las posiciones: no queda un rastro de la vida privada de nadie.</td>
+        </tr>
+        <tr>
+          <td>Plazo acotado de conservación</td>
+          <td>El recorrido se elimina a los <span class="dato">90 días</span>, sin que nadie tenga que acordarse de borrarlo.</td>
+        </tr>
+        <tr>
+          <td>Retiro del consentimiento</td>
+          <td>El guardia lo revoca desde su teléfono y el registro se detiene de inmediato.</td>
+        </tr>
+        <tr>
+          <td>Separación entre empresas</td>
+          <td>Los datos de un cliente no son alcanzables desde otro, y eso está impuesto en la base de datos.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p style="margin-top:32px; font-size:14px; color:var(--text-muted)">
+      Ley 21.719, publicada el <span class="dato">13-12-2024</span> y vigente desde el
+      <span class="dato">01-12-2026</span>. Las infracciones graves —tratar datos sin base
+      legal, impedir el ejercicio de derechos— llegan a <span class="dato">10.000 UTM</span>.
+      Se suma a la Ley 21.659 de Seguridad Privada y su reglamento del <span class="dato">27-05-2025</span>.
+    </p>
+  </div>
+</section>
+
+<section id="detalle">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Lo que aparece el primer mes</h2>
+      <p>Decisiones que no se ven en una demostración pero deciden si el sistema sirve en terreno.</p>
+    </div>
+    <div class="rejilla">
+      <div class="tarjeta">
+        <span class="marca-estado estado-bien">Sin señal</span>
+        <h3>Los subterráneos existen</h3>
+        <p>Si no hay cobertura, el escaneo se guarda en el teléfono y sube cuando vuelve la señal. El guardia ve qué le falta subir.</p>
+      </div>
+      <div class="tarjeta">
+        <span class="marca-estado estado-azul">Varias empresas</span>
+        <h3>Cada cliente, aislado</h3>
+        <p>Los datos de una empresa no son alcanzables desde otra, y eso está impuesto en la base de datos, no solo en la aplicación.</p>
+      </div>
+      <div class="tarjeta">
+        <span class="marca-estado estado-ojo">Turnos</span>
+        <h3>Rondas fijas y recurrentes</h3>
+        <p>Un patrón semanal por empleado que se expande solo. Las decisiones manuales siempre le ganan al patrón.</p>
+      </div>
+      <div class="tarjeta">
+        <span class="marca-estado estado-azul">Acceso</span>
+        <h3>Entrar con la tarjeta</h3>
+        <p>El guardia entra acercando su tarjeta NFC. El código de la empresa queda guardado en el teléfono.</p>
+      </div>
+      <div class="tarjeta">
+        <span class="marca-estado estado-bien">Privacidad</span>
+        <h3>Solo durante el turno</h3>
+        <p>No es una promesa de la aplicación: el servidor rechaza cualquier posición que llegue fuera de la ventana del turno.</p>
+      </div>
+      <div class="tarjeta">
+        <span class="marca-estado estado-ojo">Supervisión</span>
+        <h3>Ver la ronda mientras pasa</h3>
+        <p>El avance en el mapa, los puntos que se van marcando y aviso de los que quedaron sin hacer.</p>
+      </div>
+    </div>
+
+    <table class="ficha">
+      <thead>
+        <tr><th>Medición en terreno</th><th style="text-align:right">Valor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Precisión del recorrido</td><td class="medida">13 m</td></tr>
+        <tr><td>Frecuencia de registro</td><td class="medida">60 s</td></tr>
+        <tr><td>Retención del recorrido</td><td class="medida">90 días</td></tr>
+        <tr><td>Salto máximo entre posiciones</td><td class="medida">2 m</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+
+<section id="guias">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Guías</h2>
+      <p>Lo que hay que saber antes de decidir, escrito con las fuentes a la vista.</p>
+    </div>
+    <div class="galeria">
+      <article class="captura">
+        <h3><a href="ley-21719-geolocalizacion-guardias/">Geolocalización de guardias y Ley 21.719</a></h3>
+        <p>Qué puedes registrar y qué no desde el 01-12-2026: consentimiento, finalidad, proporcionalidad, plazos y multas de hasta 20.000 UTM. Incluye el criterio de la Dirección del Trabajo sobre el GPS en la jornada.</p>
+      </article>
+      <article class="captura">
+        <h3><a href="ley-21659-registro-de-rondas/">Ley 21.659: qué debes poder acreditar</a></h3>
+        <p>Qué cambió para las empresas de seguridad privada, quién fiscaliza ahora y qué atributos tiene un registro de rondas que sirve de evidencia.</p>
+      </article>
+      <article class="captura">
+        <h3><a href="control-de-rondas-nfc/">Control de rondas con NFC</a></h3>
+        <p>Cómo funciona, qué equipos hacen falta, en qué se diferencia del QR y del libro de novedades, y cuáles son los huecos que hay que cerrar.</p>
+      </article>
+      <article class="captura">
+        <h3><a href="#preguntas">Preguntas frecuentes</a></h3>
+        <p>Qué es SentryCore, cómo acredita la ronda, si funciona sin señal, qué pasa si el guardia no acepta el GPS y cómo se contrata.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="preguntas">
+  <div class="envoltorio">
+    <div class="encabezado">
+      <h2>Preguntas frecuentes</h2>
+      <p>Lo que preguntan las empresas de seguridad privada antes de cambiar el libro de novedades por un sistema.</p>
+    </div>
+    <div class="preguntas">
+      <details class="pregunta" open>
+        <summary><h3>¿Qué es SentryCore?</h3></summary>
+        <p>SentryCore es un software chileno de gestión de rondas de guardias. El guardia marca cada punto de control acercando su teléfono a una etiqueta NFC —o leyendo un código QR—, el recorrido queda registrado con GPS durante el turno y el sistema genera solo el informe de cumplimiento con el mapa de lo que ocurrió.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Cómo acredita SentryCore que la ronda se hizo de verdad?</h3></summary>
+        <p>Cada punto de control tiene una etiqueta NFC pegada en el lugar. Marcarla exige estar ahí físicamente, y el escaneo viaja firmado por el teléfono. A eso se suma el recorrido GPS, con una posición por minuto durante toda la ronda. El informe muestra los puntos marcados, los omitidos y el trazado sobre cartografía real.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Qué necesito para empezar: equipos, tarjetas, instalación?</h3></summary>
+        <p>Un teléfono Android con NFC por guardia y etiquetas NFC estándar en cada punto de control. No hay lectores propietarios ni servidores en el recinto: la app se instala en el teléfono y el panel del supervisor funciona en cualquier navegador.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Funciona si el recinto no tiene señal ni wifi?</h3></summary>
+        <p>Sí. La app guarda los escaneos y las posiciones en el teléfono y los sube apenas vuelve la señal. El guardia ve en su pantalla si le queda algo por subir, y el supervisor ve la hora real en que ocurrió cada marca, no la hora en que llegó al servidor.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Es legal registrar la ubicación de un guardia en Chile?</h3></summary>
+        <p>Sí, con reglas. Desde el 1 de diciembre de 2026 rige la Ley 21.719 y la geolocalización de un trabajador es un dato personal: exige consentimiento informado, finalidad determinada, proporcionalidad y un plazo de conservación. SentryCore pide el consentimiento antes del turno, solo registra mientras la ronda está en curso y elimina el recorrido a los 90 días. La responsable ante la Agencia de Protección de Datos sigue siendo tu empresa.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Qué pasa si el guardia no acepta que se registre su ubicación?</h3></summary>
+        <p>Sigue trabajando igual. Puede rechazar el aviso de geolocalización, y también revocarlo después desde su teléfono: el registro se detiene de inmediato. Su decisión queda guardada con fecha y hora, que es justamente lo que la ley pide poder demostrar.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Sirve para la Ley 21.659 de Seguridad Privada?</h3></summary>
+        <p>SentryCore deja registro verificable de las rondas, los turnos y las novedades de cada recinto, que es la evidencia que una empresa de seguridad privada necesita tener a mano. El cumplimiento del reglamento del 27 de mayo de 2025 depende de tu operación completa; el sistema aporta el registro, no el certificado.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Cómo se ve lo que hizo el guardia anoche?</h3></summary>
+        <p>En el panel del supervisor: monitoreo en vivo mientras la ronda ocurre, y después el informe de cumplimiento por recinto y por sucursal, con el recorrido dibujado sobre el mapa, los puntos marcados y los omitidos. Es lo que se le manda al cliente a fin de mes.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Cómo se contrata SentryCore?</h3></summary>
+        <p>Desde los botones de contacto del sitio, por WhatsApp o por correo. La demostración se hace con un recinto tuyo cargado —tus puntos, tu recorrido— para que veas el informe con datos reales y no con un ejemplo.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿SentryCore se puede usar con la marca de mi empresa?</h3></summary>
+        <p>Sí. Cada empresa configura su nombre comercial, su logo y sus colores, y eso se aplica al panel, a los informes que recibe el cliente y a los correos que salen del sistema, incluidos el remitente y el pie. Tu cliente ve tu marca, no la nuestra. La única restricción es de contraste: el sistema no acepta un color de marca que deje el texto ilegible.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Se puede configurar distinto para cada recinto o cliente?</h3></summary>
+        <p>Sí. La configuración baja en cascada por cuatro niveles —plataforma, empresa, recinto y punto de control— y gana siempre el más específico. Puedes fijar un umbral de cumplimiento para toda la empresa y bajarlo en un recinto puntual, exigir foto solo en los accesos críticos de un cliente, o apagar la geolocalización en el recinto de quien no la quiera. El panel muestra de qué nivel salió cada valor.</p>
+      </details>
+      <details class="pregunta">
+        <summary><h3>¿Qué se puede ajustar sin pedirle nada al proveedor?</h3></summary>
+        <p>El umbral de cumplimiento, cada cuánto se registra la posición durante la ronda, cuántos días se conserva el recorrido, el radio de validación del escaneo, la duración máxima de una ronda, si el orden del recorrido es fijo o aleatorio, si se exige foto en los puntos críticos, si el QR sirve de respaldo del NFC, quiénes reciben el informe al cerrar la ronda y qué trae ese informe. Todo desde el panel del administrador.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<div class="envoltorio">
+  <div class="cierre" id="contacto">
+    <h2>¿Lo vemos con tu operación?</h2>
+    <p>Te mostramos el sistema con un recinto tuyo cargado, para que veas el informe con tus puntos y tu recorrido, no con datos de ejemplo.</p>
+      <div class="acciones">
+        <a class="boton boton-primario" data-wa href="#contacto" rel="nofollow noopener">Escribir por WhatsApp</a>
+        <a class="boton boton-secundario" data-mail href="#contacto" rel="nofollow noopener">Escribir un correo</a>
+      </div>
+      <p class="contacto-nota">
+        Respondemos en horario hábil. <noscript>Los botones de contacto necesitan JavaScript activado: los
+        armamos en tu navegador para que ni el número ni el correo queden a la vista de los
+        recolectores de spam.</noscript>
+      </p>
+  </div>
+</div>
+
+</main>
+
+<p class="dato" style="text-align:center; font-size:12px; color:var(--text-muted); margin:48px 0 0">
+  Actualizado el 30 de agosto de 2026
+</p>
+
+<footer>
+  <div class="envoltorio">
+    <div>
+      <div class="wordmark"><b>VoxTi</b> <span>Labs</span></div>
+      <p class="dato" style="margin-top:8px">78.478.274-3</p>
+    </div>
+    <p class="dato">sentry.voxtilabs.cl</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var boton = document.getElementById('cambiarModo');
+  var raiz = document.documentElement;
+  var guardado = null;
+  try { guardado = localStorage.getItem('modo'); } catch (e) {}
+  var prefiereNoche = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  aplicar(guardado || (prefiereNoche ? 'noche' : 'dia'));
+
+  function aplicar(modo) {
+    raiz.setAttribute('data-mode', modo);
+    boton.textContent = modo === 'noche' ? 'Modo día' : 'Modo noche';
+    try { localStorage.setItem('modo', modo); } catch (e) {}
+  }
+  boton.addEventListener('click', function () {
+    aplicar(raiz.getAttribute('data-mode') === 'noche' ? 'dia' : 'noche');
+  });
+})();
+</script>
+
+<script>
+/* Arma los destinos de contacto en el navegador: el HTML servido no los trae. */
+(function () {
+  var d = function (s) { return atob(s).split('').reverse().join(''); };
+  var tel = d('MzkwOTIwNzM5NjU=');
+  var correo = d('bGMuc2JhbGl0eG92QHNlY2l2cmVz');
+  var msg = 'Hola, vi SentryCore en la web y quiero saber más.';
+  var asunto = 'Consulta por SentryCore';
+  var enWa = document.querySelectorAll('[data-wa]');
+  for (var i = 0; i < enWa.length; i++) {
+    enWa[i].href = 'https://wa.me/' + tel + '?text=' + encodeURIComponent(msg);
+    enWa[i].target = '_blank';
+  }
+  var enMail = document.querySelectorAll('[data-mail]');
+  for (var j = 0; j < enMail.length; j++) {
+    enMail[j].href = 'mailto:' + correo + '?subject=' + encodeURIComponent(asunto);
+  }
+})();
+</script>
+</body>
+</html>

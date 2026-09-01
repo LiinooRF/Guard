@@ -1,0 +1,31 @@
+# Landing publica de SentryCore para Dokploy.
+#
+# Va como COMPOSE y no como "application" de Dokploy a proposito: en este
+# servidor, una application se despliega como servicio Swarm y Traefik resuelve
+# su backend por el DNS del servicio. Ese nombre no resolvio —el contenedor
+# quedaba sano y el proxy devolvia 503— mientras que el stack del sistema, que
+# es un compose, funciona sin problemas. Se copia el mecanismo que ya anda en
+# vez de pelear con el que no.
+#
+# El dominio se asigna desde la pestaña Domains del servicio `landing`, igual
+# que `web` y `api` del stack: Dokploy pone el proxy, el TLS y el certificado.
+
+services:
+  landing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/robots.txt >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - dokploy-network
+
+networks:
+  # La crea Dokploy al instalarse. `external` significa "ya existe, no la crees".
+  dokploy-network:
+    external: true
