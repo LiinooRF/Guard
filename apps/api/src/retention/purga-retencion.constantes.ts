@@ -70,5 +70,5 @@ export const PURGA_MAX_TRABADAS_POR_TENANT = 500;
  */
 export const PURGA_LOTE_TRAZAS = 5_000;
 
-/** Tope de traza por empresa y por pasada. Un turno de 8 h son ~480 filas. */
+/** Tope de traza por empresa y por pasada. Un turno de 8 h son ~960 filas. */
 export const PURGA_MAX_TRAZAS_POR_TENANT = 100_000;

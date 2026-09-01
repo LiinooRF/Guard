@@ -70,6 +70,82 @@ const sqlDe = (query: jest.Mock): string[] =>
   query.mock.calls.map(([sql]: [string]) => sql);
 
 describe('GeoService — traza y consentimiento (#15, #134)', () => {
+  /*
+   * Medido en una caminata real de 20 minutos con 94 posiciones (31-08-2026):
+   * diez traian un error declarado de mas de 40 m y una de ellas implicaba
+   * 41 km/h a pie. En el informe eso es el zigzag que el cliente ve y no
+   * entiende, porque el guardia camino derecho.
+   *
+   * El servidor ya recibe `gpsTrackMaxAccuracyM` en las reglas y ya sabe que
+   * velocidad considera imposible: hasta ahora no usaba ninguna de las dos al
+   * guardar, solo al DIBUJAR. Guardar basura y taparla al dibujar significa que
+   * el kilometraje, el tiempo detenido y los huecos se calculan sobre ella.
+   */
+  it('descarta la posicion mas imprecisa que el maximo configurado', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'track-1' }]);
+
+    const resultado = await servicio(query, { gpsTrackMaxAccuracyM: 40 }).appendTrack(
+      'guard-1',
+      'patrol-1',
+      [
+        { ...PUNTO(1), accuracyM: 12 },
+        { ...PUNTO(2), accuracyM: 146 },
+      ],
+    );
+
+    expect(resultado.stored).toBe(1);
+    expect(resultado.imprecise).toBe(1);
+  });
+
+  /*
+   * La precision declarada no alcanza: hay posiciones que dicen +-15 m y estan
+   * a cien metros de donde el guardia realmente iba. Lo que las delata es el
+   * salto contra la anterior, no su propio numero.
+   */
+  it('descarta el salto que implica una velocidad imposible', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'track-1' }]);
+
+    // 0,02 grados de latitud son ~2,2 km. En un minuto serian 133 km/h.
+    const resultado = await servicio(query, { impossibleSpeedKmh: 15 }).appendTrack(
+      'guard-1',
+      'patrol-1',
+      [
+        { ...PUNTO(1), accuracyM: 10 },
+        { ...PUNTO(2, -33.47), accuracyM: 10 },
+      ],
+    );
+
+    expect(resultado.stored).toBe(1);
+    expect(resultado.impossibleJumps).toBe(1);
+  });
+
+  it('una caminata normal no pierde ninguna posicion', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'consent-1' }])
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+
+    // ~0,0004 grados por minuto son unos 44 m: 2,7 km/h, caminando.
+    const resultado = await servicio(query).appendTrack('guard-1', 'patrol-1', [
+      { ...PUNTO(1, -33.4500), accuracyM: 12 },
+      { ...PUNTO(2, -33.4504), accuracyM: 14 },
+      { ...PUNTO(3, -33.4508), accuracyM: 11 },
+    ]);
+
+    expect(resultado.stored).toBe(3);
+    expect(resultado.imprecise).toBe(0);
+    expect(resultado.impossibleJumps).toBe(0);
+  });
+
   it('sin consentimiento vigente NO se guarda traza', async () => {
     const query = jest.fn().mockResolvedValueOnce([]); // no hay consentimiento
 
@@ -84,6 +160,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }, { id: 't2' }, { id: 't3' }]);
 
     await expect(
@@ -118,6 +195,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }]);
 
     await expect(
@@ -143,6 +221,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }, { id: 't2' }]);
 
     const antesDelTurno = { ...PUNTO(1), recordedAt: '2026-08-01T09:50:00Z' };
@@ -173,7 +252,8 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     // Con la tolerancia por defecto (5 min) el punto viene demasiado adelantado.
     const estricto = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
-      .mockResolvedValueOnce([RONDA_EN_CURSO]);
+      .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay;
 
     await expect(
       servicio(estricto).appendTrack('guard-1', 'patrol-1', [dentroDeDiezMinutos]),
@@ -184,6 +264,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const tolerante = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }]);
 
     await expect(
@@ -202,6 +283,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }]);
 
     const { servicio: reglasServicio, effective } = reglasPorRecinto(
@@ -227,6 +309,7 @@ describe('GeoService — traza y consentimiento (#15, #134)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'consent-1' }])
       .mockResolvedValueOnce([RONDA_EN_CURSO])
+      .mockResolvedValueOnce([])  // ultima posicion guardada: no hay
       .mockResolvedValueOnce([{ id: 't1' }]);
 
     await expect(

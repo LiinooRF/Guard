@@ -245,7 +245,7 @@ const config: ExpoConfig = {
        * linea de configuracion.
        *
        * POR QUE SE NECESITA: la traza del recorrido (`patrol_tracks`) se
-       * muestrea cada `gpsTrackIntervalSeconds` (60 s por defecto) mientras la
+       * muestrea cada `gpsTrackIntervalSeconds` (30 s por defecto) mientras la
        * ronda esta EN CURSO. Un guardia recorre 8 horas con el telefono en el
        * bolsillo y la pantalla apagada: en cuanto la pantalla se apaga el
        * WebView deja de ejecutar y la traza se corta. Sin traza continua el
