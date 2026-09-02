@@ -99,11 +99,25 @@ export function dibujarMapaRecorrido(
 ): void {
   const notas = armarNotas(mapa, fondo);
   // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
+  asegurarEspacio(doc, ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
-  const caja: CajaPlano = { x: x0, y: doc.y, ancho: anchoUtil(doc), alto: ALTO_MAPA };
+
+  // Las cifras van ARRIBA del plano: quien hojea el informe lee primero cuanto
+  // se recorrio y en cuanto tiempo, y despues mira por donde.
+  const altoResumen = dibujarResumenTraza(doc, mapa, {
+    x: x0,
+    y: doc.y,
+    ancho: anchoUtil(doc),
+  });
+
+  const caja: CajaPlano = {
+    x: x0,
+    y: doc.y + altoResumen,
+    ancho: anchoUtil(doc),
+    alto: ALTO_MAPA,
+  };
 
   doc.save();
   doc.lineWidth(0.8);
@@ -188,6 +202,88 @@ export function dibujarMapaRecorrido(
 
 // -------------------------------------------------------------------- capas
 
+/**
+ * Radio del punto que marca UNA posicion medida, segun cuantas haya.
+ *
+ * Tiene que SUPERAR el medio ancho de la linea (1,3 pt de grosor, o sea 0,65
+ * de radio) o el punto queda enterrado debajo del trazo y no se ve: eso paso
+ * con el primer valor que probe, 1,1 pt, que en el PDF no se distinguia.
+ *
+ * Y no puede ser fijo: una ronda corta trae veinte posiciones muy separadas y
+ * otra larga trae quinientas pegadas. El mismo radio que se lee bien en la
+ * primera convierte a la segunda en una salchicha. Se achica cuando hay
+ * muchas, que es justo cuando la densidad ya se ve sola.
+ */
+function radioPosicion(cantidad: number): number {
+  if (cantidad > 300) return 1.1;
+  if (cantidad > 120) return 1.5;
+  return 1.9;
+}
+
+/**
+ * Cuantas posiciones justifican dibujarlas una por una.
+ *
+ * Con dos o tres puntos la nube no dice nada que la linea no diga: solo
+ * ensucia. Lo que se quiere mostrar es muestreo sostenido.
+ */
+const MINIMO_PARA_PUNTEAR = 8;
+
+/**
+ * Cifras del recorrido, arriba del plano.
+ *
+ * Lo que el mapa muestra pero no dice: cuanto camino, cuanto duro y cuanto de
+ * eso estuvo quieto. Sin esos tres numeros, dos planos identicos pueden ser una
+ * ronda de veinte minutos y otra de tres horas.
+ *
+ * Todo sale de la traza que ya esta en el modelo —la distancia la calcula el
+ * modelo y las horas vienen en cada posicion—, asi que no cuesta una consulta
+ * nueva ni depende de que el resumen de metricas este disponible.
+ */
+/** Alto de la banda de cifras. Reservado tambien por `asegurarEspacio`. */
+const ALTO_RESUMEN_TRAZA = 30;
+
+function dibujarResumenTraza(
+  doc: PDFKit.PDFDocument,
+  mapa: MapaRecorrido,
+  caja: { x: number; y: number; ancho: number },
+): number {
+  if (!mapa.hayDatos || mapa.traza.length < 2) return 0;
+
+  const primero = mapa.traza[0]!;
+  const ultimo = mapa.traza[mapa.traza.length - 1]!;
+  const minutos = (ultimo.instante.getTime() - primero.instante.getTime()) / 60_000;
+  if (!Number.isFinite(minutos) || minutos <= 0) return 0;
+
+  const celdas: Array<{ rotulo: string; valor: string }> = [
+    { rotulo: 'RECORRIDO', valor: formatearDistancia(mapa.distanciaTrazaM) },
+    { rotulo: 'DURACIÓN', valor: `${formatearEntero(Math.round(minutos))} min` },
+    { rotulo: 'POSICIONES', valor: formatearEntero(mapa.trazaTotalRegistrada) },
+    {
+      rotulo: 'RITMO MEDIO',
+      valor: `${(mapa.distanciaTrazaM / 1000 / (minutos / 60)).toFixed(1)} km/h`,
+    },
+  ];
+
+  const anchoCelda = caja.ancho / celdas.length;
+  doc.save();
+  doc.lineWidth(0.6).rect(caja.x, caja.y, caja.ancho, ALTO_RESUMEN_TRAZA).fillAndStroke(BLANCO, PALETA.linea);
+  celdas.forEach((celda, i) => {
+    const x = caja.x + anchoCelda * i + 8;
+    // Separador entre celdas, salvo antes de la primera.
+    if (i > 0) {
+      doc.moveTo(caja.x + anchoCelda * i, caja.y + 5)
+        .lineTo(caja.x + anchoCelda * i, caja.y + ALTO_RESUMEN_TRAZA - 5)
+        .stroke(PALETA.linea);
+    }
+    doc.font('Helvetica').fontSize(5.6).fillColor(PALETA.gris);
+    doc.text(celda.rotulo, x, caja.y + 6, { width: anchoCelda - 16 });
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(PALETA.tinta);
+    doc.text(celda.valor, x, caja.y + 14, { width: anchoCelda - 16 });
+  });
+  doc.restore();
+  return ALTO_RESUMEN_TRAZA + 8;
+}
+
 function dibujarTraza(doc: PDFKit.PDFDocument, mapa: MapaRecorrido, ajuste: AjusteMapa): void {
   const puntos = mapa.traza.map((posicion) => enPdf(ajuste, posicion));
   if (puntos.length === 0) return;
@@ -204,6 +300,30 @@ function dibujarTraza(doc: PDFKit.PDFDocument, mapa: MapaRecorrido, ajuste: Ajus
     doc.stroke();
     doc.restore();
     dibujarFlechasDeSentido(doc, puntos);
+
+    /*
+     * Y encima de la linea, CADA POSICION MEDIDA.
+     *
+     * Una linea entre dos marcas puede ser cualquier cosa: el dibujo no
+     * distingue un recorrido muestreado cada 15 segundos de una recta trazada
+     * entre el primer y el ultimo escaneo. Quien recibe el informe no tiene
+     * como saber cual de las dos esta mirando, y esa ambiguedad juega en contra
+     * de lo unico que el producto vende, que es evidencia.
+     *
+     * Los puntos deshacen la ambiguedad sin explicar nada: donde hubo muestreo
+     * hay puntos, y donde la linea cruza sola es porque ahi no se midio.
+     */
+    if (puntos.length >= MINIMO_PARA_PUNTEAR) {
+      // En tinta y no en gris: sobre una linea gris del mismo tono el punto
+      // desaparece. El contraste es lo que separa "medido" de "interpolado".
+      const radio = radioPosicion(puntos.length);
+      doc.save();
+      doc.fillColor(PALETA.tinta);
+      for (const punto of puntos) {
+        doc.circle(punto.x, punto.y, radio).fill();
+      }
+      doc.restore();
+    }
   }
 
   // Inicio: triangulo relleno. Fin: cuadrado relleno. Formas distintas de las de
@@ -414,6 +534,15 @@ const LEYENDA: readonly ItemLeyenda[] = [
       doc.lineWidth(1.3).strokeColor(PALETA.gris);
       doc.moveTo(x - 6, y).lineTo(x + 6, y).stroke();
       doc.polygon([x + 6, y], [x + 1, y - 2.6], [x + 1, y + 2.6]).fill(PALETA.gris);
+    },
+  },
+  {
+    // Va JUNTO al recorrido y no al final de la lista: los dos hablan del mismo
+    // trazo, y lo que hay que entender es que la linea une posiciones medidas.
+    texto: 'Cada posición registrada',
+    dibujar: (doc, x, y) => {
+      doc.fillColor(PALETA.tinta);
+      for (const dx of [-6, -2, 2, 6]) doc.circle(x + dx, y, 1.9).fill();
     },
   },
   {
