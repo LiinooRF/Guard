@@ -5,6 +5,7 @@ import {
   barraEscala,
   enPdf,
   type AjusteMapa,
+  type EncuadreMapa,
   type MapaRecorrido,
   type MarcaEscaneoMapa,
   type MarcaPuntoMapa,
@@ -55,7 +56,39 @@ import {
  */
 
 /** Alto de la caja del plano. Entra completa en media hoja A4 con su leyenda. */
+/**
+ * Alto MINIMO del plano. El alto real se calcula por la forma del recorrido.
+ */
 const ALTO_MAPA = 250;
+
+/**
+ * Alto maximo del plano.
+ *
+ * El tope no es estetico: por debajo de el, plano + leyenda + notas entran en
+ * la misma pagina. Subirlo empuja la leyenda a la hoja siguiente y deja un
+ * mapa sin como leerse.
+ */
+const ALTO_MAPA_MAX = 430;
+
+/**
+ * Alto del plano segun la forma de lo que hay que dibujar.
+ *
+ * La caja era fija y muy apaisada (535 x 250, o sea 2,1:1). Un recorrido que
+ * ocupa una manzana es casi cuadrado, asi que el encuadre se estiraba a los
+ * lados para calzar con la caja y el trazo terminaba chico en el centro, con
+ * aire sobrando a izquierda y derecha. La distancia era correcta y la escala
+ * tambien; lo que se perdia era el detalle, que es justo lo que se mira.
+ *
+ * Ahora la caja sigue a los datos: apaisada para una ronda que recorre una
+ * avenida, alta para una que da la vuelta a la manzana. Entre los dos topes,
+ * para no romper la pagina.
+ */
+function altoDelPlano(encuadre: EncuadreMapa, ancho: number): number {
+  const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
+  const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
+  const ideal = ancho * (altoM / anchoM);
+  return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), ALTO_MAPA_MAX));
+}
 /** Lo que consume dibujarTituloSeccion: su propio margen mas la linea de texto. */
 const ALTO_TITULO = 40;
 const ALTO_LEYENDA = 34;
@@ -99,7 +132,7 @@ export function dibujarMapaRecorrido(
 ): void {
   const notas = armarNotas(mapa, fondo);
   // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_MAPA + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
+  asegurarEspacio(doc, ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_MAPA_MAX + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
@@ -112,11 +145,16 @@ export function dibujarMapaRecorrido(
     ancho: anchoUtil(doc),
   });
 
+  const anchoPlano = anchoUtil(doc);
   const caja: CajaPlano = {
     x: x0,
     y: doc.y + altoResumen,
-    ancho: anchoUtil(doc),
-    alto: ALTO_MAPA,
+    ancho: anchoPlano,
+    // El alto sale de la forma del recorrido, no de una constante: ver
+    // altoDelPlano(). Sin datos no hay encuadre que medir y vale el minimo.
+    alto: mapa.hayDatos
+      ? altoDelPlano(mapa.encuadre, anchoPlano - PADDING_CAJA * 2)
+      : ALTO_MAPA,
   };
 
   doc.save();
