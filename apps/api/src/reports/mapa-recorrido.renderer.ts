@@ -83,10 +83,14 @@ const ALTO_MAPA_MAX = 430;
  * avenida, alta para una que da la vuelta a la manzana. Entre los dos topes,
  * para no romper la pagina.
  */
-function altoDelPlano(encuadre: EncuadreMapa, ancho: number): number {
+export function altoDelPlano(encuadre: EncuadreMapa, anchoInterior: number): number {
   const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
   const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
-  const ideal = ancho * (altoM / anchoM);
+  // El alto que pide la forma del recorrido es para el INTERIOR del recuadro,
+  // asi que hay que devolver ese interior mas el padding de los dos bordes. Sin
+  // sumarlo, el interior queda PADDING_CAJA * 2 mas bajo que la proporcion
+  // pedida y el mapa se encoge para caber: quedan bandas blancas a los lados.
+  const ideal = anchoInterior * (altoM / anchoM) + PADDING_CAJA * 2;
   return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), ALTO_MAPA_MAX));
 }
 /** Lo que consume dibujarTituloSeccion: su propio margen mas la linea de texto. */
@@ -95,7 +99,22 @@ const ALTO_LEYENDA = 34;
 const ALTO_NOTA = 10;
 
 /** Aire entre el marco y el contenido: el radio de una marca mas un respiro. */
-const PADDING_CAJA = 22;
+export const PADDING_CAJA = 22;
+
+/**
+ * Rectangulo interior del recuadro del plano: donde van los tiles Y el trazo.
+ *
+ * Vive aca y se exporta porque `mapa-recorrido.service` tiene que pedir la
+ * cartografia con ESTA caja. Mientras cada archivo calculo la suya, el fondo
+ * salio con una proporcion y el recorrido con otra.
+ */
+export function cajaInteriorDelPlano(
+  encuadre: EncuadreMapa,
+  anchoUtilPt: number,
+): { readonly ancho: number; readonly alto: number } {
+  const ancho = anchoUtilPt - PADDING_CAJA * 2;
+  return { ancho, alto: altoDelPlano(encuadre, ancho) - PADDING_CAJA * 2 };
+}
 
 const RADIO_MARCA = 8.5;
 const RADIO_ROMBO = 6;
@@ -153,7 +172,7 @@ export function dibujarMapaRecorrido(
     // El alto sale de la forma del recorrido, no de una constante: ver
     // altoDelPlano(). Sin datos no hay encuadre que medir y vale el minimo.
     alto: mapa.hayDatos
-      ? altoDelPlano(mapa.encuadre, anchoPlano - PADDING_CAJA * 2)
+      ? cajaInteriorDelPlano(mapa.encuadre, anchoPlano).alto + PADDING_CAJA * 2
       : ALTO_MAPA,
   };
 
