@@ -9,9 +9,11 @@ import {
   type TrazaRow,
 } from './mapa-recorrido.model';
 import {
+  altoDelPlano,
   armarNotas,
   dibujarMapaRecorrido,
   formatearDistancia,
+  PADDING_CAJA,
 } from './mapa-recorrido.renderer';
 import type { FilaPunto } from './patrol-report.model';
 
@@ -237,5 +239,55 @@ describe('formatearDistancia', () => {
 
   it('un valor imposible no imprime NaN en el informe', () => {
     expect(formatearDistancia(Number.NaN)).toBe('—');
+  });
+});
+
+/**
+ * El recuadro del plano tiene que quedar con la MISMA proporcion que el
+ * encuadre, para que la cartografia llene el interior en vez de encogerse y
+ * dejar bandas blancas a los lados. El 02-09-2026 un recorrido de 951 x 542 m
+ * salia con 78 pt de banda a cada costado porque `altoDelPlano` calculaba el
+ * alto que pedia el INTERIOR pero se asignaba como alto TOTAL del recuadro.
+ */
+describe('altoDelPlano', () => {
+  const ANCHO_INTERIOR = 471;
+  const encuadre = (anchoM: number, altoM: number) => ({
+    esteMin: 0,
+    esteMax: anchoM,
+    norteMin: 0,
+    norteMax: altoM,
+  });
+
+  it.each([
+    ['el recorrido del 02-09', 951, 542],
+    ['apaisado suave', 600, 400],
+    ['al limite de la hoja', 500, 380],
+  ])('deja el interior con la proporcion del encuadre (%s)', (_caso, anchoM, altoM) => {
+    const alto = altoDelPlano(encuadre(anchoM, altoM), ANCHO_INTERIOR);
+    const altoInterior = alto - PADDING_CAJA * 2;
+
+    const escala = Math.min(ANCHO_INTERIOR / anchoM, altoInterior / altoM);
+    const bandaLateral = ANCHO_INTERIOR - anchoM * escala;
+    const bandaVertical = altoInterior - altoM * escala;
+
+    expect(bandaLateral).toBeLessThanOrEqual(1);
+    expect(bandaVertical).toBeLessThanOrEqual(1);
+  });
+
+  it('respeta el alto minimo y el maximo de la hoja', () => {
+    expect(altoDelPlano(encuadre(2_000, 50), ANCHO_INTERIOR)).toBe(250);
+    expect(altoDelPlano(encuadre(50, 2_000), ANCHO_INTERIOR)).toBe(430);
+  });
+
+  /**
+   * Un recorrido cuadrado o vertical pediria un recuadro mas alto que lo que
+   * queda de hoja, asi que se recorta a ALTO_MAPA_MAX y ahi si sobra ancho.
+   * Es el limite del papel, no el defecto que se corrigio: el mapa sigue
+   * centrado y a escala, solo que no llena los costados.
+   */
+  it('en recorridos cuadrados el techo de la hoja manda y sobra ancho', () => {
+    const alto = altoDelPlano(encuadre(400, 380), ANCHO_INTERIOR);
+
+    expect(alto).toBe(430);
   });
 });
