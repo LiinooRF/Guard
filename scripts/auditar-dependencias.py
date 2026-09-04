@@ -42,6 +42,12 @@ HEREDADOS = {
     # Estos dos SI tienen arreglo limpio, pero mover el arbol de dependencias
     # del movil es un cambio que merece su propio PR y su propio APK de prueba,
     # no colarse en uno de otra cosa. Ver el issue de actualizacion.
+    # Lo arrastra expo-splash-screen -> @expo/config-plugins, que es
+    # herramienta de BUILD: escribe el AndroidManifest y el plist durante el
+    # prebuild y no viaja dentro del APK. El aviso es inyeccion de XML al
+    # serializar, y lo unico que serializa es el manifiesto del propio
+    # proyecto. El arreglo depende de que Expo actualice @expo/plist y plist.
+    '@xmldom/xmldom': 'solo en el prebuild de Expo; no viaja en el APK',
     'js-yaml': 'tiene arreglo limpio; se hace en su propio PR (issue de deps)',
     'nanoid': 'tiene arreglo limpio; se hace en su propio PR (issue de deps)',
 }
