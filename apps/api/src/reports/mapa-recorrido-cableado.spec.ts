@@ -57,3 +57,29 @@ describe('el mapa del recorrido esta cableado al informe (#79)', () => {
     expect(modelo).toMatch(/readonly mapa: MapaRecorrido \| null;/);
   });
 });
+
+/**
+ * El fondo cartografico se pide en `mapa-recorrido.service` y el trazo se
+ * dibuja en `mapa-recorrido.renderer`. Son dos archivos que tienen que estar
+ * de acuerdo sobre UNA cosa: el rectangulo interior del recuadro del plano.
+ *
+ * Cuando no lo estuvieron —el servicio con una caja fija de 515x250 y padding
+ * 10, el renderer con ancho 515, padding 22 y alto segun la forma del
+ * recorrido— los tiles se generaron con una proporcion y el recorrido se
+ * dibujo con otra: las calles quedaban corridas respecto de la linea. No lo
+ * cazo ningun test porque cada archivo, por separado, hacia bien su parte.
+ *
+ * Ahora la caja la define una sola funcion; lo que se comprueba aca es que el
+ * servicio la SIGA usando en vez de volver a calcularla por su cuenta.
+ */
+describe('el fondo se pide con la misma caja donde se dibuja el trazo', () => {
+  const fuente = readFileSync(join(__dirname, 'mapa-recorrido.service.ts'), 'utf8');
+
+  it('el servicio arma el interior con cajaInteriorDelPlano', () => {
+    expect(fuente).toContain('cajaInteriorDelPlano(mapa.encuadre');
+  });
+
+  it('el servicio no vuelve a inventar un alto ni un padding propios', () => {
+    expect(fuente).not.toMatch(/CAJA_ALTO_PT|PADDING_PT/);
+  });
+});

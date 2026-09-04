@@ -16,15 +16,20 @@ import {
 } from './mapa-recorrido.model';
 import type { FilaPunto } from './patrol-report.model';
 import { obtenerFondo, type FondoCartografico } from './mapa-tiles';
+import { cajaInteriorDelPlano } from './mapa-recorrido.renderer';
 
 /**
  * Medidas de la caja del plano en el PDF, en puntos, y su margen interior.
  * Copiadas del renderer: si dejan de coincidir, el fondo queda corrido respecto
  * de las marcas — que es exactamente el defecto que se corrigio aca.
  */
+/**
+ * Ancho util de la hoja A4 con los margenes del informe: el MISMO que le toca
+ * al recuadro del plano. El alto NO es constante —lo decide la forma del
+ * recorrido— y el padding sale del renderer, para que la cartografia se pida
+ * con la caja exacta donde despues se dibuja el trazo.
+ */
 const CAJA_ANCHO_PT = 515;
-const CAJA_ALTO_PT = 250;
-const PADDING_PT = 10;
 
 /**
  * Datos del mapa del recorrido para el informe de ronda (#79).
@@ -154,12 +159,11 @@ export class MapaRecorridoService {
     // con el de la caja: el encuadre es cuadrado y la caja apaisada, asi que el
     // plano se dibuja centrado y mas chico. Pedirlos del tamaño de la caja
     // dejaba las calles corridas respecto del recorrido.
-    const interior = {
-      x: 0,
-      y: 0,
-      ancho: CAJA_ANCHO_PT - PADDING_PT * 2,
-      alto: CAJA_ALTO_PT - PADDING_PT * 2,
-    };
+    // La caja la define el renderer, que es quien dibuja. Cuando aca habia una
+    // constante fija (515x250, padding 10) el fondo se pedia con una
+    // proporcion y el trazo se dibujaba con otra: las calles quedaban corridas
+    // respecto del recorrido y el mapa "no encajaba".
+    const interior = { x: 0, y: 0, ...cajaInteriorDelPlano(mapa.encuadre, CAJA_ANCHO_PT) };
     // Mismo encuadre expandido que usa el renderer: si difiere, el fondo se corre.
     const encuadre = expandirAProporcion(mapa.encuadre, interior);
     const ajuste = ajustarACaja(encuadre, interior);
