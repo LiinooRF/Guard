@@ -13,6 +13,7 @@ import {
   armarNotas,
   dibujarMapaRecorrido,
   formatearDistancia,
+  huecosDeTraza,
   PADDING_CAJA,
 } from './mapa-recorrido.renderer';
 import type { FilaPunto } from './patrol-report.model';
@@ -180,21 +181,30 @@ describe('dibujarMapaRecorrido', () => {
 
   it('el mapa que no cabe se va a la hoja siguiente en vez de partirse', async () => {
     const mapa = mapaCompleto();
-    let yForzado = 0;
+    let hojasNuevas = 0;
     let yFinal = 0;
+    let fondoDeHoja = 0;
 
     await generar((doc) => {
       // Se deja el cursor casi al fondo de la hoja, como quedaria despues de una
       // tabla larga de puntos. El espacio se reserva ANTES del titulo, asi que
       // la seccion completa tiene que saltar de hoja: si el titulo se escribiera
       // primero, quedaria huerfano al final de la anterior.
-      yForzado = doc.page.height - doc.page.margins.bottom - 60;
-      doc.y = yForzado;
+      //
+      // Se cuenta la hoja agregada y NO se compara el cursor final contra el
+      // forzado: desde que el plano usa la hoja que le sobra, la seccion ocupa
+      // casi una pagina entera y termina abajo aunque haya saltado bien.
+      doc.on('pageAdded', () => {
+        hojasNuevas += 1;
+      });
+      doc.y = doc.page.height - doc.page.margins.bottom - 60;
       dibujarMapaRecorrido(doc, mapa);
       yFinal = doc.y;
+      fondoDeHoja = doc.page.height - doc.page.margins.bottom;
     });
 
-    expect(yFinal).toBeLessThan(yForzado);
+    expect(hojasNuevas).toBe(1);
+    expect(yFinal).toBeLessThanOrEqual(fondoDeHoja);
   });
 });
 
@@ -289,5 +299,65 @@ describe('altoDelPlano', () => {
     const alto = altoDelPlano(encuadre(400, 380), ANCHO_INTERIOR);
 
     expect(alto).toBe(430);
+  });
+});
+
+
+/**
+ * El 05-09-2026, en una prueba de terreno, el telefono dejo de reportar doce
+ * minutos: el guardia entro a un supermercado con el equipo guardado. El
+ * informe imprimio "1,7 km · 126 posiciones" y dibujo una linea recta sobre
+ * ese silencio, sin decir una palabra. Quien lo recibe lee un recorrido
+ * acreditado de punta a punta, y ese tramo nadie lo midio.
+ */
+describe('tramos sin registrar', () => {
+  const trazaCada = (segundos: readonly number[]) => {
+    let t = new Date('2026-09-05T16:00:00Z').getTime();
+    const filas: TrazaRow[] = [
+      {
+        recorded_at_device: new Date(t),
+        latitude: RECINTO.lat.toFixed(6),
+        longitude: RECINTO.lng.toFixed(6),
+        accuracy_m: '10.00',
+      },
+    ];
+    segundos.forEach((seg, i) => {
+      t += seg * 1_000;
+      filas.push({
+        recorded_at_device: new Date(t),
+        latitude: (RECINTO.lat + 0.0004 * (i + 1)).toFixed(6),
+        longitude: (RECINTO.lng + 0.0004 * (i + 1)).toFixed(6),
+        accuracy_m: '10.00',
+      });
+    });
+    return construirMapaRecorrido(entrada({ puntos: [punto(1)], traza: filas }));
+  };
+
+  it('un muestreo normal no tiene ningun tramo sin registrar', () => {
+    expect(huecosDeTraza(trazaCada([15, 15, 15, 20, 15]))).toHaveLength(0);
+  });
+
+  it('doce minutos de silencio cuentan como un tramo sin medir', () => {
+    const huecos = huecosDeTraza(trazaCada([15, 726, 15]));
+
+    expect(huecos).toHaveLength(1);
+    expect(huecos[0]!.segundos).toBe(726);
+    expect(huecos[0]!.desde).toBe(1);
+  });
+
+  it('el informe lo dice y aclara que la distancia va en linea recta', () => {
+    const notas = armarNotas(trazaCada([15, 726, 15]));
+
+    const aviso = notas.find((n) => n.includes('se interrumpió'));
+    expect(aviso).toBeDefined();
+    expect(aviso).toContain('una vez');
+    expect(aviso).toContain('12 min');
+    expect(aviso).toContain('línea recta');
+  });
+
+  it('sin interrupciones no ensucia el informe con el aviso', () => {
+    expect(armarNotas(trazaCada([15, 15, 15])).some((n) => n.includes('se interrumpió'))).toBe(
+      false,
+    );
   });
 });

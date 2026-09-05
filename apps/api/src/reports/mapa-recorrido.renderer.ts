@@ -12,6 +12,7 @@ import {
 } from './mapa-recorrido.model';
 import {
   PALETA,
+  MARGEN,
   anchoUtil,
   asegurarEspacio,
   dibujarTituloSeccion,
@@ -62,13 +63,44 @@ import {
 const ALTO_MAPA = 250;
 
 /**
- * Alto maximo del plano.
+ * Alto maximo del plano CUANDO EL INFORME TRAE TODAS SUS NOTAS.
  *
  * El tope no es estetico: por debajo de el, plano + leyenda + notas entran en
- * la misma pagina. Subirlo empuja la leyenda a la hoja siguiente y deja un
- * mapa sin como leerse.
+ * la misma pagina. Subirlo a ciegas empuja la leyenda a la hoja siguiente y
+ * deja un mapa sin como leerse.
+ *
+ * Pero casi ningun informe trae las diez notas. Con dos —el caso normal—
+ * sobran mas de 170 pt de hoja que antes se desperdiciaban: un recorrido
+ * cuadrado se encogia contra este tope y dejaba banda blanca a los costados
+ * mientras abajo quedaba papel en blanco. Por eso el tope real lo calcula
+ * `topeDelPlano()` a partir de las notas que ese informe va a imprimir, y esta
+ * constante queda como el piso garantizado.
  */
 const ALTO_MAPA_MAX = 430;
+
+/** Alto util de una hoja A4 con los margenes del informe. */
+const ALTO_UTIL_HOJA = 842 - MARGEN * 2;
+
+/** Holgura para lo que titulo y leyenda gastan por encima de sus constantes. */
+const COLCHON_HOJA = 16;
+
+/**
+ * Cuanto alto puede ocupar el plano en ESTE informe.
+ *
+ * Se cuenta con `armarNotas(mapa, null) + 1` a proposito, no con las notas
+ * reales: la nota que sobra es la atribucion de la cartografia, que aparece
+ * solo si el fondo se pudo descargar. Si el tope dependiera de eso, un fallo
+ * de red cambiaria la caja y el fondo dejaria de coincidir con el trazo —el
+ * defecto que arreglo el PR #367—. Asi el numero es el mismo siempre.
+ */
+export function topeDelPlano(mapa: MapaRecorrido): number {
+  const notas = armarNotas(mapa, null).length + 1;
+  const fijo = ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_LEYENDA + notas * ALTO_NOTA * 2 + 12;
+  // Colchon: titulo y leyenda gastan unos puntos mas que sus constantes —el
+  // test del cursor lo cazo pasandose 5,5 pt del borde— y un plano que empuja
+  // la leyenda a la hoja siguiente es peor que un plano algo mas chico.
+  return Math.max(ALTO_MAPA_MAX, ALTO_UTIL_HOJA - fijo - COLCHON_HOJA);
+}
 
 /**
  * Alto del plano segun la forma de lo que hay que dibujar.
@@ -83,7 +115,11 @@ const ALTO_MAPA_MAX = 430;
  * avenida, alta para una que da la vuelta a la manzana. Entre los dos topes,
  * para no romper la pagina.
  */
-export function altoDelPlano(encuadre: EncuadreMapa, anchoInterior: number): number {
+export function altoDelPlano(
+  encuadre: EncuadreMapa,
+  anchoInterior: number,
+  tope: number = ALTO_MAPA_MAX,
+): number {
   const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
   const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
   // El alto que pide la forma del recorrido es para el INTERIOR del recuadro,
@@ -91,7 +127,7 @@ export function altoDelPlano(encuadre: EncuadreMapa, anchoInterior: number): num
   // sumarlo, el interior queda PADDING_CAJA * 2 mas bajo que la proporcion
   // pedida y el mapa se encoge para caber: quedan bandas blancas a los lados.
   const ideal = anchoInterior * (altoM / anchoM) + PADDING_CAJA * 2;
-  return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), ALTO_MAPA_MAX));
+  return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), tope));
 }
 /** Lo que consume dibujarTituloSeccion: su propio margen mas la linea de texto. */
 const ALTO_TITULO = 40;
@@ -109,11 +145,12 @@ export const PADDING_CAJA = 22;
  * salio con una proporcion y el recorrido con otra.
  */
 export function cajaInteriorDelPlano(
-  encuadre: EncuadreMapa,
+  mapa: MapaRecorrido,
   anchoUtilPt: number,
 ): { readonly ancho: number; readonly alto: number } {
   const ancho = anchoUtilPt - PADDING_CAJA * 2;
-  return { ancho, alto: altoDelPlano(encuadre, ancho) - PADDING_CAJA * 2 };
+  const alto = altoDelPlano(mapa.encuadre, ancho, topeDelPlano(mapa));
+  return { ancho, alto: alto - PADDING_CAJA * 2 };
 }
 
 const RADIO_MARCA = 8.5;
@@ -151,7 +188,15 @@ export function dibujarMapaRecorrido(
 ): void {
   const notas = armarNotas(mapa, fondo);
   // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_MAPA_MAX + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
+  asegurarEspacio(
+    doc,
+    ALTO_TITULO +
+      ALTO_RESUMEN_TRAZA +
+      (mapa.hayDatos ? cajaInteriorDelPlano(mapa, anchoUtil(doc)).alto + PADDING_CAJA * 2 : ALTO_MAPA) +
+      ALTO_LEYENDA +
+      notas.length * ALTO_NOTA * 2 +
+      12,
+  );
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
@@ -172,7 +217,7 @@ export function dibujarMapaRecorrido(
     // El alto sale de la forma del recorrido, no de una constante: ver
     // altoDelPlano(). Sin datos no hay encuadre que medir y vale el minimo.
     alto: mapa.hayDatos
-      ? cajaInteriorDelPlano(mapa.encuadre, anchoPlano).alto + PADDING_CAJA * 2
+      ? cajaInteriorDelPlano(mapa, anchoPlano).alto + PADDING_CAJA * 2
       : ALTO_MAPA,
   };
 
@@ -341,20 +386,68 @@ function dibujarResumenTraza(
   return ALTO_RESUMEN_TRAZA + 8;
 }
 
+/**
+ * A partir de cuanto silencio se considera que el registro se interrumpio.
+ *
+ * Con el intervalo por defecto de 15 s, dos minutos son ocho muestras que no
+ * llegaron: ya no es una posicion perdida, es un tramo que nadie midio. Se usa
+ * un umbral absoluto y no un multiplo del intervalo porque el informe se
+ * genera con las reglas de HOY y la ronda pudo correr con otras.
+ */
+const HUECO_MINIMO_SEG = 120;
+
+export interface HuecoTraza {
+  /** Indice del punto ANTERIOR al silencio. */
+  readonly desde: number;
+  readonly segundos: number;
+}
+
+/**
+ * Tramos en los que el telefono dejo de reportar durante la ronda.
+ *
+ * Importa para el valor probatorio del informe: entre dos posiciones separadas
+ * por doce minutos, la linea recta que las une es una invencion nuestra, no un
+ * recorrido medido. Se detectan para poder dibujarlos distinto y decirlo.
+ */
+export function huecosDeTraza(mapa: MapaRecorrido): readonly HuecoTraza[] {
+  const huecos: HuecoTraza[] = [];
+  for (let i = 1; i < mapa.traza.length; i += 1) {
+    const segundos =
+      (mapa.traza[i]!.instante.getTime() - mapa.traza[i - 1]!.instante.getTime()) / 1_000;
+    if (segundos >= HUECO_MINIMO_SEG) huecos.push({ desde: i - 1, segundos });
+  }
+  return huecos;
+}
+
 function dibujarTraza(doc: PDFKit.PDFDocument, mapa: MapaRecorrido, ajuste: AjusteMapa): void {
   const puntos = mapa.traza.map((posicion) => enPdf(ajuste, posicion));
   if (puntos.length === 0) return;
 
   const primero = puntos[0]!;
   if (puntos.length > 1) {
+    /*
+     * El trayecto medido va con linea llena; los tramos en los que el telefono
+     * dejo de reportar, punteados.
+     *
+     * Entre dos posiciones separadas por doce minutos no hay recorrido: hay una
+     * recta que dibujamos nosotros. Pintarla igual que el resto convierte una
+     * laguna del registro en un trayecto acreditado, y eso es exactamente lo
+     * que un informe probatorio no puede hacer. Punteado y no color, porque
+     * esto se imprime en blanco y negro.
+     */
+    const cortaEn = new Map(huecosDeTraza(mapa).map((h) => [h.desde, h.segundos]));
     doc.save();
     doc.lineWidth(1.3).lineJoin('round').strokeColor(PALETA.gris);
-    doc.moveTo(primero.x, primero.y);
     for (let i = 1; i < puntos.length; i += 1) {
+      const anterior = puntos[i - 1]!;
       const siguiente = puntos[i]!;
-      doc.lineTo(siguiente.x, siguiente.y);
+      doc.moveTo(anterior.x, anterior.y).lineTo(siguiente.x, siguiente.y);
+      if (cortaEn.has(i - 1)) {
+        doc.dash(3, { space: 2.5 }).stroke().undash();
+      } else {
+        doc.stroke();
+      }
     }
-    doc.stroke();
     doc.restore();
     dibujarFlechasDeSentido(doc, puntos);
 
@@ -603,6 +696,18 @@ const LEYENDA: readonly ItemLeyenda[] = [
     },
   },
   {
+    // Tambien junto al recorrido: es el mismo trazo, dibujado distinto donde no
+    // hubo medicion. Un punteado sin explicar se lee como adorno.
+    texto: 'Tramo sin registrar',
+    dibujar: (doc, x, y) => {
+      doc.save();
+      doc.lineWidth(1.3).strokeColor(PALETA.gris).dash(3, { space: 2.5 });
+      doc.moveTo(x - 7, y).lineTo(x + 7, y).stroke();
+      doc.undash();
+      doc.restore();
+    },
+  },
+  {
     texto: 'Inicio del recorrido',
     dibujar: (doc, x, y) => {
       dibujarTriangulo(doc, { x, y }, 5, PALETA.tinta);
@@ -711,6 +816,21 @@ export function armarNotas(mapa: MapaRecorrido, fondo: FondoCartografico | null 
     );
   }
 
+  /*
+   * El aviso de los tramos no medidos va ANTES del de simplificacion: es el
+   * unico que cambia lo que el informe acredita. Sin el, la distancia total y
+   * la linea del plano se leen como recorrido comprobado de punta a punta.
+   */
+  const huecos = huecosDeTraza(mapa);
+  if (huecos.length > 0) {
+    const total = huecos.reduce((suma, h) => suma + h.segundos, 0);
+    notas.push(
+      `El registro se interrumpió ${huecos.length === 1 ? 'una vez' : `${huecos.length} veces`} ` +
+        `durante la ronda, ${formatearDuracion(total)} en total. Esos tramos van punteados en el ` +
+        'plano: entre esas posiciones no hay recorrido medido, y la distancia los cuenta en línea recta.',
+    );
+  }
+
   if (mapa.trazaSubmuestreada) {
     notas.push(
       'El recorrido se dibuja simplificado para que se lea; el detalle completo está en el ' +
@@ -770,6 +890,15 @@ function dibujarTriangulo(
 }
 
 /** Metros bajo el kilometro, kilometros con un decimal sobre el. */
+/**
+ * Duracion en minutos para las notas. Bajo el minuto dice los segundos: un
+ * corte de 40 segundos redondeado a "0 min" pareceria que no paso nada.
+ */
+function formatearDuracion(segundos: number): string {
+  if (segundos < 60) return `${Math.round(segundos)} s`;
+  return `${formatearEntero(Math.round(segundos / 60))} min`;
+}
+
 export function formatearDistancia(metros: number): string {
   if (!Number.isFinite(metros) || metros < 0) return '—';
   if (metros < 1000) return `${formatearEntero(Math.round(metros))} m`;
