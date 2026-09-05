@@ -386,20 +386,68 @@ function dibujarResumenTraza(
   return ALTO_RESUMEN_TRAZA + 8;
 }
 
+/**
+ * A partir de cuanto silencio se considera que el registro se interrumpio.
+ *
+ * Con el intervalo por defecto de 15 s, dos minutos son ocho muestras que no
+ * llegaron: ya no es una posicion perdida, es un tramo que nadie midio. Se usa
+ * un umbral absoluto y no un multiplo del intervalo porque el informe se
+ * genera con las reglas de HOY y la ronda pudo correr con otras.
+ */
+const HUECO_MINIMO_SEG = 120;
+
+export interface HuecoTraza {
+  /** Indice del punto ANTERIOR al silencio. */
+  readonly desde: number;
+  readonly segundos: number;
+}
+
+/**
+ * Tramos en los que el telefono dejo de reportar durante la ronda.
+ *
+ * Importa para el valor probatorio del informe: entre dos posiciones separadas
+ * por doce minutos, la linea recta que las une es una invencion nuestra, no un
+ * recorrido medido. Se detectan para poder dibujarlos distinto y decirlo.
+ */
+export function huecosDeTraza(mapa: MapaRecorrido): readonly HuecoTraza[] {
+  const huecos: HuecoTraza[] = [];
+  for (let i = 1; i < mapa.traza.length; i += 1) {
+    const segundos =
+      (mapa.traza[i]!.instante.getTime() - mapa.traza[i - 1]!.instante.getTime()) / 1_000;
+    if (segundos >= HUECO_MINIMO_SEG) huecos.push({ desde: i - 1, segundos });
+  }
+  return huecos;
+}
+
 function dibujarTraza(doc: PDFKit.PDFDocument, mapa: MapaRecorrido, ajuste: AjusteMapa): void {
   const puntos = mapa.traza.map((posicion) => enPdf(ajuste, posicion));
   if (puntos.length === 0) return;
 
   const primero = puntos[0]!;
   if (puntos.length > 1) {
+    /*
+     * El trayecto medido va con linea llena; los tramos en los que el telefono
+     * dejo de reportar, punteados.
+     *
+     * Entre dos posiciones separadas por doce minutos no hay recorrido: hay una
+     * recta que dibujamos nosotros. Pintarla igual que el resto convierte una
+     * laguna del registro en un trayecto acreditado, y eso es exactamente lo
+     * que un informe probatorio no puede hacer. Punteado y no color, porque
+     * esto se imprime en blanco y negro.
+     */
+    const cortaEn = new Map(huecosDeTraza(mapa).map((h) => [h.desde, h.segundos]));
     doc.save();
     doc.lineWidth(1.3).lineJoin('round').strokeColor(PALETA.gris);
-    doc.moveTo(primero.x, primero.y);
     for (let i = 1; i < puntos.length; i += 1) {
+      const anterior = puntos[i - 1]!;
       const siguiente = puntos[i]!;
-      doc.lineTo(siguiente.x, siguiente.y);
+      doc.moveTo(anterior.x, anterior.y).lineTo(siguiente.x, siguiente.y);
+      if (cortaEn.has(i - 1)) {
+        doc.dash(3, { space: 2.5 }).stroke().undash();
+      } else {
+        doc.stroke();
+      }
     }
-    doc.stroke();
     doc.restore();
     dibujarFlechasDeSentido(doc, puntos);
 
@@ -648,6 +696,18 @@ const LEYENDA: readonly ItemLeyenda[] = [
     },
   },
   {
+    // Tambien junto al recorrido: es el mismo trazo, dibujado distinto donde no
+    // hubo medicion. Un punteado sin explicar se lee como adorno.
+    texto: 'Tramo sin registrar',
+    dibujar: (doc, x, y) => {
+      doc.save();
+      doc.lineWidth(1.3).strokeColor(PALETA.gris).dash(3, { space: 2.5 });
+      doc.moveTo(x - 7, y).lineTo(x + 7, y).stroke();
+      doc.undash();
+      doc.restore();
+    },
+  },
+  {
     texto: 'Inicio del recorrido',
     dibujar: (doc, x, y) => {
       dibujarTriangulo(doc, { x, y }, 5, PALETA.tinta);
@@ -756,6 +816,21 @@ export function armarNotas(mapa: MapaRecorrido, fondo: FondoCartografico | null 
     );
   }
 
+  /*
+   * El aviso de los tramos no medidos va ANTES del de simplificacion: es el
+   * unico que cambia lo que el informe acredita. Sin el, la distancia total y
+   * la linea del plano se leen como recorrido comprobado de punta a punta.
+   */
+  const huecos = huecosDeTraza(mapa);
+  if (huecos.length > 0) {
+    const total = huecos.reduce((suma, h) => suma + h.segundos, 0);
+    notas.push(
+      `El registro se interrumpió ${huecos.length === 1 ? 'una vez' : `${huecos.length} veces`} ` +
+        `durante la ronda, ${formatearDuracion(total)} en total. Esos tramos van punteados en el ` +
+        'plano: entre esas posiciones no hay recorrido medido, y la distancia los cuenta en línea recta.',
+    );
+  }
+
   if (mapa.trazaSubmuestreada) {
     notas.push(
       'El recorrido se dibuja simplificado para que se lea; el detalle completo está en el ' +
@@ -815,6 +890,15 @@ function dibujarTriangulo(
 }
 
 /** Metros bajo el kilometro, kilometros con un decimal sobre el. */
+/**
+ * Duracion en minutos para las notas. Bajo el minuto dice los segundos: un
+ * corte de 40 segundos redondeado a "0 min" pareceria que no paso nada.
+ */
+function formatearDuracion(segundos: number): string {
+  if (segundos < 60) return `${Math.round(segundos)} s`;
+  return `${formatearEntero(Math.round(segundos / 60))} min`;
+}
+
 export function formatearDistancia(metros: number): string {
   if (!Number.isFinite(metros) || metros < 0) return '—';
   if (metros < 1000) return `${formatearEntero(Math.round(metros))} m`;
