@@ -76,7 +76,7 @@ describe('el fondo se pide con la misma caja donde se dibuja el trazo', () => {
   const fuente = readFileSync(join(__dirname, 'mapa-recorrido.service.ts'), 'utf8');
 
   it('el servicio arma el interior con cajaInteriorDelPlano', () => {
-    expect(fuente).toContain('cajaInteriorDelPlano(mapa.encuadre');
+    expect(fuente).toContain('cajaInteriorDelPlano(mapa,');
   });
 
   it('el servicio no vuelve a inventar un alto ni un padding propios', () => {

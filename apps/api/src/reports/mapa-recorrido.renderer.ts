@@ -12,6 +12,7 @@ import {
 } from './mapa-recorrido.model';
 import {
   PALETA,
+  MARGEN,
   anchoUtil,
   asegurarEspacio,
   dibujarTituloSeccion,
@@ -62,13 +63,44 @@ import {
 const ALTO_MAPA = 250;
 
 /**
- * Alto maximo del plano.
+ * Alto maximo del plano CUANDO EL INFORME TRAE TODAS SUS NOTAS.
  *
  * El tope no es estetico: por debajo de el, plano + leyenda + notas entran en
- * la misma pagina. Subirlo empuja la leyenda a la hoja siguiente y deja un
- * mapa sin como leerse.
+ * la misma pagina. Subirlo a ciegas empuja la leyenda a la hoja siguiente y
+ * deja un mapa sin como leerse.
+ *
+ * Pero casi ningun informe trae las diez notas. Con dos —el caso normal—
+ * sobran mas de 170 pt de hoja que antes se desperdiciaban: un recorrido
+ * cuadrado se encogia contra este tope y dejaba banda blanca a los costados
+ * mientras abajo quedaba papel en blanco. Por eso el tope real lo calcula
+ * `topeDelPlano()` a partir de las notas que ese informe va a imprimir, y esta
+ * constante queda como el piso garantizado.
  */
 const ALTO_MAPA_MAX = 430;
+
+/** Alto util de una hoja A4 con los margenes del informe. */
+const ALTO_UTIL_HOJA = 842 - MARGEN * 2;
+
+/** Holgura para lo que titulo y leyenda gastan por encima de sus constantes. */
+const COLCHON_HOJA = 16;
+
+/**
+ * Cuanto alto puede ocupar el plano en ESTE informe.
+ *
+ * Se cuenta con `armarNotas(mapa, null) + 1` a proposito, no con las notas
+ * reales: la nota que sobra es la atribucion de la cartografia, que aparece
+ * solo si el fondo se pudo descargar. Si el tope dependiera de eso, un fallo
+ * de red cambiaria la caja y el fondo dejaria de coincidir con el trazo —el
+ * defecto que arreglo el PR #367—. Asi el numero es el mismo siempre.
+ */
+export function topeDelPlano(mapa: MapaRecorrido): number {
+  const notas = armarNotas(mapa, null).length + 1;
+  const fijo = ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_LEYENDA + notas * ALTO_NOTA * 2 + 12;
+  // Colchon: titulo y leyenda gastan unos puntos mas que sus constantes —el
+  // test del cursor lo cazo pasandose 5,5 pt del borde— y un plano que empuja
+  // la leyenda a la hoja siguiente es peor que un plano algo mas chico.
+  return Math.max(ALTO_MAPA_MAX, ALTO_UTIL_HOJA - fijo - COLCHON_HOJA);
+}
 
 /**
  * Alto del plano segun la forma de lo que hay que dibujar.
@@ -83,7 +115,11 @@ const ALTO_MAPA_MAX = 430;
  * avenida, alta para una que da la vuelta a la manzana. Entre los dos topes,
  * para no romper la pagina.
  */
-export function altoDelPlano(encuadre: EncuadreMapa, anchoInterior: number): number {
+export function altoDelPlano(
+  encuadre: EncuadreMapa,
+  anchoInterior: number,
+  tope: number = ALTO_MAPA_MAX,
+): number {
   const anchoM = Math.max(encuadre.esteMax - encuadre.esteMin, 1e-6);
   const altoM = Math.max(encuadre.norteMax - encuadre.norteMin, 1e-6);
   // El alto que pide la forma del recorrido es para el INTERIOR del recuadro,
@@ -91,7 +127,7 @@ export function altoDelPlano(encuadre: EncuadreMapa, anchoInterior: number): num
   // sumarlo, el interior queda PADDING_CAJA * 2 mas bajo que la proporcion
   // pedida y el mapa se encoge para caber: quedan bandas blancas a los lados.
   const ideal = anchoInterior * (altoM / anchoM) + PADDING_CAJA * 2;
-  return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), ALTO_MAPA_MAX));
+  return Math.round(Math.min(Math.max(ideal, ALTO_MAPA), tope));
 }
 /** Lo que consume dibujarTituloSeccion: su propio margen mas la linea de texto. */
 const ALTO_TITULO = 40;
@@ -109,11 +145,12 @@ export const PADDING_CAJA = 22;
  * salio con una proporcion y el recorrido con otra.
  */
 export function cajaInteriorDelPlano(
-  encuadre: EncuadreMapa,
+  mapa: MapaRecorrido,
   anchoUtilPt: number,
 ): { readonly ancho: number; readonly alto: number } {
   const ancho = anchoUtilPt - PADDING_CAJA * 2;
-  return { ancho, alto: altoDelPlano(encuadre, ancho) - PADDING_CAJA * 2 };
+  const alto = altoDelPlano(mapa.encuadre, ancho, topeDelPlano(mapa));
+  return { ancho, alto: alto - PADDING_CAJA * 2 };
 }
 
 const RADIO_MARCA = 8.5;
@@ -151,7 +188,15 @@ export function dibujarMapaRecorrido(
 ): void {
   const notas = armarNotas(mapa, fondo);
   // Las notas pueden ocupar mas de un renglon; se reserva con holgura.
-  asegurarEspacio(doc, ALTO_TITULO + ALTO_RESUMEN_TRAZA + ALTO_MAPA_MAX + ALTO_LEYENDA + notas.length * ALTO_NOTA * 2 + 12);
+  asegurarEspacio(
+    doc,
+    ALTO_TITULO +
+      ALTO_RESUMEN_TRAZA +
+      (mapa.hayDatos ? cajaInteriorDelPlano(mapa, anchoUtil(doc)).alto + PADDING_CAJA * 2 : ALTO_MAPA) +
+      ALTO_LEYENDA +
+      notas.length * ALTO_NOTA * 2 +
+      12,
+  );
   dibujarTituloSeccion(doc, 'Mapa del recorrido');
 
   const x0 = doc.page.margins.left;
@@ -172,7 +217,7 @@ export function dibujarMapaRecorrido(
     // El alto sale de la forma del recorrido, no de una constante: ver
     // altoDelPlano(). Sin datos no hay encuadre que medir y vale el minimo.
     alto: mapa.hayDatos
-      ? cajaInteriorDelPlano(mapa.encuadre, anchoPlano).alto + PADDING_CAJA * 2
+      ? cajaInteriorDelPlano(mapa, anchoPlano).alto + PADDING_CAJA * 2
       : ALTO_MAPA,
   };
 

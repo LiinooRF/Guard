@@ -180,21 +180,30 @@ describe('dibujarMapaRecorrido', () => {
 
   it('el mapa que no cabe se va a la hoja siguiente en vez de partirse', async () => {
     const mapa = mapaCompleto();
-    let yForzado = 0;
+    let hojasNuevas = 0;
     let yFinal = 0;
+    let fondoDeHoja = 0;
 
     await generar((doc) => {
       // Se deja el cursor casi al fondo de la hoja, como quedaria despues de una
       // tabla larga de puntos. El espacio se reserva ANTES del titulo, asi que
       // la seccion completa tiene que saltar de hoja: si el titulo se escribiera
       // primero, quedaria huerfano al final de la anterior.
-      yForzado = doc.page.height - doc.page.margins.bottom - 60;
-      doc.y = yForzado;
+      //
+      // Se cuenta la hoja agregada y NO se compara el cursor final contra el
+      // forzado: desde que el plano usa la hoja que le sobra, la seccion ocupa
+      // casi una pagina entera y termina abajo aunque haya saltado bien.
+      doc.on('pageAdded', () => {
+        hojasNuevas += 1;
+      });
+      doc.y = doc.page.height - doc.page.margins.bottom - 60;
       dibujarMapaRecorrido(doc, mapa);
       yFinal = doc.y;
+      fondoDeHoja = doc.page.height - doc.page.margins.bottom;
     });
 
-    expect(yFinal).toBeLessThan(yForzado);
+    expect(hojasNuevas).toBe(1);
+    expect(yFinal).toBeLessThanOrEqual(fondoDeHoja);
   });
 });
 

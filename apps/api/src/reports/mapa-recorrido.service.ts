@@ -163,7 +163,7 @@ export class MapaRecorridoService {
     // constante fija (515x250, padding 10) el fondo se pedia con una
     // proporcion y el trazo se dibujaba con otra: las calles quedaban corridas
     // respecto del recorrido y el mapa "no encajaba".
-    const interior = { x: 0, y: 0, ...cajaInteriorDelPlano(mapa.encuadre, CAJA_ANCHO_PT) };
+    const interior = { x: 0, y: 0, ...cajaInteriorDelPlano(mapa, CAJA_ANCHO_PT) };
     // Mismo encuadre expandido que usa el renderer: si difiere, el fondo se corre.
     const encuadre = expandirAProporcion(mapa.encuadre, interior);
     const ajuste = ajustarACaja(encuadre, interior);
