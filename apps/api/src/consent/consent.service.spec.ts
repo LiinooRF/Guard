@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@sentrycore/shared';
+import { DEFAULT_PATROL_RULES, patrolRulesSchema } from '@sentrycore/shared';
 
 import { ConsentService } from './consent.service';
 import type { AuditService } from '../audit/audit.service';
@@ -174,7 +174,14 @@ describe('ConsentService — la pantalla de consentimiento', () => {
       hasPolicy: true,
       actionRequired: 'ninguna',
       acceptance: { status: 'vigente' },
-      tracking: { sampleIntervalSeconds: 15, retentionDays: 90 },
+      // Sale de la regla y no de un numero a mano: este es el intervalo que el
+      // aviso legal le muestra al guardia, asi que cambia cuando cambia la
+      // regla. Con 15 escrito aca, bajar el default a 5 rompia el test sin que
+      // nada estuviera mal.
+      tracking: {
+        sampleIntervalSeconds: DEFAULT_PATROL_RULES.gpsTrackIntervalSeconds,
+        retentionDays: 90,
+      },
     });
   });
 

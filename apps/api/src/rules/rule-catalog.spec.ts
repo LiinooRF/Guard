@@ -197,3 +197,52 @@ describe('resolucion de la cascada', () => {
     expect(sources.complianceThreshold).toBe('tenant');
   });
 });
+
+
+/**
+ * El catalogo repite a mano los limites que el schema de Zod ya declara. Es una
+ * duplicacion necesaria —el formulario del panel no puede leer un ZodNumber—
+ * pero silenciosa: nada obligaba a que dijeran lo mismo.
+ *
+ * El 05-09-2026 se bajo el minimo de la frecuencia de traza de 15 a 1 en el
+ * schema y el catalogo se quedo en 15. El servidor habria aceptado el valor y
+ * el formulario del admin lo habria rechazado, sin error visible en ninguna
+ * parte: el admin ve un campo que no lo deja escribir lo que el producto
+ * permite. Mismo patron que las dos cajas del plano del informe (#367): cada
+ * lado bien por separado, en desacuerdo entre si.
+ */
+describe('el catalogo y el schema declaran los mismos limites', () => {
+  const limitesDelSchema = (clave: keyof PatrolRules) => {
+    // `.default()` envuelve el numero en un ZodDefault: los checks viven un
+    // nivel adentro. Sin desenvolver, todo comparaba contra undefined y el test
+    // pasaba por la razon equivocada.
+    const forma = patrolRulesSchema.shape[clave] as z.ZodTypeAny;
+    const interno = ((forma._def as { innerType?: z.ZodTypeAny }).innerType ?? forma) as z.ZodTypeAny;
+    const checks = (interno._def as { checks?: Array<{ kind: string; value: number }> }).checks ?? [];
+    return {
+      min: checks.find((c) => c.kind === 'min')?.value,
+      max: checks.find((c) => c.kind === 'max')?.value,
+    };
+  };
+
+  const numericos: readonly AnyRuleParameter[] = PATROL_RULE_LIST.filter(
+    (p) => p.type === 'integer',
+  );
+
+  it('hay parametros numericos que comprobar', () => {
+    expect(numericos.length).toBeGreaterThan(0);
+  });
+
+  it.each(numericos.map((p) => [p.key, p] as const))('%s', (_clave, parametro) => {
+    const schema = limitesDelSchema(parametro.key as keyof PatrolRules);
+
+    expect(parametro.min).toBe(schema.min);
+    expect(parametro.max).toBe(schema.max);
+  });
+
+  it('el default del catalogo sale del schema y no de un numero suelto', () => {
+    for (const parametro of PATROL_RULE_LIST) {
+      expect(parametro.default).toEqual(DEFAULT_PATROL_RULES[parametro.key as keyof PatrolRules]);
+    }
+  });
+});

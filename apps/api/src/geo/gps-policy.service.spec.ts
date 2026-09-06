@@ -1,4 +1,4 @@
-import { patrolRulesSchema } from '@sentrycore/shared';
+import { DEFAULT_PATROL_RULES, patrolRulesSchema } from '@sentrycore/shared';
 
 import { GpsPolicyService } from './gps-policy.service';
 import { MAX_PUNTOS_POR_LOTE } from './gps-rules';
@@ -371,8 +371,12 @@ describe('GpsPolicyService — consumo de batería', () => {
       withinBudget: true,
       measurable: true,
     });
-    // 8 horas al intervalo por defecto (15 s), mas la muestra del instante 0.
-    expect(informe.expectedSamples).toBe(1921);
+    // 8 horas al intervalo por defecto, mas la muestra del instante 0. Se
+    // calcula desde la regla y no se escribe el numero: cuando el default paso
+    // de 15 s a 5 este test se cayo por tener 1921 a mano, sin que nada
+    // estuviera roto.
+    const porDefecto = DEFAULT_PATROL_RULES.gpsTrackIntervalSeconds;
+    expect(informe.expectedSamples).toBe((8 * 3600) / porDefecto + 1);
   });
 
   /**
