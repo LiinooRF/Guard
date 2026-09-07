@@ -8,7 +8,7 @@ import {
   MAIL_JOB_BACKOFF_MS,
   MAIL_JOB_NAME,
 } from './mail-queue.constants';
-import { MailQueueService } from './mail-queue.service';
+import { MailQueueService, motivoPublicable } from './mail-queue.service';
 import type { MailJobData } from './mail-queue.types';
 
 /**
@@ -91,10 +91,38 @@ describe('MailQueueService', () => {
         tenantId: data.tenantId,
         attemptsMade: MAIL_JOB_ATTEMPTS,
         finishedOn: 1_725_000_000_000,
+        failedReason: null,
       }],
     });
     expect(JSON.stringify(status)).not.toContain(data.to);
     expect(JSON.stringify(status)).not.toContain(data.template.text);
+  });
+
+  /*
+   * El motivo del fallo se expone —sin el, soporte no puede diagnosticar nada:
+   * produccion llego a 32 correos fallidos sin que nadie supiera por que— pero
+   * la garantia de arriba no se afloja. El servidor SMTP suele devolver el
+   * destinatario dentro del mensaje de error, asi que se enmascara ahi tambien.
+   */
+  it('el motivo del fallo llega a soporte sin la direccion del destinatario', async () => {
+    const queue = {
+      getJobCounts: jest.fn().mockResolvedValue({ waiting: 0, failed: 1 }),
+      getJobs: jest.fn().mockResolvedValue([
+        {
+          id: 'failed-job',
+          data,
+          attemptsMade: MAIL_JOB_ATTEMPTS,
+          finishedOn: 1_725_000_000_000,
+          failedReason: `550 5.1.1 <${data.to}> unknown recipient`,
+        },
+      ]),
+    } as unknown as Queue<MailJobData>;
+
+    const status = await new MailQueueService(queue, DE_FABRICA).supportStatus();
+
+    expect(status.failed[0]?.failedReason).toContain('550 5.1.1');
+    expect(status.failed[0]?.failedReason).toContain('unknown recipient');
+    expect(JSON.stringify(status)).not.toContain(data.to);
   });
 
   /**
