@@ -18,6 +18,37 @@ describe('sistema visual de uso diario (#292)', () => {
     expect(css).not.toMatch(/\.stat-card, \.operation-card, \.alerts-card, \.activity-card \{[^}]*box-shadow:/);
   });
 
+  /**
+   * En el telefono la barra del panel lleva siete secciones y entran dos: el
+   * resto vive detras de un scroll horizontal. Y en movil la barra de scroll
+   * es invisible, asi que un supervisor no tenia como saber que existian
+   * "Monitoreo en vivo" o "Informes" — justo lo que se mira desde la calle.
+   *
+   * Se comprueba la tecnica y no el aspecto: las capas `local` se mueven con
+   * el contenido y tapan la pista al llegar al extremo, las `scroll` quedan
+   * fijas y la muestran mientras haya mas para ese lado. Si alguien quita el
+   * `local`, la pista queda encendida para siempre y deja de significar algo.
+   */
+  it('avisa que la navegación móvil sigue hacia el costado', () => {
+    const barra = css.match(/\.sidebar nav \{\s*--nav-fondo[\s\S]*?\n\}/);
+
+    expect(barra).not.toBeNull();
+    // Dos de cada una, izquierda y derecha. Contarlas y no solo buscarlas:
+    // con `toContain` bastaba que sobreviviera una y el test pasaba igual.
+    expect(barra![0].match(/no-repeat local/g)).toHaveLength(2);
+    expect(barra![0].match(/no-repeat scroll/g)).toHaveLength(2);
+    // Fondo oscuro: la pista es clara. Una sombra negra ahi no se ve.
+    expect(barra![0]).toMatch(/rgb\(255 255 255/);
+    // Sigue el color de la marca en white-label, no un azul fijo.
+    expect(barra![0]).toContain('var(--marca-primario, var(--navy))');
+  });
+
+  it('no deja esa pista en escritorio, donde la barra es vertical', () => {
+    expect(css).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.sidebar nav \{[^}]*overflow: visible;[^}]*background: none;/,
+    );
+  });
+
   it('mantiene las tres métricas en una sola franja móvil', () => {
     expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.stat-grid \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   });

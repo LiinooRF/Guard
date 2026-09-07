@@ -94,6 +94,29 @@ a { color: inherit; text-decoration: none; }
 .dashboard-shell[data-role="ADMIN"] .nav-item.active, .dashboard-shell[data-role="SUPERVISOR"] .nav-item.active { box-shadow: inset 3px 0 var(--marca-primario-texto, #fff); }
 .sidebar .brand { margin: 0 auto 0 0; }
 .sidebar nav { display: flex; width: 100%; min-width: 0; max-width: 100%; flex: 1 0 100%; gap: .3rem; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: .15rem; scrollbar-width: thin; }
+/*
+ * En el telefono la barra tiene siete secciones y solo entran dos: las otras
+ * cinco —entre ellas "Monitoreo en vivo", que es la que un supervisor mira
+ * desde la calle— viven detras de un scroll que NADA anunciaba. En movil la
+ * barra de scroll es invisible, asi que el supervisor no tenia como saber que
+ * habia mas.
+ *
+ * Se resuelve con las sombras de scroll de toda la vida: las capas `local` se
+ * mueven con el contenido y tapan la sombra cuando llegaste al extremo; las
+ * `scroll` quedan fijas y la muestran mientras haya mas para ese lado. Sin
+ * JavaScript y sin tocar el marcado.
+ *
+ * La sombra es CLARA y no oscura porque este fondo es oscuro —navy, o el
+ * primario de la marca en white-label— y una sombra negra ahi no se ve.
+ */
+.sidebar nav {
+  --nav-fondo: var(--marca-primario, var(--navy));
+  background:
+    linear-gradient(to right, var(--nav-fondo) 40%, transparent) left center / 2.2rem 100% no-repeat local,
+    linear-gradient(to left, var(--nav-fondo) 40%, transparent) right center / 2.2rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgb(255 255 255 / .5), transparent) left center / 1.1rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgb(255 255 255 / .5), transparent) right center / 1.1rem 100% no-repeat scroll;
+}
 .nav-group { display: contents; }
 .nav-group-label { display: none; }
 .nav-item { display: flex; align-items: center; gap: .8rem; border-radius: .65rem; padding: .75rem .85rem; color: #94a0bc; font-size: .8rem; font-weight: 650; }
@@ -297,7 +320,8 @@ a { color: inherit; text-decoration: none; }
   .dashboard-shell { grid-template-columns: 15.5rem 1fr; }
   .sidebar { position: sticky; top: 0; max-width: none; height: 100vh; flex-flow: column nowrap; align-items: stretch; gap: 0; padding: 1.5rem 1.15rem; }
   .sidebar .brand { margin: 0 .6rem 2.5rem; }
-  .sidebar nav { display: grid; width: auto; max-width: none; flex: initial; gap: 1rem; overflow: visible; padding-bottom: 0; }
+  /* En escritorio la barra es vertical y no hay scroll: las sombras sobran. */
+  .sidebar nav { display: grid; width: auto; max-width: none; flex: initial; gap: 1rem; overflow: visible; padding-bottom: 0; background: none; }
   .nav-group { display: grid; gap: .2rem; }
   .nav-group-label { display: block; padding: 0 .85rem .2rem; color: #65718e; font-size: .58rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
   .guard-nav-note { display: block; }
@@ -856,7 +880,8 @@ a.stats-boton { display: inline-flex; align-items: center; }
 .schedule-day article strong { font-size: .7rem; }.schedule-day article span { font-size: .68rem; font-weight: 700; }.schedule-day article small { color: var(--muted); font-size: .6rem; }.schedule-day article select { min-width: 0; width: 100%; margin-top: .25rem; }
 .schedule-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1rem; }
 .schedule-forms form { display: grid; align-content: start; gap: .7rem; border: 1px solid var(--line); border-radius: .9rem; padding: 1.25rem; background: white; }.schedule-forms h3 { margin: 0; font-size: .9rem; }
-.schedule-forms button { min-height: 2.75rem; border: 0; border-radius: .65rem; padding: 0 1.25rem; font-weight: 700; font-size: .85rem; color: var(--marca-secundario-texto, #ffffff); background: var(--marca-secundario, var(--blue, #4263eb)); cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; justify-content: center; }
+.schedule-forms button { min-height: 2.75rem; border: 0; border-radius: .65rem; padding: 0 1.25rem; font-weight: 700; font-size: .85rem; color: var(--marca-secundario-texto, #ffffff); background: var(--marca-secundario, var(--blue, #4263eb)); cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; justify-content: center; }
+
 /* Listas de turnos vigentes y de asignaciones fijas: filas compactas con su accion al costado. */
 .schedule-turnos-vigentes, .schedule-reglas { margin-top: .35rem; border-top: 1px solid var(--line); padding-top: .7rem; }
 .schedule-turnos-vigentes h4, .schedule-reglas h4 { margin: 0 0 .5rem; font-size: .78rem; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
