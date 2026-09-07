@@ -227,3 +227,43 @@ describe('MailQueueService', () => {
     });
   });
 });
+
+/**
+ * El 06-09-2026 produccion tenia 32 correos fallidos y ninguna forma de saber
+ * por que: `supportStatus()` devolvia el conteo y los identificadores, pero no
+ * el motivo. El comentario del codigo decia que la dead-letter existia "para
+ * que soporte los inspeccione", y sin el motivo eso no se podia hacer.
+ */
+describe('motivo del correo fallido', () => {
+  it('no lo hay cuando el job no dejo motivo', () => {
+    expect(motivoPublicable(undefined)).toBeNull();
+    expect(motivoPublicable('')).toBeNull();
+  });
+
+  it('deja legible el error del servidor SMTP', () => {
+    expect(motivoPublicable('535 5.7.8 Authentication credentials invalid')).toBe(
+      '535 5.7.8 Authentication credentials invalid',
+    );
+  });
+
+  it('tapa la direccion del destinatario y conserva el dominio', () => {
+    const motivo = motivoPublicable('550 5.1.1 <juan.perez@empresa.cl> unknown recipient');
+
+    expect(motivo).toBe('550 5.1.1 <***@empresa.cl> unknown recipient');
+    expect(motivo).not.toContain('juan.perez');
+  });
+
+  it('tapa todas las direcciones, no solo la primera', () => {
+    const motivo = motivoPublicable('de a@uno.cl para b@dos.cl rebotado');
+
+    expect(motivo).not.toContain('a@uno.cl');
+    expect(motivo).not.toContain('b@dos.cl');
+  });
+
+  it('recorta los motivos largos para que quepan en pantalla', () => {
+    const largo = motivoPublicable('x'.repeat(500));
+
+    expect(largo).toHaveLength(241);
+    expect(largo?.endsWith('…')).toBe(true);
+  });
+});

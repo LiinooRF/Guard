@@ -17,6 +17,32 @@ import type {
   ResultadoEncolado,
 } from './mail-queue.types';
 
+/** Recorta el motivo del fallo para que quepa en pantalla. */
+const LARGO_MOTIVO = 240;
+
+/**
+ * Motivo del fallo listo para mostrar, sin direcciones de correo.
+ *
+ * El endpoint existe para que soporte pueda inspeccionar la dead-letter, y sin
+ * el motivo no se puede: el 06-09-2026 habia 32 correos fallidos en produccion
+ * y no habia forma de saber por que, ni desde el panel ni desde la API.
+ *
+ * Se enmascara el destinatario porque el mensaje del servidor SMTP suele
+ * traerlo ("550 5.1.1 <alguien@empresa.cl> unknown"), y por aca pasan correos
+ * de guardias y de clientes. El dominio se conserva: es lo que sirve para
+ * diagnosticar y no identifica a nadie.
+ */
+export function motivoPublicable(motivo: string | undefined): string | null {
+  if (!motivo) return null;
+  const sinCorreos = motivo.replace(
+    /[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g,
+    (_todo, dominio: string) => `***@${dominio}`,
+  );
+  return sinCorreos.length > LARGO_MOTIVO
+    ? `${sinCorreos.slice(0, LARGO_MOTIVO)}…`
+    : sinCorreos;
+}
+
 @Injectable()
 export class MailQueueService {
   private readonly logger = new Logger(MailQueueService.name);
@@ -106,6 +132,7 @@ export class MailQueueService {
         tenantId: job.data.tenantId,
         attemptsMade: job.attemptsMade,
         finishedOn: job.finishedOn ?? null,
+        failedReason: motivoPublicable(job.failedReason),
       })),
     };
   }
