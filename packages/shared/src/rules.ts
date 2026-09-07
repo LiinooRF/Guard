@@ -81,24 +81,32 @@ export const patrolRulesSchema = z.object({
    * el dispositivo: el intervalo no se codifica en el cliente. Mas frecuente =
    * traza mas fiel y bateria mas corta.
    *
-   * POR QUE 15 Y NO 60. Con un punto por minuto, dos puntos de control que el
-   * guardia recorre en menos de un minuto caen entre muestras: el recorrido los
-   * une con una recta que no paso por ningun lado, y en el mapa se ve un salto.
-   * Se detecto en terreno haciendo la misma ronda con dos telefonos: el tramo
-   * corto entre puntos nunca quedaba bien trazado.
+   * POR QUE BAJO. Con un punto por minuto, dos puntos de control que el guardia
+   * recorre en menos de un minuto caen entre muestras: el recorrido los une con
+   * una recta que no paso por ningun lado, y en el mapa se ve un salto. Se
+   * detecto en terreno haciendo la misma ronda con dos telefonos. Se bajo a 15 s
+   * y despues a 5, que es el default de hoy: el recorrido es lo que se imprime
+   * en el informe que recibe el cliente, y a esa frecuencia el trazo sigue al
+   * guardia en vez de aproximarlo.
    *
-   * 15 s es el minimo que admite este parametro y cuadruplica el costo respecto
-   * de 60: cuatro veces la bateria y cuatro veces las filas (~1.920 por turno de
-   * 8 horas). Se elige igual porque el recorrido es lo que se imprime en el
-   * informe que recibe el cliente, y a esa frecuencia el trazo sigue al guardia
-   * en vez de aproximarlo. Quien tenga guardias con telefonos de bateria corta
-   * lo sube por recinto; el parametro existe justamente para eso.
+   * EL PISO ES 1 s Y NO ES UN VALOR RECOMENDADO. Se admite porque hay recintos
+   * chicos donde la ronda entera dura minutos y cada metro cuenta, pero tiene
+   * dos costos que no se ven hasta que muerden:
    *
-   * OJO AL CAMBIARLO: la cola sin señal guarda `MAX_PUNTOS_EN_COLA` posiciones.
-   * A 15 s son 8 horas de autonomia; bajar el intervalo sin subir ese tope hace
-   * que un turno largo sin cobertura pierda el principio del recorrido.
+   * 1. LA COLA SIN SEÑAL guarda `MAX_PUNTOS_EN_COLA` (2.000) posiciones. A 5 s
+   *    son 2,8 horas de autonomia; a 1 s bajan a 33 MINUTOS. Una ronda de media
+   *    hora en un subterraneo pierde el principio del recorrido justo cuando el
+   *    informe tiene que acreditarlo. Antes de configurar menos de 5 s hay que
+   *    subir ese tope.
+   * 2. LA BATERIA. El 05-09-2026 una prueba de terreno volvio sin el trayecto de
+   *    regreso: Android habia congelado la app por optimizacion de bateria. Mas
+   *    muestreo empuja de ese lado. Un telefono sin la exencion puesta va a dar
+   *    PEOR traza a 1 s que a 15.
+   *
+   * Quien tenga guardias con telefonos de bateria corta lo sube por recinto; el
+   * parametro existe justamente para eso.
    */
-  gpsTrackIntervalSeconds: z.number().int().min(15).max(900).default(15),
+  gpsTrackIntervalSeconds: z.number().int().min(1).max(900).default(5),
 
   /**
    * Dias que se conserva la traza del recorrido. Mucho mas corta que la
@@ -637,10 +645,10 @@ export const PATROL_RULE_CATALOG: RuleCatalog = {
     key: 'gpsTrackIntervalSeconds',
     label: 'Frecuencia de la traza de recorrido',
     description:
-      'Cada cuanto el telefono registra la posicion durante la ronda. Mas seguido = recorrido mas fiel y bateria mas corta.',
+      'Cada cuanto el telefono registra la posicion durante la ronda. Mas seguido = recorrido mas fiel y bateria mas corta. Bajo 5 s la cola sin señal aguanta menos de una ronda larga.',
     type: 'integer',
     unit: 'seconds',
-    min: 15,
+    min: 1,
     max: 900,
     default: DEFAULT_PATROL_RULES.gpsTrackIntervalSeconds,
     scopes: HASTA_RECINTO,

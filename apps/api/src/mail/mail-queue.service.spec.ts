@@ -8,7 +8,7 @@ import {
   MAIL_JOB_BACKOFF_MS,
   MAIL_JOB_NAME,
 } from './mail-queue.constants';
-import { MailQueueService } from './mail-queue.service';
+import { MailQueueService, motivoPublicable } from './mail-queue.service';
 import type { MailJobData } from './mail-queue.types';
 
 /**
@@ -91,10 +91,38 @@ describe('MailQueueService', () => {
         tenantId: data.tenantId,
         attemptsMade: MAIL_JOB_ATTEMPTS,
         finishedOn: 1_725_000_000_000,
+        failedReason: null,
       }],
     });
     expect(JSON.stringify(status)).not.toContain(data.to);
     expect(JSON.stringify(status)).not.toContain(data.template.text);
+  });
+
+  /*
+   * El motivo del fallo se expone —sin el, soporte no puede diagnosticar nada:
+   * produccion llego a 32 correos fallidos sin que nadie supiera por que— pero
+   * la garantia de arriba no se afloja. El servidor SMTP suele devolver el
+   * destinatario dentro del mensaje de error, asi que se enmascara ahi tambien.
+   */
+  it('el motivo del fallo llega a soporte sin la direccion del destinatario', async () => {
+    const queue = {
+      getJobCounts: jest.fn().mockResolvedValue({ waiting: 0, failed: 1 }),
+      getJobs: jest.fn().mockResolvedValue([
+        {
+          id: 'failed-job',
+          data,
+          attemptsMade: MAIL_JOB_ATTEMPTS,
+          finishedOn: 1_725_000_000_000,
+          failedReason: `550 5.1.1 <${data.to}> unknown recipient`,
+        },
+      ]),
+    } as unknown as Queue<MailJobData>;
+
+    const status = await new MailQueueService(queue, DE_FABRICA).supportStatus();
+
+    expect(status.failed[0]?.failedReason).toContain('550 5.1.1');
+    expect(status.failed[0]?.failedReason).toContain('unknown recipient');
+    expect(JSON.stringify(status)).not.toContain(data.to);
   });
 
   /**
@@ -225,5 +253,45 @@ describe('MailQueueService', () => {
         service.enqueue({ ...data, to: '  ' }, { idempotencyKey: 'x:5' }),
       ).rejects.toThrow('El destinatario de correo es obligatorio');
     });
+  });
+});
+
+/**
+ * El 06-09-2026 produccion tenia 32 correos fallidos y ninguna forma de saber
+ * por que: `supportStatus()` devolvia el conteo y los identificadores, pero no
+ * el motivo. El comentario del codigo decia que la dead-letter existia "para
+ * que soporte los inspeccione", y sin el motivo eso no se podia hacer.
+ */
+describe('motivo del correo fallido', () => {
+  it('no lo hay cuando el job no dejo motivo', () => {
+    expect(motivoPublicable(undefined)).toBeNull();
+    expect(motivoPublicable('')).toBeNull();
+  });
+
+  it('deja legible el error del servidor SMTP', () => {
+    expect(motivoPublicable('535 5.7.8 Authentication credentials invalid')).toBe(
+      '535 5.7.8 Authentication credentials invalid',
+    );
+  });
+
+  it('tapa la direccion del destinatario y conserva el dominio', () => {
+    const motivo = motivoPublicable('550 5.1.1 <juan.perez@empresa.cl> unknown recipient');
+
+    expect(motivo).toBe('550 5.1.1 <***@empresa.cl> unknown recipient');
+    expect(motivo).not.toContain('juan.perez');
+  });
+
+  it('tapa todas las direcciones, no solo la primera', () => {
+    const motivo = motivoPublicable('de a@uno.cl para b@dos.cl rebotado');
+
+    expect(motivo).not.toContain('a@uno.cl');
+    expect(motivo).not.toContain('b@dos.cl');
+  });
+
+  it('recorta los motivos largos para que quepan en pantalla', () => {
+    const largo = motivoPublicable('x'.repeat(500));
+
+    expect(largo).toHaveLength(241);
+    expect(largo?.endsWith('…')).toBe(true);
   });
 });
