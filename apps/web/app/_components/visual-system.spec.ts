@@ -49,6 +49,37 @@ describe('sistema visual de uso diario (#292)', () => {
     );
   });
 
+  /**
+   * Medido en produccion a 390 px: la vista de Planificacion empujaba la
+   * PAGINA ENTERA a 1.072 px y habia que arrastrarla de lado para leer
+   * cualquier cosa. El calendario ya tenia `overflow-x: auto`, pero nunca
+   * llegaba a actuar: quien se desbordaba era su contenedor, que por ser hijo
+   * de un grid vale `min-width: auto` y no puede achicarse por debajo de su
+   * contenido.
+   *
+   * Es una linea facil de borrar por "limpieza" sin que nada se vea roto en
+   * escritorio, que es donde se mira el CSS.
+   */
+  /**
+   * Los bloques del panel son items de un grid, y por defecto un item de grid
+   * vale `min-width: auto`: no se achica por debajo de su contenido. Cualquier
+   * tabla, calendario o grafico ancho estira su bloque y el bloque estira la
+   * pagina.
+   *
+   * Ya paso una vez, en Planificacion. Esta regla lo evita para los catorce
+   * bloques a la vez en lugar de esperar a que alguien descubra el siguiente
+   * desde un telefono.
+   */
+  it('los bloques del panel se pueden achicar en pantallas angostas', () => {
+    expect(css).toMatch(/\.panel-view > \* \{[^}]*min-width: 0;/);
+  });
+
+  it('la planificación no empuja la página a lo ancho en el teléfono', () => {
+    expect(css).toMatch(/\.schedule-panel \{[^}]*min-width: 0;/);
+    // El calendario tiene que poder desplazarse por dentro.
+    expect(css).toMatch(/\.schedule-calendar \{[^}]*overflow-x: auto;/);
+  });
+
   it('mantiene las tres métricas en una sola franja móvil', () => {
     expect(css).toMatch(/@media \(max-width: 600px\)[\s\S]*?\.stat-grid \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   });
