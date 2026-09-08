@@ -868,7 +868,16 @@ a.stats-boton { display: inline-flex; align-items: center; }
 }
 
 /* --- Programación semanal del supervisor (#96) ------------------------- */
-.schedule-panel { margin-top: 1rem; }
+/*
+ * `min-width: 0` no es cosmetico: sin el, este bloque es hijo de un grid y por
+ * defecto vale `min-width: auto`, o sea NO puede achicarse por debajo de su
+ * contenido. El calendario de adentro pide 7 columnas de 9rem, crecia a
+ * 1.056 px y empujaba la pagina entera: a 390 px el supervisor tenia que
+ * arrastrar todo el panel de lado para leer cualquier cosa, y el
+ * `overflow-x: auto` del calendario nunca llegaba a actuar porque el que se
+ * desbordaba era este contenedor, no el.
+ */
+.schedule-panel { min-width: 0; margin-top: 1rem; }
 .schedule-panel .card-heading > select { min-height: 2.5rem; border: 1px solid var(--line); border-radius: .65rem; padding: 0 .7rem; background: white; color: var(--ink); }
 .schedule-week-nav { display: flex; align-items: center; justify-content: space-between; gap: .7rem; margin: 1rem 0; }
 .schedule-week-nav button { min-height: 2.5rem; border: 1px solid #c7d2fe; border-radius: .65rem; padding: 0 1rem; color: var(--marca-secundario, #3048bc); background: #eef2ff; font-weight: 650; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
