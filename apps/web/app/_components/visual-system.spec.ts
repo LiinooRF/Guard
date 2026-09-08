@@ -60,6 +60,20 @@ describe('sistema visual de uso diario (#292)', () => {
    * Es una linea facil de borrar por "limpieza" sin que nada se vea roto en
    * escritorio, que es donde se mira el CSS.
    */
+  /**
+   * Los bloques del panel son items de un grid, y por defecto un item de grid
+   * vale `min-width: auto`: no se achica por debajo de su contenido. Cualquier
+   * tabla, calendario o grafico ancho estira su bloque y el bloque estira la
+   * pagina.
+   *
+   * Ya paso una vez, en Planificacion. Esta regla lo evita para los catorce
+   * bloques a la vez en lugar de esperar a que alguien descubra el siguiente
+   * desde un telefono.
+   */
+  it('los bloques del panel se pueden achicar en pantallas angostas', () => {
+    expect(css).toMatch(/\.panel-view > \* \{[^}]*min-width: 0;/);
+  });
+
   it('la planificación no empuja la página a lo ancho en el teléfono', () => {
     expect(css).toMatch(/\.schedule-panel \{[^}]*min-width: 0;/);
     // El calendario tiene que poder desplazarse por dentro.

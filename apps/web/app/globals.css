@@ -132,7 +132,27 @@ a { color: inherit; text-decoration: none; }
 .guard-nav-note { display: none; border: 1px solid rgba(255,255,255,.09); border-radius: .75rem; padding: .9rem; color: #9ca8c8; font-size: .7rem; line-height: 1.55; }
 .dashboard-content { min-width: 0; padding: 1.1rem 1rem max(1.25rem, env(safe-area-inset-bottom)); }
 .dashboard-content :target { scroll-margin-top: 8.5rem; }
+/*
+ * `min-width: 0` en los hijos NO es cosmetico y es la raiz de un defecto que
+ * ya se manifesto una vez.
+ *
+ * `.panel-view` es un grid, asi que cada bloque que cuelga de el es un item de
+ * grid y por defecto vale `min-width: auto`: no puede achicarse por debajo de
+ * su contenido. Cualquier vista con una tabla, un calendario o un grafico
+ * ancho estira su bloque, y el bloque estira la PAGINA — el supervisor termina
+ * arrastrando el panel entero de lado, encabezado y navegacion incluidos.
+ *
+ * Paso en Planificacion (calendario de 7 columnas de 9rem: la pagina medía
+ * 1.072 px en un telefono de 390). El mismo patron esta esperando en las
+ * tablas del admin —`.crash-table-wrap`, `.stats-tabla-envoltura`—, que tienen
+ * su propio `overflow-x: auto` para desplazarse por dentro pero nunca llegan a
+ * usarlo si el contenedor crecio antes.
+ *
+ * Se arregla aca, para los catorce bloques a la vez, en vez de parchear cada
+ * tabla cuando alguien la descubre rota desde un telefono.
+ */
 .panel-view { display: grid; gap: 1rem; }
+.panel-view > * { min-width: 0; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; margin-bottom: 2rem; }
 .topbar h1 { margin: .35rem 0 .25rem; font-size: clamp(1.75rem, 3vw, 2.4rem); letter-spacing: -.045em; }
 .topbar p { margin: 0; color: var(--muted); font-size: .86rem; }
