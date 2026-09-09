@@ -136,38 +136,6 @@ export class AddLoginCodeToGuards1727301600000 implements MigrationInterface {
           AND target_user.login_code_lookup = codigo_lookup
       $$
     `);
-    /*
-     * Resolver el codigo de empresa TAMBIEN necesita saltar RLS.
-     *
-     * `tenants` tiene FORCE ROW LEVEL SECURITY y el ingreso ocurre antes de que
-     * exista contexto: un `SELECT ... FROM tenants WHERE slug = $1` desde el rol
-     * de la aplicacion devuelve CERO filas, sin error. El login quedaba
-     * respondiendo "codigo incorrecto" en 14 ms, sin haber verificado nada.
-     *
-     * Devuelve solo id y estado: lo justo para resolver el ingreso, nada del
-     * resto de la empresa.
-     */
-    await queryRunner.query(`
-      CREATE OR REPLACE FUNCTION tenant_por_codigo_de_empresa(codigo_empresa text)
-      RETURNS TABLE (tenant_id uuid, tenant_status text)
-      LANGUAGE sql
-      STABLE
-      SECURITY DEFINER
-      SET search_path = pg_catalog, public
-      AS $$
-        SELECT tenant.id, tenant.status
-        FROM public.tenants tenant
-        WHERE tenant.slug = codigo_empresa
-        LIMIT 1
-      $$
-    `);
-    await queryRunner.query(`
-      REVOKE ALL ON FUNCTION tenant_por_codigo_de_empresa(text) FROM PUBLIC
-    `);
-    await queryRunner.query(`
-      GRANT EXECUTE ON FUNCTION tenant_por_codigo_de_empresa(text) TO sentrycore_app
-    `);
-
     await queryRunner.query(`
       REVOKE ALL ON FUNCTION authenticate_login_code(uuid, text) FROM PUBLIC
     `);
@@ -177,7 +145,6 @@ export class AddLoginCodeToGuards1727301600000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP FUNCTION IF EXISTS tenant_por_codigo_de_empresa(text)`);
     await queryRunner.query(`DROP FUNCTION IF EXISTS authenticate_login_code(uuid, text)`);
     await queryRunner.query(`DROP INDEX IF EXISTS users_login_code_lookup_uq`);
     await queryRunner.query(`
