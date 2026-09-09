@@ -153,6 +153,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL es obligatorio}
       REDIS_URL: ${REDIS_URL:?REDIS_URL es obligatorio}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET es obligatorio}
+      # Ingreso del guardia con codigo de 6 digitos. Obligatoria como el JWT:
+      # sin ella ese carril no funciona y el fallo aparecería recién cuando un
+      # guardia intenta entrar, no al desplegar.
+      LOGIN_CODE_PEPPER: ${LOGIN_CODE_PEPPER:?LOGIN_CODE_PEPPER es obligatorio}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
       MAIL_DRIVER: ${MAIL_DRIVER:?MAIL_DRIVER es obligatorio}

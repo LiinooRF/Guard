@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { argon2id, hash } from 'argon2';
 import { QueryFailedError } from 'typeorm';
 
+import { generarCodigo, lookupDeCodigo, pepperDeCodigo } from '../auth/login-code';
 import { normalizarUidNfc } from '../admin/uid-nfc';
 import { TenantContextService } from '../database/tenant-context/tenant-context.service';
 import { AuditService } from '../audit/audit.service';
@@ -607,6 +608,82 @@ export class SupervisorService {
       nfcCardUid: guard.nfc_card_uid ?? null,
       tienePin: guard.tiene_pin === true,
     }));
+  }
+
+  /**
+   * Genera el codigo de ingreso del guardia y lo devuelve UNA sola vez.
+   *
+   * Se guarda el HMAC para poder encontrarlo en el ingreso y el argon2 para
+   * verificarlo; el codigo en claro no queda en ningun lado. Por eso esta
+   * respuesta es la unica oportunidad de anotarlo: si se pierde, se genera otro
+   * y el anterior deja de servir.
+   *
+   * Reintenta ante colision del indice unico. Con seis digitos y pocas decenas
+   * de guardias la probabilidad es minima, pero "minima" no es "nunca" y un
+   * choque dejaria al supervisor con un error sin sentido.
+   */
+  async asignarCodigoDeIngreso(guardId: string, supervisorId: string) {
+    await this.asegurarGuardiaGestionable(guardId, supervisorId);
+
+    const pepper = pepperDeCodigo();
+    const empresa = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT app_tenant_id() AS id`,
+    );
+    const tenantId = empresa[0]?.id;
+    if (!tenantId) throw new ForbiddenException('Sin contexto de empresa');
+
+    for (let intento = 0; intento < 5; intento += 1) {
+      const codigo = generarCodigo();
+      const lookup = lookupDeCodigo(tenantId, codigo, pepper);
+      const hashCodigo = await hash(codigo, { type: argon2id });
+      try {
+        await this.tenantContext.manager.query(
+          `UPDATE users
+              SET login_code_lookup = $2,
+                  login_code_hash = $3,
+                  login_code_updated_at = now()
+            WHERE id = $1`,
+          [guardId, lookup, hashCodigo],
+        );
+        return { code: codigo, updatedAt: new Date().toISOString() };
+      } catch (error) {
+        const codigoSql = (error as { code?: string }).code;
+        if (codigoSql !== '23505') throw error;
+      }
+    }
+    throw new ConflictException('No se pudo generar un código libre, inténtalo de nuevo');
+  }
+
+  /** Le quita el ingreso por codigo: vuelve a entrar con usuario y contraseña. */
+  async quitarCodigoDeIngreso(guardId: string, supervisorId: string) {
+    await this.asegurarGuardiaGestionable(guardId, supervisorId);
+    await this.tenantContext.manager.query(
+      `UPDATE users
+          SET login_code_lookup = NULL, login_code_hash = NULL, login_code_updated_at = now()
+        WHERE id = $1`,
+      [guardId],
+    );
+    return { code: null };
+  }
+
+  /** Mismas comprobaciones que usa la asignacion de tarjeta NFC. */
+  private async asegurarGuardiaGestionable(guardId: string, supervisorId: string) {
+    const guards = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT u.id
+       FROM memberships m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.user_id = $1 AND m.role_key = 'GUARDIA' AND u.is_active`,
+      [guardId],
+    );
+    if (!guards.length) throw new NotFoundException('El guardia no existe o esta inactivo');
+
+    const supervisorSites = await this.tenantContext.manager.query<Array<{ site_id: string }>>(
+      `SELECT site_id FROM supervisor_sites WHERE supervisor_id = $1 LIMIT 1`,
+      [supervisorId],
+    );
+    if (!supervisorSites.length) {
+      throw new ForbiddenException('No tienes recintos asignados para gestionar guardias');
+    }
   }
 
   async assignGuardNfcCard(
