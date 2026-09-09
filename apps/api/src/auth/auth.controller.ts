@@ -26,6 +26,7 @@ import { Public } from './decorators/public.decorator';
 import { Permissions } from './decorators/permissions.decorator';
 import { TenantScope } from './decorators/tenant-scope.decorator';
 import { LoginDto } from './dto/login.dto';
+import { CodeLoginDto } from './dto/code-login.dto';
 import { NfcLoginDto } from './dto/nfc-login.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { clearSessionCookies, setSessionCookies } from './session-cookies';
@@ -76,6 +77,36 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.auth.nfcLogin(
+      input,
+      request.ip,
+      request.get('user-agent') ?? 'Dispositivo desconocido',
+    );
+    if ('requiresTenantSelection' in result) return result;
+
+    setSessionCookies(response, result);
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
+  }
+
+  /**
+   * Ingreso del guardia con el codigo de empresa y sus seis digitos.
+   *
+   * Separado de `/login` y no un modo mas de aquel: tiene su propio bloqueo por
+   * empresa + IP y su propia tolerancia, mas corta. Mezclarlos haria que los
+   * intentos de un carril gastaran el margen del otro.
+   */
+  @Post('code-login')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  async codeLogin(
+    @Body() input: CodeLoginDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.codeLogin(
       input,
       request.ip,
       request.get('user-agent') ?? 'Dispositivo desconocido',

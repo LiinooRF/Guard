@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
 import type { Request } from 'express';
 
@@ -152,6 +152,28 @@ export class SupervisorController {
     @Req() request: Autenticado,
   ) {
     return this.supervisor.assignGuardNfcCard(params.guardId, request.user.sub, input);
+  }
+
+  /**
+   * Le da al guardia un codigo de ingreso nuevo, o le quita el que tenia.
+   *
+   * El codigo lo GENERA el servidor y se devuelve UNA sola vez, en claro, para
+   * que el supervisor se lo pase: despues queda hasheado y no hay forma de
+   * recuperarlo. Si se pierde, se genera otro.
+   *
+   * No se deja elegirlo a mano a proposito: un supervisor apurado pondria
+   * 123456 o el año, y ese es justo el codigo que un atacante prueba primero.
+   */
+  @Post('guards/:guardId/login-code')
+  @Permissions('shifts:manage')
+  asignarCodigoDeIngreso(@Param() params: GuardParam, @Req() request: Autenticado) {
+    return this.supervisor.asignarCodigoDeIngreso(params.guardId, request.user.sub);
+  }
+
+  @Delete('guards/:guardId/login-code')
+  @Permissions('shifts:manage')
+  quitarCodigoDeIngreso(@Param() params: GuardParam, @Req() request: Autenticado) {
+    return this.supervisor.quitarCodigoDeIngreso(params.guardId, request.user.sub);
   }
 
   @Get('sites/:siteId/schedule')

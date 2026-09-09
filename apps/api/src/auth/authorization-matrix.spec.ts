@@ -76,6 +76,10 @@ const TENANT_ROLES = ['ADMIN', 'SUPERVISOR', 'GUARDIA'] as const;
 const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   publicEndpoint(AuthController, 'login'),
   publicEndpoint(AuthController, 'nfcLogin'),
+  // Ingreso del guardia con codigo de empresa + seis digitos. Publico como el
+  // resto de los ingresos: la credencial es el codigo, y su bloqueo va por
+  // empresa + IP porque hasta que acierta no hay identidad.
+  publicEndpoint(AuthController, 'codeLogin'),
   publicEndpoint(AuthController, 'logout'),
   publicEndpoint(AuthController, 'refresh'),
   publicEndpoint(AuthController, 'requestPasswordReset'),
@@ -175,6 +179,10 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
   secured(SupervisorController, 'listShifts', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'listGuards', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'assignGuardNfcCard', ['shifts:manage'], ['SUPERVISOR'], true),
+  // El codigo de ingreso lo reparte quien ya gestiona guardias: mismo permiso
+  // que la tarjeta NFC, que es la otra credencial de bolsillo.
+  secured(SupervisorController, 'asignarCodigoDeIngreso', ['shifts:manage'], ['SUPERVISOR'], true),
+  secured(SupervisorController, 'quitarCodigoDeIngreso', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'weeklySchedule', ['shifts:manage'], ['SUPERVISOR'], true),
   secured(SupervisorController, 'createShift', ['shifts:manage'], ['SUPERVISOR'], true),
   // Retirar un turno del calendario: mismo permiso que crearlo.

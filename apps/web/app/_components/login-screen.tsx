@@ -54,6 +54,63 @@ export function LoginScreen() {
   const [nfcFeedback, setNfcFeedback] = useState<string | null>(null);
   const [pendingCardUid, setPendingCardUid] = useState<string | null>(null);
   const [nfcPin, setNfcPin] = useState('');
+  const [codigoGuardia, setCodigoGuardia] = useState('');
+  const [usandoCodigo, setUsandoCodigo] = useState(false);
+
+  /**
+   * Ingreso del guardia con sus seis digitos.
+   *
+   * No pide usuario: el codigo identifica y autentica. Por eso el error que se
+   * muestra es siempre el mismo, diga lo que diga el servidor sobre por que
+   * fallo — distinguir "ese codigo no existe" de "ese codigo es de otra
+   * empresa" le serviria a quien esta probando, no al guardia.
+   */
+  async function entrarConCodigo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^\d{6}$/.test(codigoGuardia)) {
+      setErrorMessage('El código son 6 dígitos.');
+      setStatus('error');
+      return;
+    }
+    if (!navigator.onLine) {
+      setStatus('offline');
+      return;
+    }
+    setStatus('loading');
+    setErrorMessage('');
+    try {
+      const respuesta = await fetch(`${apiUrl}/auth/code-login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenantSlug: codigoEmpresa, code: codigoGuardia }),
+      });
+      const resultado = (await respuesta.json().catch(() => null)) as {
+        user?: { role: Role };
+        message?: string | string[];
+        retryAfterSeconds?: number;
+      } | null;
+
+      if (!respuesta.ok || !resultado?.user) {
+        // El bloqueo SI se dice: el guardia tiene que saber que espere en vez
+        // de seguir probando y estirar el castigo.
+        setErrorMessage(
+          respuesta.status === 429
+            ? 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.'
+            : 'Código incorrecto.',
+        );
+        setStatus('error');
+        setCodigoGuardia('');
+        return;
+      }
+
+      router.push(`/app/${resultado.user.role.toLowerCase()}`);
+      router.refresh();
+    } catch {
+      setErrorMessage('No pudimos conectar. Revisa tu señal e inténtalo de nuevo.');
+      setStatus('error');
+    }
+  }
 
   useEffect(() => {
     setCodigoEmpresa(leerCodigoEmpresa());
@@ -507,7 +564,7 @@ export function LoginScreen() {
             </form>
           ) : null}
 
-          {mode === 'login' && !pendingCardUid ? <form className="login-form" noValidate onSubmit={submit}>
+          {mode === 'login' && !pendingCardUid ? <form className="login-form" noValidate onSubmit={usandoCodigo ? entrarConCodigo : submit}>
             {editandoCodigoEmpresa || !codigoEmpresa ? (
               <label className="codigo-empresa-campo">
                 Código de empresa
@@ -541,7 +598,33 @@ export function LoginScreen() {
                 </button>
               </p>
             )}
-            <label>
+
+            {/*
+              * Ingreso corto del guardia: la empresa ya esta guardada en el
+              * telefono, asi que le alcanza con sus seis digitos. Se ofrece solo
+              * cuando hay empresa recordada, porque sin ella el codigo no
+              * identifica a nadie.
+              */}
+            {codigoEmpresa && !editandoCodigoEmpresa && usandoCodigo ? (
+              <label className="codigo-guardia-campo">
+                Tu código
+                <input
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  name="code"
+                  onChange={(evento) => {
+                    setCodigoGuardia(evento.target.value.replace(/\D/g, '').slice(0, 6));
+                    setStatus('idle');
+                    setErrorMessage('');
+                  }}
+                  placeholder="••••••"
+                  value={codigoGuardia}
+                />
+                <small>Los 6 dígitos que te dio tu supervisor.</small>
+              </label>
+            ) : null}
+            <label hidden={usandoCodigo}>
               Usuario o correo
               <input
                 autoComplete="username"
@@ -556,7 +639,7 @@ export function LoginScreen() {
                 value={identity}
               />
             </label>
-            <label>
+            <label hidden={usandoCodigo}>
               Contraseña
               <span className="password-field">
                 <input
@@ -625,8 +708,29 @@ export function LoginScreen() {
               {status === 'loading' ? 'Verificando…' : 'Ingresar'}
               <span aria-hidden="true">{status === 'loading' ? '···' : '→'}</span>
             </button>
+            {/*
+              * El atajo del guardia. Va DEBAJO del boton de ingresar y no
+              * arriba: quien tiene usuario y contraseña —supervisor, admin— no
+              * tiene por que tropezarse con el, y al guardia le alcanza con
+              * verlo una vez para no volver a usar el camino largo.
+              */}
+            {codigoEmpresa && !editandoCodigoEmpresa ? (
+              <button
+                className="text-button"
+                onClick={() => {
+                  setUsandoCodigo((antes) => !antes);
+                  setStatus('idle');
+                  setErrorMessage('');
+                  setCodigoGuardia('');
+                }}
+                type="button"
+              >
+                {usandoCodigo ? 'Entrar con usuario y contraseña' : 'Entrar con mi código'}
+              </button>
+            ) : null}
             <button
               className="text-button recovery-link"
+              hidden={usandoCodigo}
               onClick={() => {
                 setMode('recovery');
                 setStatus('idle');

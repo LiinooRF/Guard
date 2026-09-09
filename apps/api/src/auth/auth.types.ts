@@ -14,6 +14,11 @@ export interface AuthIdentityRow {
   max_lock_seconds: number;
   /** Hash argon2id del PIN del login por tarjeta. NULL = ese guardia no usa PIN. */
   nfc_pin_hash: string | null;
+  /**
+   * Hash del codigo de ingreso del guardia. Lo trae `authenticate_login_code`;
+   * `authenticate_identity` no lo devuelve, asi que es opcional.
+   */
+  login_code_hash?: string | null;
   /** Slug de la empresa. NULL en los roles de plataforma, que no cuelgan de una. */
   tenant_slug: string | null;
 }
