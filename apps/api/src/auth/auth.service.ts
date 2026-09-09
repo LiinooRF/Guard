@@ -443,11 +443,18 @@ export class AuthService {
 
     const politica: LoginSecurityPolicy = { ...POLITICA_CODIGO };
 
-    const empresas = await this.dataSource.query<Array<{ id: string; status: string }>>(
-      `SELECT id, status FROM tenants WHERE slug = $1 LIMIT 1`,
-      [input.tenantSlug],
-    );
-    const empresa = empresas[0];
+    /*
+     * Por funcion y no por SELECT directo: `tenants` tiene FORCE ROW LEVEL
+     * SECURITY y aca todavia no hay contexto de empresa, asi que la consulta
+     * directa devuelve cero filas SIN error y el ingreso respondia "codigo
+     * incorrecto" sin haber verificado nada.
+     */
+    const empresas = await this.dataSource.query<
+      Array<{ tenant_id: string; tenant_status: string }>
+    >(`SELECT * FROM tenant_por_codigo_de_empresa($1)`, [input.tenantSlug]);
+    const empresa = empresas[0]
+      ? { id: empresas[0].tenant_id, status: empresas[0].tenant_status }
+      : undefined;
     if (!empresa) {
       await this.recordFailedLogin(empresaHash, ipHash, politica);
       throw new UnauthorizedException('Código incorrecto');
