@@ -580,6 +580,9 @@ label.guardia-boton-secundario { display: flex; align-items: center; justify-con
   gap: 0.15rem;
   min-width: 0;
 }
+/* El cumplimiento se distingue por PESO, no por color: el umbral que lo hace
+   bueno o malo lo configura cada empresa y aca no se conoce. */
+.informes-cumplimiento { color: var(--ink); font-weight: 700; }
 
 .informes-datos span,
 .informes-datos small {

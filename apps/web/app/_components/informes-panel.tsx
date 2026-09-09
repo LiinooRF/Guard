@@ -8,6 +8,15 @@ export interface RondaInformable {
   routeName: string;
   status: string;
   scheduledStartAt: string;
+  /**
+   * Cumplimiento de la ronda, 0-100. `null` mientras no se cerro: una ronda en
+   * curso no tiene un porcentaje que mostrar todavia.
+   *
+   * Se muestra en la lista para no obligar a abrir el PDF solo para saber como
+   * salio. El servidor ya lo devolvia en `GET /supervisor/sites/:id/patrols`;
+   * lo que faltaba era no tirarlo al armar esta lista.
+   */
+  compliancePct?: number | null;
 }
 
 interface FotoMeta {
@@ -157,6 +166,22 @@ export function InformesPanel({
                   <small>
                     {fecha(ronda.scheduledStartAt)} ·{' '}
                     {ESTADO_TEXTO[ronda.status] ?? ronda.status}
+                    {/*
+                      * El cumplimiento va aca y NO con semaforo de colores: el
+                      * umbral que decide si un numero es bueno lo configura cada
+                      * empresa (`complianceThreshold`, 70 % por defecto) y este
+                      * componente no lo conoce. Pintar de rojo un 75 % que para
+                      * ese cliente esta bien seria inventarle un juicio.
+                      *
+                      * Se muestra el dato para que el supervisor no tenga que
+                      * bajar el PDF solo para saber como salio la ronda.
+                      */}
+                    {typeof ronda.compliancePct === 'number' ? (
+                      <>
+                        {' · '}
+                        <b className="informes-cumplimiento">{ronda.compliancePct}% cumplido</b>
+                      </>
+                    ) : null}
                   </small>
                 </div>
                 <div className="informes-acciones">
