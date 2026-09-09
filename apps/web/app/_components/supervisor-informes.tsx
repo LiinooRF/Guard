@@ -79,6 +79,7 @@ export function SupervisorInformes({
      */
     status: etiquetaEstado(ronda.status),
     scheduledStartAt: ronda.scheduledStartAt,
+    compliancePct: ronda.compliancePct,
   }));
 
   return (
