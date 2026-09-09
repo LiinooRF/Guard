@@ -274,11 +274,24 @@ export class GuardService {
         // En tests unitarios sin mock de guard_sites
       }
 
+      /*
+       * Rutas que el guardia puede recorrer por su cuenta (#133).
+       *
+       * Van SOLO en esta rama, la de "no tenes ronda": con una abierta el
+       * servicio rechaza la voluntaria, asi que ofrecerla ahi seria un boton
+       * que no funciona. Se piden las activas de sus recintos con al menos dos
+       * puntos, que es lo que `startVoluntaryPatrol` exige.
+       */
+      const rutasVoluntarias = await this.rutasParaRondaVoluntaria(
+        assignedSites.map((s) => s.id),
+      );
+
       return {
         hasAssignment: false as const,
         assignedSites,
         selectedSiteId: siteId ?? assignedSites[0]?.id ?? null,
         message: 'No tienes un turno asignado en este momento.',
+        voluntaryRoutes: rutasVoluntarias,
         connection: { status: 'online' as const },
         synchronization: { pendingItems: 0 },
       };
@@ -1080,6 +1093,37 @@ export class GuardService {
    * Ronda VOLUNTARIA (#133): fuera de programacion. Se registra igual y queda
    * marcada; no cuenta contra el cumplimiento programado, suma como cobertura.
    */
+  /**
+   * Rutas activas de esos recintos con secuencia valida para una voluntaria.
+   *
+   * Se filtra por `>= 2` puntos aca y no en la pantalla porque es el mismo
+   * minimo que exige `startVoluntaryPatrol`: si se ofreciera una ruta de un
+   * punto, el boton existiria y el servidor lo rechazaria.
+   */
+  private async rutasParaRondaVoluntaria(siteIds: readonly string[]) {
+    if (siteIds.length === 0) return [];
+    const filas = await this.tenantContext.manager.query<
+      Array<{ id: string; name: string; site_id: string; site_name: string; puntos: string }>
+    >(
+      `SELECT r.id, r.name, r.site_id, s.name AS site_name, count(rc.checkpoint_id) AS puntos
+         FROM routes r
+         JOIN sites s ON s.tenant_id = r.tenant_id AND s.id = r.site_id
+         JOIN route_checkpoints rc ON rc.tenant_id = r.tenant_id AND rc.route_id = r.id
+        WHERE r.site_id = ANY($1::uuid[]) AND r.is_active
+        GROUP BY r.id, s.id
+       HAVING count(rc.checkpoint_id) >= 2
+        ORDER BY s.name, r.name`,
+      [siteIds],
+    );
+    return filas.map((f) => ({
+      id: f.id,
+      name: f.name,
+      siteId: f.site_id,
+      siteName: f.site_name,
+      checkpointCount: Number(f.puntos),
+    }));
+  }
+
   async startVoluntaryPatrol(guardId: string, routeId: string) {
     const rutas = await this.tenantContext.manager.query<
       Array<{ id: string; site_id: string }>
@@ -1092,6 +1136,27 @@ export class GuardService {
       [routeId],
     );
     if (puntos.length < 2) throw new ConflictException('La ruta no tiene una secuencia valida');
+
+    /*
+     * Una ronda a la vez.
+     *
+     * `home()` trae UNA sola (`LIMIT 1`, priorizando la que esta en curso), asi
+     * que si el guardia lanza una voluntaria teniendo otra abierta, la segunda
+     * queda invisible en la app y se arrastra hasta vencer sola. Peor: los
+     * escaneos irian a la que el telefono muestre, no a la que el guardia cree
+     * estar haciendo, y el informe acreditaria cualquier cosa.
+     *
+     * Se rechaza aca y no solo en la pantalla: el endpoint es publico para
+     * cualquier cliente con el rol, no solo para nuestro boton.
+     */
+    const abiertas = await this.tenantContext.manager.query<Array<{ id: string }>>(
+      `SELECT id FROM patrols
+       WHERE guard_id = $1 AND status IN ('pendiente', 'en_curso') LIMIT 1`,
+      [guardId],
+    );
+    if (abiertas.length > 0) {
+      throw new ConflictException('Ya tienes una ronda abierta: termínala antes de iniciar otra');
+    }
 
     const jornada = await this.tenantContext.manager.query<Array<{ id: string }>>(
       `SELECT id FROM shift_assignments
