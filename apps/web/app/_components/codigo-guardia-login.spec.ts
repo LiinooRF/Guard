@@ -44,6 +44,17 @@ describe('ingreso del guardia con su código', () => {
     expect(pantalla).toContain('Demasiados intentos');
   });
 
+  /*
+   * El atributo `hidden` aplica `display: none` desde la hoja del NAVEGADOR, que
+   * pierde contra cualquier regla propia: `.login-form > label` los deja en
+   * `grid` y los campos se seguian viendo. Se descubrio en el telefono — el
+   * ingreso por codigo mostraba ademas usuario y contraseña.
+   */
+  it('lo que se oculta en modo código se oculta de verdad', () => {
+    expect(pantalla).toMatch(/<label hidden=\{usandoCodigo\}>/);
+    expect(css).toMatch(/\.login-form[^{]*\[hidden\][^{]*\{[^}]*display: none/);
+  });
+
   it('el campo es cómodo para escribir de pie', () => {
     const regla = css.match(/\.codigo-guardia-campo input \{[^}]*\}/);
 

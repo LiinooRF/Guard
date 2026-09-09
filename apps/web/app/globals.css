@@ -49,6 +49,15 @@ a { color: inherit; text-decoration: none; }
 .login-intro { margin: 0 0 2rem; color: var(--muted); line-height: 1.6; }
 .login-form { display: grid; gap: 1.15rem; }
 .login-form > label { display: grid; gap: .48rem; color: #32394b; font-size: .82rem; font-weight: 720; }
+/*
+ * `hidden` tiene que ganar, y por defecto NO gana.
+ *
+ * El atributo aplica `display: none` desde la hoja del navegador, que pierde
+ * contra cualquier regla nuestra: la linea de arriba deja el label en `grid` y
+ * el campo se ve igual. Se noto EN EL TELEFONO — el ingreso por codigo mostraba
+ * ademas los campos de usuario y contraseña que debian desaparecer.
+ */
+.login-form > label[hidden], .login-form [hidden] { display: none; }
 .login-form input, .login-form select { width: 100%; min-height: 3.5rem; border: 1px solid #d9deea; border-radius: .85rem; padding: 0 1rem; color: var(--ink); outline: none; background: #fbfcfe; font-size: 1rem; transition: border-color .2s, box-shadow .2s; }
 .login-form input:focus, .login-form select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(66,99,235,.12); }
 .codigo-empresa-campo small { color: var(--muted); font-size: .72rem; font-weight: 450; line-height: 1.45; }
