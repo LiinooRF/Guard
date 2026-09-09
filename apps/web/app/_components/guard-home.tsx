@@ -18,6 +18,18 @@ export interface GuardHomeData {
     branchName?: string;
   }>;
   selectedSiteId?: string;
+  /**
+   * Rutas que el guardia puede recorrer por su cuenta, sin que se la asignen
+   * (#133). La API las manda solo cuando NO tiene ronda abierta, porque con una
+   * en marcha el servidor rechaza la voluntaria.
+   */
+  voluntaryRoutes?: Array<{
+    id: string;
+    name: string;
+    siteId: string;
+    siteName: string;
+    checkpointCount: number;
+  }>;
   shift?: {
     scheduledStartAt: string;
     scheduledEndAt: string;
@@ -77,6 +89,38 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
   const guardarRutaOffline = puente.guardarRutaOffline;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
+  const rutasVoluntarias = data.voluntaryRoutes ?? [];
+  const [rutaElegida, setRutaElegida] = useState<string>('');
+  const [iniciandoVoluntaria, setIniciandoVoluntaria] = useState(false);
+  const [errorVoluntaria, setErrorVoluntaria] = useState<string>();
+
+  /**
+   * Arranca una ronda que nadie programo.
+   *
+   * Existe para que el recorrido no sea predecible: un guardia que siempre pasa
+   * a la misma hora le regala el horario a quien quiere entrar. Por eso la
+   * puede lanzar cuando quiera, y por eso el informe la marca como voluntaria
+   * en vez de mezclarla con las programadas.
+   */
+  async function iniciarRondaVoluntaria(routeId: string) {
+    setIniciandoVoluntaria(true);
+    setErrorVoluntaria(undefined);
+    try {
+      const respuesta = await fetch(`${apiUrl}/guard/routes/${routeId}/voluntary-patrol`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!respuesta.ok) {
+        const cuerpo = (await respuesta.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(cuerpo?.message ?? 'No pudimos iniciar la ronda voluntaria');
+      }
+      router.refresh();
+    } catch (e) {
+      setErrorVoluntaria(e instanceof Error ? e.message : 'No pudimos iniciar la ronda voluntaria');
+    } finally {
+      setIniciandoVoluntaria(false);
+    }
+  }
 
   /*
    * El permiso de notificaciones se pide al ver el turno, no al arrancar.
@@ -139,6 +183,61 @@ export function GuardHome({ data, apiUrl }: { data: GuardHomeData; apiUrl: strin
         ) : null}
         <h2>No tienes una ronda asignada</h2>
         <p>{data.message ?? 'Cuando te asignen una ronda, aparecerá aquí automáticamente.'}</p>
+
+        {/*
+          * Ronda voluntaria (#133).
+          *
+          * Se ofrece SOLO aca, sin ronda abierta: con una en marcha el servidor
+          * la rechaza, y un boton que falla es peor que no tenerlo. El texto
+          * dice para que sirve, porque un guardia no tiene por que adivinar por
+          * que le conviene salir a una hora que nadie le fijo.
+          */}
+        {rutasVoluntarias.length > 0 ? (
+          <div className="ronda-voluntaria">
+            <h3>Ronda voluntaria</h3>
+            <p>
+              Puedes recorrer una ronda cuando quieras, sin esperar a que te la asignen. Queda
+              registrada igual, con tu recorrido y tus marcas.
+            </p>
+            {rutasVoluntarias.length > 1 ? (
+              <label className="ronda-voluntaria-ruta">
+                <span>¿Qué ronda vas a hacer?</span>
+                <select
+                  value={rutaElegida}
+                  onChange={(evento) => setRutaElegida(evento.target.value)}
+                >
+                  <option value="">Elige una…</option>
+                  {rutasVoluntarias.map((ruta) => (
+                    <option key={ruta.id} value={ruta.id}>
+                      {ruta.name} · {ruta.checkpointCount} puntos
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <button
+              className="primary-button"
+              disabled={
+                iniciandoVoluntaria ||
+                (rutasVoluntarias.length > 1 && rutaElegida === '')
+              }
+              onClick={() =>
+                iniciarRondaVoluntaria(
+                  rutasVoluntarias.length === 1 ? rutasVoluntarias[0]!.id : rutaElegida,
+                )
+              }
+              type="button"
+            >
+              {iniciandoVoluntaria ? 'Iniciando…' : 'Iniciar ronda voluntaria'}
+            </button>
+            {errorVoluntaria ? (
+              <p className="ronda-voluntaria-error" role="alert">
+                {errorVoluntaria}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <ConnectionStatus pendingItems={data.synchronization.pendingItems} />
       </section>
     );

@@ -74,6 +74,7 @@ describe('GuardService — ronda voluntaria (#133)', () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }]) // ruta activa
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }, { checkpoint_id: 'cp-2' }])
+      .mockResolvedValueOnce([]) // sin otra ronda abierta
       .mockResolvedValueOnce([{ id: 'asig-1' }]) // jornada en curso
       .mockResolvedValueOnce([]); // INSERT
     const service = servicio(query);
@@ -88,10 +89,32 @@ describe('GuardService — ronda voluntaria (#133)', () => {
     expect(insert[1][5]).toBe('asig-1');
   });
 
+  /*
+   * `home()` trae UNA sola ronda (`LIMIT 1`). Con dos abiertas, la que el
+   * telefono no muestra se arrastra hasta vencer sola y los escaneos van a la
+   * que la app decida mostrar, no a la que el guardia cree estar haciendo: el
+   * informe terminaria acreditando otra ronda.
+   */
+  it('no deja abrir una voluntaria si ya hay otra ronda en marcha', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }])
+      .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }, { checkpoint_id: 'cp-2' }])
+      .mockResolvedValueOnce([{ id: 'ronda-abierta' }]); // ya tiene una
+    const service = servicio(query);
+
+    await expect(service.startVoluntaryPatrol('guard-id', 'route-1')).rejects.toThrow(
+      /ya tienes una ronda abierta/i,
+    );
+    expect(query.mock.calls.some(([sql]: [string]) => sql.includes('INSERT INTO patrols'))).toBe(
+      false,
+    );
+  });
+
   it('sin jornada abierta igual se puede: la ronda voluntaria no exige turno', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce([{ id: 'route-1', site_id: 'site-1' }])
       .mockResolvedValueOnce([{ checkpoint_id: 'cp-1' }, { checkpoint_id: 'cp-2' }])
+      .mockResolvedValueOnce([]) // sin otra ronda abierta
       .mockResolvedValueOnce([]) // sin jornada
       .mockResolvedValueOnce([]);
     await expect(
