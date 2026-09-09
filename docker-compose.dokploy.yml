@@ -182,6 +182,10 @@ services:
       MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
+      # Clave del servidor para el ingreso del guardia con codigo de seis digitos.
+      # Sin ella la API no arranca: un valor por omision seria el mismo en todas
+      # las instalaciones, que es no tener clave con apariencia de tenerla.
+      LOGIN_CODE_PEPPER: ${LOGIN_CODE_PEPPER}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL}
       MAIL_DRIVER: ${MAIL_DRIVER}

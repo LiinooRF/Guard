@@ -13,6 +13,9 @@ import { ROLES, type Role } from '@sentrycore/shared';
 import { argon2id, hash, verify } from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type Redis from 'ioredis';
+
+import { CodeLoginDto } from './dto/code-login.dto';
+import { lookupDeCodigo, pepperDeCodigo } from './login-code';
 import { DataSource, type QueryRunner } from 'typeorm';
 
 import { normalizarUidNfc } from '../admin/uid-nfc';
@@ -80,6 +83,26 @@ const DEFAULT_LOGIN_POLICY: LoginSecurityPolicy = {
   windowSeconds: 15 * 60,
   baseLockSeconds: 60,
   maxLockSeconds: 15 * 60,
+};
+
+/**
+ * Politica del ingreso por codigo, mas estricta que la del resto.
+ *
+ * Contra una contraseña, un atacante prueba contra UNA cuenta. Contra el codigo
+ * prueba contra TODAS las de la empresa a la vez: con cincuenta guardias hay
+ * cincuenta codigos validos de un millon, o sea acierta uno de cada veinte mil
+ * intentos en vez de uno de cada millon. Diez intentos como el resto le
+ * regalarian ese margen.
+ *
+ * Cuatro intentos por ventana y bloqueo que arranca en cinco minutos: a un
+ * guardia que se equivoca escribiendo no le arruina el turno, y a un script le
+ * corta el ritmo lo suficiente como para que el ataque deje de ser practico.
+ */
+const POLITICA_CODIGO: LoginSecurityPolicy = {
+  maxAttempts: 4,
+  windowSeconds: 15 * 60,
+  baseLockSeconds: 5 * 60,
+  maxLockSeconds: 60 * 60,
 };
 
 /**
@@ -381,6 +404,94 @@ export class AuthService {
     }
 
     return this.createSession(selected, device);
+  }
+
+  /**
+   * Ingreso del guardia con el codigo de empresa y sus seis digitos.
+   *
+   * El codigo IDENTIFICA y AUTENTICA a la vez, y eso obliga a un diseño
+   * distinto del resto del login:
+   *
+   * · No se puede probar argon2 contra cada guardia de la empresa —cincuenta
+   *   hashes lentos por intento serian el ataque, no la defensa—, asi que se
+   *   encuentra al guardia por `login_code_lookup`, un HMAC determinista con
+   *   una clave que vive FUERA de la base, y recien ahi se verifica el hash.
+   *
+   * · El bloqueo por intentos no puede ser por identidad, porque hasta que el
+   *   codigo acierta no hay identidad. Se cuenta por EMPRESA + IP y con menos
+   *   tolerancia que el login normal: los codigos validos son tantos como
+   *   guardias, asi que probar al azar acierta mucho antes que contra una
+   *   contraseña.
+   *
+   * · Un codigo que no existe y uno que existe pero es de otra empresa dan la
+   *   MISMA respuesta y gastan el mismo intento: distinguirlos convertiria el
+   *   ingreso en un oraculo para saber que codigos estan en uso.
+   */
+  async codeLogin(
+    input: CodeLoginDto,
+    sourceIp = 'unknown',
+    device = 'Dispositivo desconocido',
+  ): Promise<LoginResult> {
+    // Se cuenta por EMPRESA y no por identidad: hasta que el codigo acierta no
+    // se sabe quien intenta entrar. El prefijo evita que ese contador choque
+    // con el de alguien que se llame igual que el slug.
+    const empresaHash = createHash('sha256')
+      .update(`code-login:${input.tenantSlug}`)
+      .digest('hex');
+    const ipHash = createHash('sha256').update(sourceIp).digest('hex');
+    await this.assertLoginNotLocked(empresaHash, ipHash);
+
+    const politica: LoginSecurityPolicy = { ...POLITICA_CODIGO };
+
+    const empresas = await this.dataSource.query<Array<{ id: string; status: string }>>(
+      `SELECT id, status FROM tenants WHERE slug = $1 LIMIT 1`,
+      [input.tenantSlug],
+    );
+    const empresa = empresas[0];
+    if (!empresa) {
+      await this.recordFailedLogin(empresaHash, ipHash, politica);
+      throw new UnauthorizedException('Código incorrecto');
+    }
+
+    const lookup = lookupDeCodigo(empresa.id, input.code, pepperDeCodigo());
+    const filas = await this.dataSource.query<AuthIdentityRow[]>(
+      `SELECT * FROM authenticate_login_code($1, $2)`,
+      [empresa.id, lookup],
+    );
+    const guardias = filas.filter((row) => row.role_key === 'GUARDIA');
+    const guardia = guardias[0];
+
+    if (!guardia?.login_code_hash) {
+      await this.recordFailedLogin(empresaHash, ipHash, politica);
+      throw new UnauthorizedException('Código incorrecto');
+    }
+
+    const coincide = await verify(guardia.login_code_hash, input.code).catch(() => false);
+    if (!coincide) {
+      const bloqueado = await this.recordFailedLogin(empresaHash, ipHash, politica);
+      if (bloqueado > 0) {
+        throw new HttpException(
+          {
+            code: 'DEMASIADOS_INTENTOS',
+            message: mensajeDeBloqueo(bloqueado),
+            retryAfterSeconds: bloqueado,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw new UnauthorizedException('Código incorrecto');
+    }
+
+    await this.clearFailedLogin(empresaHash);
+
+    if (empresa.status !== 'active') {
+      throw new ForbiddenException({
+        code: 'TENANT_SUSPENDED',
+        message: 'Tu organización está suspendida. Contacta al administrador de la plataforma.',
+      });
+    }
+
+    return this.createSession(guardia, device);
   }
 
   private async assertLoginNotLocked(identityHash: string, ipHash: string): Promise<void> {

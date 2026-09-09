@@ -29,9 +29,15 @@ describe('código de empresa en la pantalla de ingreso', () => {
     expect(pantalla).toMatch(/Te lo da tu supervisor[^<]*Se guarda en este teléfono/);
   });
 
-  it('los dos ingresos —tarjeta y contraseña— mandan el código fijado', () => {
+  /*
+   * Los TRES caminos de ingreso mandan el codigo fijado: tarjeta, contraseña y
+   * —desde el 09-09-2026— el codigo de seis digitos del guardia. El del codigo
+   * lo necesita mas que ninguno: sin la empresa, seis digitos no identifican a
+   * nadie.
+   */
+  it('los tres ingresos mandan el código fijado', () => {
     const envios = pantalla.match(/tenantSlug: codigoEmpresa/g) ?? [];
-    expect(envios).toHaveLength(2);
+    expect(envios).toHaveLength(3);
   });
 
   /*
