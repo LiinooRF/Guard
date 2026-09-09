@@ -21,8 +21,10 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  *   si algun dia la clave del pepper se filtra, el codigo sigue sin poder
  *   leerse de la base.
  *
- * UNICO POR EMPRESA. Dos guardias con el mismo codigo harian el ingreso
- * ambiguo: el indice unico lo impide en la base y no solo en el codigo.
+ * UNICIDAD. El indice unico va sobre el lookup, que ya lleva la empresa
+ * adentro: el mismo codigo en dos empresas da lookups distintos y conviven,
+ * pero dos guardias con el mismo lookup —que haria el ingreso ambiguo— no
+ * pueden existir. Lo impide la base y no solo el codigo.
  *
  * LO QUE ESTO CUESTA, ESCRITO. Seis digitos son un millon de combinaciones,
  * pero los codigos validos son tantos como guardias: con 50, uno de cada 20.000
@@ -58,13 +60,18 @@ export class AddLoginCodeToGuards1727301600000 implements MigrationInterface {
     `);
 
     /*
-     * Unico DENTRO de la empresa, no global: dos empresas distintas pueden
-     * repetir codigo sin ambiguedad, porque el ingreso siempre llega con el
-     * codigo de empresa.
+     * UNICO GLOBAL, y aun asi el codigo se puede repetir entre empresas.
+     *
+     * `users` no tiene `tenant_id` —la pertenencia vive en `memberships`—, asi
+     * que el indice no puede ser por empresa. No hace falta: el tenant ya va
+     * DENTRO del HMAC, de modo que el mismo 483920 en dos empresas produce dos
+     * lookups distintos y ambos conviven. Lo que este indice impide es lo que
+     * de verdad importa: dos guardias con el mismo lookup, que haria el ingreso
+     * ambiguo.
      */
     await queryRunner.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS users_login_code_lookup_uq
-        ON users (tenant_id, login_code_lookup)
+        ON users (login_code_lookup)
         WHERE login_code_lookup IS NOT NULL
     `);
 
