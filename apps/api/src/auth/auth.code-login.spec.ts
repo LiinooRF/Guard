@@ -70,7 +70,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
   it('entra con el código de empresa y su código personal', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
       .mockResolvedValueOnce([filaDeGuardia(hashDelCodigo)])
       .mockResolvedValue([]);
 
@@ -90,7 +90,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
   it('encuentra al guardia por el lookup, no probando uno por uno', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
       .mockResolvedValueOnce([filaDeGuardia(hashDelCodigo)])
       .mockResolvedValue([]);
 
@@ -107,10 +107,33 @@ describe('codeLogin · ingreso con seis dígitos', () => {
     expect(JSON.stringify(busqueda![1])).not.toContain(CODIGO);
   });
 
+  /*
+   * `tenants` tiene FORCE ROW LEVEL SECURITY y el ingreso ocurre sin contexto
+   * de empresa: un SELECT directo devuelve CERO filas SIN error, y el login
+   * respondia "codigo incorrecto" en 14 ms sin haber verificado nada. Se
+   * comprueba que la resolucion pase por la funcion SECURITY DEFINER.
+   */
+  it('resuelve el código de empresa por la función que salta RLS', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
+      .mockResolvedValueOnce([filaDeGuardia(hashDelCodigo)])
+      .mockResolvedValue([]);
+
+    await crearServicio(query).codeLogin({
+      tenantSlug: 'seguridad-andina',
+      code: CODIGO,
+    } as never);
+
+    const resolucion = query.mock.calls[0]?.[0] as string;
+    expect(resolucion).toContain('tenant_por_codigo_de_empresa');
+    expect(resolucion).not.toMatch(/FROM tenants/i);
+  });
+
   it('un código que no existe no entra', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
       .mockResolvedValueOnce([])
       .mockResolvedValue([]);
 
@@ -128,7 +151,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
     const sinEmpresa = jest.fn().mockResolvedValueOnce([]).mockResolvedValue([]);
     const sinCodigo = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
       .mockResolvedValueOnce([])
       .mockResolvedValue([]);
 
@@ -161,7 +184,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
       () =>
         jest
           .fn()
-          .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+          .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
           .mockResolvedValueOnce([])
           .mockResolvedValue([]),
       'seguridad-andina',
@@ -184,7 +207,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
   it('una empresa suspendida no entra aunque el código sea correcto', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'suspended' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'suspended' }])
       .mockResolvedValueOnce([{ ...filaDeGuardia(hashDelCodigo), tenant_status: 'suspended' }])
       .mockResolvedValue([]);
 
@@ -196,7 +219,7 @@ describe('codeLogin · ingreso con seis dígitos', () => {
   it('con demasiados intentos responde 429 y no sigue probando', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ id: EMPRESA, status: 'active' }])
+      .mockResolvedValueOnce([{ tenant_id: EMPRESA, tenant_status: 'active' }])
       .mockResolvedValueOnce([])
       .mockResolvedValue([]);
 
