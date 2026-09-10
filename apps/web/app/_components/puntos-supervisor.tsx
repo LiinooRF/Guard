@@ -5,6 +5,8 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { CoordinateMap } from './coordinate-map';
 import { marcasDePuntos } from './puntos-marcas';
 import { avisoSinCoordenadas } from './site-gps-aviso';
+import { Coordenadas, capturaDeEscaneo, capturaDeUbicacion, redondear } from './puntos-captura';
+import { useGuardBridge } from './use-guard-bridge';
 
 interface GuardiaDelRecinto {
   id: string;
@@ -42,8 +44,6 @@ interface Etiqueta {
   installedAt: string;
   replacedAt: string | null;
 }
-
-type Coordenadas = [number | null, number | null];
 
 /**
  * Puntos de control y etiquetas NFC para el SUPERVISOR (#309).
@@ -85,6 +85,67 @@ export function PuntosSupervisor({
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
   const [coordenadas, setCoordenadas] = useState<Coordenadas>([null, null]);
+  const [uidEtiqueta, setUidEtiqueta] = useState('');
+  const [capturando, setCapturando] = useState<'gps' | 'nfc' | null>(null);
+  const [avisoCaptura, setAvisoCaptura] = useState<string | null>(null);
+  const puente = useGuardBridge(apiUrl);
+
+  /**
+   * Toma la coordenada donde esta parado el supervisor.
+   *
+   * Es la razon de ser de esta pantalla en el telefono: escribir latitud y
+   * longitud a mano desde un escritorio es la via por la que los puntos
+   * terminan sin coordenada, o con la del recinto en vez de la del punto. Se
+   * usa `navigator.geolocation` y no el puente porque tambien tiene que
+   * funcionar en el navegador del telefono, sin la app instalada.
+   */
+  const tomarUbicacion = useCallback(() => {
+    if (!navigator.geolocation) {
+      setAvisoCaptura('Este teléfono no permite tomar la ubicación.');
+      return;
+    }
+    setCapturando('gps');
+    setAvisoCaptura(null);
+    navigator.geolocation.getCurrentPosition(
+      (posicion) => {
+        const captura = capturaDeUbicacion(posicion.coords);
+        if (captura.coordenadas) setCoordenadas(captura.coordenadas);
+        setAvisoCaptura(captura.aviso);
+        setCapturando(null);
+      },
+      () => {
+        setAvisoCaptura('No pudimos tomar la ubicación. Revisa el permiso de ubicación del teléfono.');
+        setCapturando(null);
+      },
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
+  }, []);
+
+  /**
+   * Lee la etiqueta que el supervisor tiene en la mano, en vez de teclear su UID.
+   *
+   * El escaneo trae ADEMAS la coordenada del instante en que se leyo la
+   * etiqueta, y se usa esa antes que una lectura aparte del GPS: entre escanear
+   * y pedir la ubicacion el supervisor camina, y la coordenada dejaria de
+   * corresponder al punto. Es el mismo motivo por el que el contrato del puente
+   * las manda juntas.
+   */
+  const escanearEtiqueta = useCallback(async () => {
+    setCapturando('nfc');
+    setAvisoCaptura(null);
+    try {
+      const captura = capturaDeEscaneo(
+        await puente.escanear('Acerca el teléfono a la etiqueta del punto'),
+      );
+      setUidEtiqueta(captura.uid);
+      if (captura.coordenadas) setCoordenadas(captura.coordenadas);
+      setAvisoCaptura(captura.aviso);
+    } catch {
+      setAvisoCaptura(puente.aviso ?? 'No pudimos leer la etiqueta. Inténtalo de nuevo.');
+    } finally {
+      setCapturando(null);
+    }
+  }, [puente]);
 
   useEffect(() => {
     void (async () => {
@@ -145,6 +206,8 @@ export function PuntosSupervisor({
     if (!respuesta.ok) return setMensaje(await textoDeError(respuesta));
     form.reset();
     setCoordenadas([null, null]);
+    setUidEtiqueta('');
+    setAvisoCaptura(null);
     setMensaje('Punto creado. Queda registrado a tu nombre en la auditoría de la empresa.');
     await cargarPuntos(seleccionado);
   }
@@ -322,11 +385,57 @@ export function PuntosSupervisor({
                   <input name="suggestedOrder" type="number" min={0} defaultValue={puntos.length + 1} required />
                 </label>
                 <label>Instrucciones<textarea name="instructions" rows={2} maxLength={500} /></label>
-                <label>UID etiqueta NFC<input name="tagUid" minLength={4} maxLength={64} placeholder="Opcional: vincula en el alta" /></label>
+                <label>
+                  UID etiqueta NFC
+                  <input
+                    name="tagUid"
+                    minLength={4}
+                    maxLength={64}
+                    onChange={(e) => setUidEtiqueta(e.target.value)}
+                    placeholder="Opcional: vincula en el alta"
+                    value={uidEtiqueta}
+                  />
+                </label>
+                {/*
+                  * Escanear la etiqueta en vez de teclear su UID. El boton solo
+                  * aparece con la app: la Web NFC API no existe dentro del
+                  * WebView y el escaneo lo hace el shell nativo. En el navegador
+                  * de escritorio el campo sigue escribiendose a mano, que es lo
+                  * que se podia hacer hasta hoy.
+                  */}
+                {puente.puedeEscanear ? (
+                  <button
+                    className="secondary-button captura-en-terreno"
+                    disabled={capturando !== null}
+                    onClick={escanearEtiqueta}
+                    type="button"
+                  >
+                    {capturando === 'nfc' ? 'Acerca la etiqueta…' : 'Escanear la etiqueta'}
+                  </button>
+                ) : null}
                 <div className="coordinate-fields">
                   <label>Latitud<input type="number" step="any" min={-90} max={90} value={coordenadas[0] ?? ''} onChange={(e) => setCoordenadas([e.target.value === '' ? null : Number(e.target.value), coordenadas[1]])} /></label>
                   <label>Longitud<input type="number" step="any" min={-180} max={180} value={coordenadas[1] ?? ''} onChange={(e) => setCoordenadas([coordenadas[0], e.target.value === '' ? null : Number(e.target.value)])} /></label>
                 </div>
+                {/*
+                  * Dar de alta el punto ESTANDO en el punto. Escribir la
+                  * coordenada a mano desde un escritorio es la via por la que
+                  * los puntos terminan sin ubicacion —o con la del recinto— y
+                  * despues el mapa del informe no puede dibujarlos.
+                  */}
+                <button
+                  className="secondary-button captura-en-terreno"
+                  disabled={capturando !== null}
+                  onClick={tomarUbicacion}
+                  type="button"
+                >
+                  {capturando === 'gps' ? 'Tomando ubicación…' : 'Usar mi ubicación actual'}
+                </button>
+                {avisoCaptura ? (
+                  <p className="form-note captura-aviso" role="status">
+                    {avisoCaptura}
+                  </p>
+                ) : null}
                 <p className="form-note">
                   La exigencia de foto la resuelven las reglas de la empresa: un acceso crítico
                   la hereda. El detalle por punto lo cambia el administrador.
@@ -463,10 +572,6 @@ function enviar(url: string, method: string, body?: object) {
       ? {}
       : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   });
-}
-
-function redondear(valor: number) {
-  return Math.round(valor * 1_000_000) / 1_000_000;
 }
 
 

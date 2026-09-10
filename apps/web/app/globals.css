@@ -1079,3 +1079,13 @@ a.stats-boton { display: inline-flex; align-items: center; }
 @media (max-width: 520px) { .brand-setting-group { padding: 1rem; }.brand-logo-field { align-items: flex-start; flex-direction: column; }.brand-color-summary { align-items: flex-start; flex-direction: column; gap: .3rem; }.brand-color-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }.brand-text-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }.brand-preview-window { min-height: 15rem; grid-template-columns: 4.8rem 1fr; }.brand-actions { align-items: stretch; flex-direction: column; }.brand-actions .primary-button { width: 100%; } }
 .mensaje-ok { color: #1a7f4e; }
 .mensaje-error { color: #c8394a; }
+
+/*
+ * Alta de puntos en terreno (#231). Los dos botones de captura —escanear la
+ * etiqueta y tomar la ubicacion— se usan de pie en el punto, con una mano y
+ * a veces de noche: van al ancho completo y con el toque de 44 px, no con el
+ * alto reducido del resto de los botones secundarios del panel.
+ */
+.captura-en-terreno { width: 100%; min-height: 2.75rem; cursor: pointer; font-size: .78rem; }
+.captura-en-terreno:disabled { color: #8a91a2; cursor: progress; }
+.captura-aviso { margin: .1rem 0 .4rem; color: var(--ink); text-align: left; }
