@@ -158,7 +158,16 @@ const ENDPOINT_AUTHORIZATION: readonly EndpointAuthorization[] = [
     true,
   ),
   secured(GuardController, 'home', ['patrols:execute'], ['GUARDIA'], true),
-  secured(GuardController, 'enrollDeviceKey', ['patrols:execute'], ['GUARDIA'], true),
+  // Los DOS roles que abren la app en un telefono. Que aparezca SUPERVISOR aca
+  // es el arreglo de #231: con `patrols:execute` recibia 403 y se quedaba sin
+  // lector NFC en la pantalla de puntos.
+  secured(
+    GuardController,
+    'enrollDeviceKey',
+    ['device:signing-key:enroll'],
+    ['SUPERVISOR', 'GUARDIA'],
+    true,
+  ),
   secured(GuardController, 'start', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'scan', ['patrols:execute'], ['GUARDIA'], true),
   secured(GuardController, 'reportEvent', ['patrols:execute'], ['GUARDIA'], true),

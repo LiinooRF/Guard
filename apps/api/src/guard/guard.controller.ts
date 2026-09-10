@@ -19,8 +19,14 @@ export class GuardController {
     private readonly signatures: DeviceSignatureService,
   ) {}
 
+  /*
+   * La clave de firma la registra cualquiera que use la app en su telefono, no
+   * solo el guardia: desde #231 el SUPERVISOR da de alta puntos con el lector
+   * NFC, y el puente aborta el saludo si esto responde 403 —dejandolo sin
+   * escaneo y sin explicacion en pantalla—.
+   */
   @Post('device-signing-key')
-  @Permissions('patrols:execute')
+  @Permissions('device:signing-key:enroll')
   enrollDeviceKey(
     @Body() input: EnrollDeviceKeyDto,
     @Req() request: Request & { user: AuthenticatedUser },

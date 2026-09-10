@@ -58,6 +58,21 @@ export const PERMISSIONS = [
    * con ON DELETE CASCADE).
    */
   'checkpoints:manage',
+  /**
+   * Registrar la clave de firma DE ESTE TELEFONO (#231).
+   *
+   * Es capacidad del EQUIPO, no de la tarea: quien la ejerce solo dice "este
+   * aparato soy yo". Estaba pegada a `patrols:execute` y por eso el supervisor
+   * recibia 403 al abrir la pantalla de puntos desde la app —el puente aborta
+   * el saludo si no puede registrar la firma, y sin saludo no hay escaneo—.
+   * Un supervisor dando de alta un punto no ejecuta una ronda, pero necesita
+   * el mismo lector NFC y la misma atribucion en la auditoria.
+   *
+   * Permiso propio y no `patrols:execute` para el supervisor: eso le habria
+   * dado ADEMAS iniciar rondas, marcar puntos y cerrar turnos como si fuera
+   * guardia. La firma del equipo es lo unico que ambos comparten.
+   */
+  'device:signing-key:enroll',
   'patrols:monitor',
   'patrols:execute',
   'reports:read',
@@ -96,6 +111,8 @@ export const ROLE_PERMISSIONS = {
     // Los puntos y sus etiquetas NFC los da de alta quien los instala (#309).
     // NO se le agrega `tenant:sites:manage`: los recintos siguen siendo del ADMIN.
     'checkpoints:manage',
+    // Da de alta puntos DESDE LA APP, con el lector NFC del telefono (#231).
+    'device:signing-key:enroll',
     'patrols:monitor',
     'reports:read',
     'incidents:create',
@@ -103,6 +120,7 @@ export const ROLE_PERMISSIONS = {
   GUARDIA: [
     'account:sessions:manage',
     'patrols:execute',
+    'device:signing-key:enroll',
     'incidents:create',
   ],
 } as const satisfies Record<Role, readonly Permission[]>;

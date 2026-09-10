@@ -5,7 +5,13 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { CoordinateMap } from './coordinate-map';
 import { marcasDePuntos } from './puntos-marcas';
 import { avisoSinCoordenadas } from './site-gps-aviso';
-import { Coordenadas, capturaDeEscaneo, capturaDeUbicacion, redondear } from './puntos-captura';
+import {
+  Coordenadas,
+  avisoDeFalloDeUbicacion,
+  capturaDeEscaneo,
+  capturaDeUbicacion,
+  redondear,
+} from './puntos-captura';
 import { useGuardBridge } from './use-guard-bridge';
 
 interface GuardiaDelRecinto {
@@ -113,8 +119,13 @@ export function PuntosSupervisor({
         setAvisoCaptura(captura.aviso);
         setCapturando(null);
       },
-      () => {
-        setAvisoCaptura('No pudimos tomar la ubicación. Revisa el permiso de ubicación del teléfono.');
+      (error) => {
+        // El motivo importa: la PRIMERA vez, el dialogo de permiso de Android se
+        // come el tiempo de espera y el fallo llega como TIMEOUT aunque el
+        // supervisor haya aceptado. Decirle "revisa el permiso" ahi lo manda a
+        // Ajustes a mirar un permiso que acaba de conceder; lo unico que tiene
+        // que hacer es volver a tocar el boton.
+        setAvisoCaptura(avisoDeFalloDeUbicacion(error));
         setCapturando(null);
       },
       { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },

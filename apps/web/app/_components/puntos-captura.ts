@@ -104,3 +104,26 @@ export function capturaDeUbicacion(coords: {
     aviso: `Ubicación tomada.${textoDePrecision(coords.accuracy)}`,
   };
 }
+
+/** Codigos de `GeolocationPositionError`, que no existen como enum en TS. */
+const PERMISO_DENEGADO = 1;
+const POSICION_NO_DISPONIBLE = 2;
+
+/**
+ * Traduce un fallo del GPS a lo que el supervisor tiene que HACER.
+ *
+ * Los tres motivos piden acciones distintas y mandarlos todos a "revisa el
+ * permiso" es peor que no decir nada: la primera vez que se toca el boton, el
+ * dialogo de Android se come el tiempo de espera y el fallo llega como TIMEOUT
+ * aunque el permiso se haya concedido. Con el mensaje generico el supervisor se
+ * va a Ajustes a revisar un permiso que ya esta bien.
+ */
+export function avisoDeFalloDeUbicacion(error: { code?: number } | undefined): string {
+  if (error?.code === PERMISO_DENEGADO) {
+    return 'Sin permiso de ubicación. Actívalo para este teléfono y vuelve a intentarlo.';
+  }
+  if (error?.code === POSICION_NO_DISPONIBLE) {
+    return 'El teléfono no logró ubicarse. Sal a cielo abierto y vuelve a intentarlo.';
+  }
+  return 'La ubicación tardó demasiado. Vuelve a tocar el botón: la primera vez suele irse el tiempo en el aviso de permiso.';
+}
