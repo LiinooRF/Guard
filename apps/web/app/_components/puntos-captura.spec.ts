@@ -1,5 +1,6 @@
 import {
   PRECISION_DUDOSA_M,
+  avisoDeFalloDeUbicacion,
   capturaDeEscaneo,
   capturaDeUbicacion,
   redondear,
@@ -80,5 +81,30 @@ describe('redondear', () => {
   it('deja seis decimales, que son ~11 cm', () => {
     expect(redondear(-33.4489231987)).toBe(-33.448923);
     expect(redondear(10)).toBe(10);
+  });
+});
+
+describe('avisoDeFalloDeUbicacion', () => {
+  it('ante un timeout manda a repetir, NO a revisar el permiso', () => {
+    // La primera vez, el dialogo de Android se come el tiempo de espera y el
+    // fallo llega como timeout aunque el supervisor haya aceptado. Mandarlo a
+    // Ajustes seria mandarlo a mirar un permiso que ya concedio.
+    const aviso = avisoDeFalloDeUbicacion({ code: 3 });
+    expect(aviso).toMatch(/vuelve a tocar/i);
+    expect(aviso).not.toMatch(/activa|actívalo/i);
+  });
+
+  it('ante permiso denegado si manda a activarlo', () => {
+    expect(avisoDeFalloDeUbicacion({ code: 1 })).toMatch(/permiso/i);
+  });
+
+  it('ante posicion no disponible habla de la señal, no del permiso', () => {
+    const aviso = avisoDeFalloDeUbicacion({ code: 2 });
+    expect(aviso).toMatch(/cielo abierto/i);
+    expect(aviso).not.toMatch(/permiso/i);
+  });
+
+  it('sin codigo cae en el mensaje generico y no culpa al permiso', () => {
+    expect(avisoDeFalloDeUbicacion(undefined)).not.toMatch(/permiso de ubicaci/i);
   });
 });
