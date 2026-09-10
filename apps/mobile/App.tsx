@@ -17,6 +17,7 @@ import { crearPuenteNativo, type MotivoIncompatible } from './src/bridge';
 import { crearManejadoresNfc } from './src/nfc/handlers';
 import { puertoNfcAndroid } from './src/nfc/native-port';
 import { crearCamaraQr, VistaCamaraQr } from './src/qr/camara';
+import { detenerTrazaEnSegundoPlano } from './src/geo/traza-fondo';
 import { leerRutaOffline, type RutaOfflineGuardada } from './src/offline/route-store';
 import { sincronizarCola } from './src/offline/sync-queue';
 import { registrarSincronizacionBackground } from './src/offline/sync-task';
@@ -156,6 +157,26 @@ export default function App() {
       configurarApiUrl(portal.origin);
       instalarReportadorGlobal(() => portal.origin);
       void registrarArranqueYVerificarCierre(portal.origin).catch(() => undefined);
+      /*
+       * Corta una traza huerfana (#231).
+       *
+       * El muestreo de fondo lo registra ANDROID, no el proceso: sobrevive a
+       * que la app muera. Si el telefono se queda sin bateria a mitad de ronda,
+       * o Android mata el proceso, las actualizaciones de ubicacion siguen
+       * corriendo indefinidamente y el servicio en primer plano sigue diciendo
+       * "Ronda en curso" cuando no hay ninguna. Visto en el telefono de prueba:
+       * la tarea despertaba sola cada pocos segundos sin ronda activa.
+       *
+       * `destino` vive en memoria del proceso, asi que en un arranque limpio
+       * siempre es null y la tarea no sube nada — pero sigue encendiendo el GPS
+       * y gastando bateria, y le muestra al guardia un aviso que miente.
+       *
+       * Aca el arranque es el unico momento en que se sabe con certeza que NO
+       * hay ronda en curso todavia: la que haya la reactiva el portal con su
+       * `track.start`. Se rastrea solo durante la ronda, y esto lo hace cierto
+       * tambien despues de una caida.
+       */
+      void detenerTrazaEnSegundoPlano().catch(() => undefined);
     } catch {
       // Se pierde el reporte de caidas, no la app.
     }
