@@ -1,7 +1,6 @@
 'use client';
 
 import type { Role } from '@sentrycore/shared';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import { Brand } from './brand';
@@ -14,6 +13,7 @@ import {
   olvidarCodigoEmpresa,
 } from '../_lib/codigo-empresa';
 import { leerCredenciales } from './login-form-data';
+import { rutaDelPanel } from './login-navegacion';
 
 /**
  * Plazo maximo para el login. Existe porque una peticion sin respuesta dejaba
@@ -23,7 +23,6 @@ import { leerCredenciales } from './login-form-data';
 const TIEMPO_MAXIMO_MS = 20_000;
 
 export function LoginScreen() {
-  const router = useRouter();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api';
   const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState('');
@@ -104,8 +103,7 @@ export function LoginScreen() {
         return;
       }
 
-      router.push(`/app/${resultado.user.role.toLowerCase()}`);
-      router.refresh();
+      window.location.assign(rutaDelPanel(resultado.user.role));
     } catch {
       setErrorMessage('No pudimos conectar. Revisa tu señal e inténtalo de nuevo.');
       setStatus('error');
@@ -230,15 +228,14 @@ export function LoginScreen() {
         }
 
         setPendingCardUid(null);
-        router.push(`/app/${result.user.role.toLowerCase()}`);
-        router.refresh();
+        window.location.assign(rutaDelPanel(result.user.role));
       } catch {
         setStatus(navigator.onLine ? 'error' : 'offline');
         setErrorMessage(navigator.onLine ? 'Error de conexión al validar la tarjeta NFC.' : '');
         setNfcFeedback(null);
       }
     },
-    [abrirEdicionDeCodigo, apiUrl, codigoEmpresa, router, status, tenantId],
+    [abrirEdicionDeCodigo, apiUrl, codigoEmpresa, status, tenantId],
   );
 
   useEffect(() => {
@@ -392,8 +389,7 @@ export function LoginScreen() {
         return;
       }
 
-      router.push(`/app/${result.user.role.toLowerCase()}`);
-      router.refresh();
+      window.location.assign(rutaDelPanel(result.user.role));
     } catch (error) {
       const expiro = error instanceof DOMException && error.name === 'TimeoutError';
       setErrorMessage(
