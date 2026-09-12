@@ -53,12 +53,6 @@ p  { margin:0 0 16px; max-width:66ch; }        /* medida maxima del sistema */
 .dato { font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--text); }
 
 /* Wordmark — sin isotipo, la T interior no se disimula */
-.wordmark {
-  font-family:Outfit, sans-serif; font-size:26px; letter-spacing:-.04em;
-  line-height:1; white-space:nowrap;
-}
-.wordmark b { font-weight:800; color:var(--text); }
-.wordmark span { font-weight:400; color:var(--text-muted); }
 
 /* Barra */
 .barra {
@@ -72,6 +66,36 @@ p  { margin:0 0 16px; max-width:66ch; }        /* medida maxima del sistema */
   letter-spacing:-.02em; color:var(--text);
 }
 .producto em { font-style:normal; color:var(--text-muted); font-weight:400; }
+
+/*
+ * SentryCore es el producto; VoxTi Labs es quien lo hace. Van juntos pero no
+ * al mismo peso: el nombre del producto manda y el lockup acompania.
+ */
+.producto { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.producto-sello { display:inline-flex; align-items:center; gap:8px; }
+.producto-de {
+  font-family:Inter, sans-serif; font-weight:400; font-size:13px;
+  color:var(--text-muted); letter-spacing:0;
+}
+/*
+ * A 26 px de alto el lockup completo mide 189 px: justo bajo el minimo de 190.
+ * Se sube a 27 px (196 px de ancho) en vez de encogerlo, que es lo que la guia
+ * prohibe — "Labs" se convierte en una mancha gris antes que en una palabra.
+ */
+.producto-nombre { color:var(--text); text-decoration:none; }
+.producto-nombre:focus-visible { outline:2px solid var(--action); outline-offset:2px; border-radius:4px; }
+.marca { display:inline-block; line-height:0; }
+.marca svg { height:27px; width:auto; display:block; }
+.marca:focus-visible { outline:2px solid var(--action); outline-offset:2px; border-radius:4px; }
+
+/*
+ * Bajo 520 px el lockup completo mas el nombre del producto mas el interruptor
+ * no caben sin apretar el logo. Se esconde el sello: el producto conserva su
+ * nombre y la marca vuelve en el pie, donde si tiene aire.
+ */
+@media (max-width:520px) {
+  .producto-sello { display:none; }
+}
 
 /* Botones — radio 999, Outfit 700 16px, alto minimo 46 */
 .boton {
@@ -170,6 +194,21 @@ section { padding:96px 0; border-top:1px solid var(--border); }
 .captura-ancha { margin:0 0 24px; }
 .captura-ancha img { width:100%; }
 .captura-alta { max-height:520px; object-fit:contain; object-position:top; background:var(--bg-rest); }
+
+/*
+ * Figura dentro de un articulo. Los tres articulos eran solo texto y ademas
+ * su JSON-LD declaraba un Article sin `image`, que es lo que Google usa para
+ * el resultado enriquecido. La captura es real y viene al caso: no hay imagen
+ * decorativa.
+ */
+.figura-articulo { margin:32px 0; }
+.figura-articulo img {
+  display:block; width:100%; height:auto;
+  border:1px solid var(--border); border-radius:22px; background:var(--bg-rest);
+}
+.figura-articulo figcaption {
+  margin-top:12px; font-size:14px; color:var(--text-muted); line-height:1.6;
+}
 .captura {
   background:var(--bg-raised); border:1px solid var(--border);
   border-radius:22px; padding:16px; margin:0;
