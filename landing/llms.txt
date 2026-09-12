@@ -24,7 +24,7 @@
   alcance el contraste minimo de lectura.
 - **Personalizacion**: las reglas bajan en cascada por cuatro niveles —plataforma,
   empresa, recinto y punto de control— y gana el mas especifico. Configurables: umbral
-  de cumplimiento (0-100%), intervalo de muestreo GPS (15 s a 15 min), retencion del
+  de cumplimiento (0-100%), intervalo de muestreo GPS (1 s a 15 min, por defecto 5 s), retencion del
   recorrido (7 a 365 dias), radio de validacion del escaneo (5 a 1.000 m), duracion
   maxima de ronda, foto obligatoria en accesos criticos, orden fijo o aleatorio, QR
   como respaldo del NFC, destinatarios del informe automatico (hasta 10) y contenido
